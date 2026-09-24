@@ -1,0 +1,144 @@
+# Publish @supersuit/artifacts to npm through OIDC trusted publishing.
+#
+# Modelled on SupersuitUp/docusaurus-preset-wiki's publish.yml, which paid for every trap
+# below with a failed release. Read that file's header before changing anything here.
+#
+# HOW THE TRUST WORKS. There is no token here and no NODE_AUTH_TOKEN, deliberately.
+# GitHub mints a short-lived OIDC identity for this workflow, npm verifies it against the
+# trusted publisher configured on the package, and the publish is authorised by WHO ran it
+# rather than by a secret. The trusted-publisher record on npm names this repository AND this
+# filename (publish.yml), so renaming this file breaks publishing until the record is updated.
+#
+# HOW TO RELEASE. Bump the version (package.json AND package-lock.json), add the CHANGELOG
+# entry, commit, then:
+#     git tag v0.1.1 && git push origin v0.1.1
+# The tag is the trigger. The version guard refuses a tag that disagrees with package.json.
+#
+# AFTER A PUBLISH, hosts that consume this package are told, so they can update themselves
+# (the "Notify consuming hosts" step). That step is best-effort: a host also checks npm on a
+# schedule, so a missing or expired dispatch token delays an update rather than losing it.
+name: publish
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Run every check and stop before publishing"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  # The one permission OIDC needs. Without it the publish fails with an auth error that does
+  # not mention OIDC at all.
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    # NO `environment:` HERE, and npm's trusted-publisher record for this package must leave
+    # "Environment name" EMPTY to match. npm checks the environment claim inside the OIDC token,
+    # so a record naming an environment the job does not declare fails as ENEEDAUTH with nothing
+    # said about environments (the preset lost a release to exactly this). Adding one means
+    # editing both sides.
+    steps:
+      - uses: actions/checkout@v5
+
+      # NO `registry-url` HERE. setup-node answers that option by writing an .npmrc with
+      # `_authToken=${NODE_AUTH_TOKEN}` and a placeholder token, so npm never attempts the OIDC
+      # exchange and the registry rejects the placeholder as a 404 ("package not found"), which
+      # says nothing about auth. The default registry is already registry.npmjs.org.
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+
+      # PINNED TO 11.x. OIDC trusted publishing landed in npm 11.5.1, and npm 12.0.2 (what
+      # `npm@latest` resolved to on 2026-09-15) went straight to ENEEDAUTH. Raise deliberately.
+      - name: Pin npm to a version that performs the OIDC exchange
+        run: |
+          npm install -g npm@11
+          npm --version
+
+      - name: Assert the OIDC identity is available
+        run: |
+          if [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ] || [ -z "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ]; then
+            echo "No OIDC identity available to this job."
+            echo "The workflow needs permissions: id-token: write, and a fork PR never gets one."
+            exit 1
+          fi
+          echo "OIDC identity present"
+
+      - run: npm ci
+
+      # Built, typechecked and tested before it is published, never after.
+      - run: npm run build
+      - run: npm test
+      # The tarball itself: every export resolves under plain Node ESM, the font ships and is
+      # found from a host-shaped node_modules, and no test file or source leaks into it.
+      - run: npm run test:packed
+
+      - name: Refuse a tag that disagrees with package.json
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG="$(node -p "require('./package.json').version")"
+          if [ "$TAG" != "$PKG" ]; then
+            echo "tag v$TAG does not match package.json $PKG"
+            echo "Publishing here would ship a version with no CHANGELOG entry."
+            exit 1
+          fi
+          echo "tag and package.json agree on $PKG"
+
+      - name: Refuse a version already on npm
+        run: |
+          PKG="$(node -p "require('./package.json').version")"
+          if npm view "@supersuit/artifacts@$PKG" version >/dev/null 2>&1; then
+            echo "$PKG is already published. Bump the version."
+            exit 1
+          fi
+          echo "$PKG is not on npm yet"
+
+      - name: Publish
+        if: github.event_name == 'push' || inputs.dry_run == false
+        # ANY configured token takes precedence over the OIDC identity and fails as an
+        # unexplained 404, so refuse to run with one.
+        run: |
+          if [ -n "${NODE_AUTH_TOKEN:-}" ] || grep -qs "_authToken" "${NPM_CONFIG_USERCONFIG:-/dev/null}"; then
+            echo "A credential is configured, so npm will not attempt the OIDC exchange."
+            echo "Check that setup-node above does not set registry-url."
+            exit 1
+          fi
+          npm publish --access public
+
+      # Tell the hosts that consume this package that a version exists, so they update now
+      # rather than at their next scheduled check. Each host runs its own update workflow on a
+      # `repository_dispatch` of type `supersuit-artifacts-published`; the host does the bump,
+      # the tests and the build, and only its own green result reaches its main branch.
+      #
+      # HOSTS_DISPATCH_TOKEN: a fine-grained token with "Contents: read and write" on the host
+      # repositories only (that is the permission repository_dispatch requires). Absent, this
+      # step says so and passes: the hosts' daily check still picks the version up.
+      - name: Notify consuming hosts
+        if: github.event_name == 'push' || inputs.dry_run == false
+        env:
+          GH_TOKEN: ${{ secrets.HOSTS_DISPATCH_TOKEN }}
+          HOSTS: ContinentalWorks/freedom-artifacts
+        run: |
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::warning::HOSTS_DISPATCH_TOKEN is not set; hosts will update on their scheduled check instead."
+            exit 0
+          fi
+          PKG="$(node -p "require('./package.json').version")"
+          for repo in $HOSTS; do
+            if gh api "repos/$repo/dispatches" -f event_type=supersuit-artifacts-published -F "client_payload[version]=$PKG" >/dev/null; then
+              echo "told $repo about $PKG"
+            else
+              echo "::warning::could not dispatch to $repo; it will update on its scheduled check"
+            fi
+          done
+
+      - name: Dry run only
+        if: github.event_name == 'workflow_dispatch' && inputs.dry_run
+        run: echo "All checks passed. Nothing published (dry run)."
