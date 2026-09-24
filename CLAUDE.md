@@ -34,10 +34,12 @@ the workflow itself changed.
 ## Hosts update themselves; this repo tells them
 
 After a publish, the workflow sends a `repository_dispatch` (`supersuit-artifacts-published`) to
-every repo in its `HOSTS` list, using the `HOSTS_DISPATCH_TOKEN` secret. Each host's own workflow
+every repo named in the `CONSUMING_HOSTS` repository variable (space-separated `owner/repo`, kept
+out of the source so this public repo does not list its hosts), using the `HOSTS_DISPATCH_TOKEN`
+secret. Each host's own workflow
 bumps the dependency, runs its tests and build, and pushes only a green result. Hosts also check
 npm daily, so a missing token delays an update and loses nothing. Adding a host is one word in
-`HOSTS` plus that host's workflow.
+`CONSUMING_HOSTS` plus that host's workflow.
 
 ## What must never land in this repo
 
@@ -48,12 +50,15 @@ this package and justify or remove every hit.
 
 ## Proving the package, not the checkout
 
-`npm test` proves the source. `npm run test:packed` proves the tarball: every export resolves
-under plain Node ESM from a host-shaped `node_modules`, the font ships and is found there, and the
-reader keeps `'use client'`. A consumer installs the tarball, so the second one is the check that
-matches what users run.
+`npm test` proves the source. `npm run test:packed` proves the tarball the way users run it: it
+unpacks it into `test/fixture` (a small Next.js app), runs `next build`, checks the share route's
+trace carries the font, then `next start`s it and fetches a page, a share card and a route handler.
+Unit tests were green through both defects below; only the fixture caught them.
 
-- **Every relative import ends in `.js`, and every `next/*` import names its file**
-  (`next/server.js`). `next` has no `exports` map, so an extensionless subpath works in a bundler
-  and crashes plain Node ESM. `tsc` (NodeNext) refuses the extensionless form, which is the guard.
+- **Relative imports end in `.js`; `next/*` imports NEVER do.** `next/navigation.js` bypasses the
+  alias Next applies per layer, and every route handler then fails at "collecting page data" on a
+  missing `app-route/vendored/contexts/app-router-context.js`. The cost is that plain Node ESM
+  cannot load the shell (`next` has no `exports` map), so hosts inline it in Vitest.
+- **The font is found from `process.cwd()` and carried by the host's `outputFileTracingIncludes`.**
+  Next's tracer does not follow the package's own literal into `node_modules`.
 - **The shell never imports from a host** (`src/no-instance-imports.test.ts`).

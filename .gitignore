@@ -4,3 +4,6 @@ lib
 *.tsbuildinfo
 .DS_Store
 .packed
+test/fixture/node_modules
+test/fixture/.next
+test/fixture/next-env.d.ts

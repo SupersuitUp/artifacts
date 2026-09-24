@@ -82,14 +82,25 @@ Pages live at `/<id>` by default. Mounting inside a larger site, pass `pagePrefi
 the page at `app/a/[id]/`. One deployment can serve many sites: build one set of routes per
 hostname and pick by the `host` header.
 
-### Two things your build config must know
+### Three things your build config must know
 
 - **Tailwind**: the shell's markup uses Tailwind classes, so add the package to `content`:
   `'./node_modules/@supersuit/artifacts/lib/**/*.js'`.
-- **The share-card font** ships at `node_modules/@supersuit/artifacts/fonts/`. The loader
-  finds it from `process.cwd()`, and Next's tracer carries it into the deploy. If your app's
-  working directory is not its project root (some monorepos), add it yourself:
-  `outputFileTracingIncludes: { '/[id]/share.png': ['./node_modules/@supersuit/artifacts/fonts/**'] }`.
+- **The share-card font** ships at `node_modules/@supersuit/artifacts/fonts/` and is read from
+  `process.cwd()` at request time. Next's file tracer does not follow that path into
+  `node_modules`, so tell it, or the default pack's share card has no font in production:
+
+  ```ts
+  // next.config.ts
+  outputFileTracingIncludes: { '/*/share.png': ['./node_modules/@supersuit/artifacts/fonts/**'] },
+  ```
+
+  The key is a glob. `'/[id]/share.png'` reads as a character class and matches nothing, silently.
+- **Vitest** (or anything running the shell under plain Node ESM): the shell imports
+  `next/navigation`, `next/server` and friends without a file extension, because that is the
+  form Next's bundler aliases per layer (with `.js` every route handler fails to build). Plain
+  Node cannot resolve that form, so let Vite resolve the package instead:
+  `test: { server: { deps: { inline: ['@supersuit/artifacts'] } } }`.
 
 ## Publishing a page
 
@@ -187,8 +198,8 @@ Keep a pack carrying your own trademark in your own app, not in a pull request h
 
 Fixes and improvements are welcome: open an issue or a pull request at
 [SupersuitUp/artifacts](https://github.com/SupersuitUp/artifacts). `npm test` runs the suite,
-`npm run build` compiles, and `npm run test:packed` proves the packed tarball works from a
-host-shaped `node_modules`. A behaviour change comes with its test in the same pull request.
+`npm run build` compiles, and `npm run test:packed` builds and serves a small Next.js app from
+the packed tarball. A behaviour change comes with its test in the same pull request.
 
 ## License
 

@@ -3,12 +3,13 @@
 // package so an operator with no pack of their own still unfurls as a title card rather than
 // as nothing. It ships at `fonts/Newsreader-600.ttf` in the package root.
 //
-// WHY THE PATHS ARE LITERALS JOINED TO process.cwd(). A Next app bundles this module, so
-// `import.meta.url` points into `.next/`, not at the package, and cannot find the font. The
-// file tracer Next uses to decide which files reach a serverless function reads literal
-// `join(process.cwd(), '...')` calls, so these literals are also what carries the font into
-// the deploy. A host whose cwd is not its project root adds the font to
-// `outputFileTracingIncludes` itself (see README).
+// WHY process.cwd(). A Next app bundles this module, so `import.meta.url` points into `.next/`,
+// not at the package, and cannot find the font. A deployed function runs with the project root
+// as its cwd, so the first candidate is where an installed package's font sits.
+//
+// Next's file tracer does NOT follow this literal into node_modules (measured on Next 16.3 with
+// Turbopack, 2026-09-24), so a host names the font in `outputFileTracingIncludes` (README), and
+// test/fixture does the same so `npm run test:packed` proves the font reaches a build.
 //
 // Only type imports reach this module from anything client-side, so the node imports are safe.
 import { readFile } from 'node:fs/promises'

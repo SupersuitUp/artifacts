@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-vi.mock('next/cache.js', () => ({ revalidatePath: vi.fn() }))
-vi.mock('next/navigation.js', () => ({ notFound: () => { throw new Error('NOT_FOUND') } }))
-import { NextRequest } from 'next/server.js'
+vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
+vi.mock('next/navigation', () => ({ notFound: () => { throw new Error('NOT_FOUND') } }))
+import { NextRequest } from 'next/server'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { createArtifactRoutes } from './artifacts.js'
 import { freedomDefault } from '../brand/pack.js'

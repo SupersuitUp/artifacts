@@ -2,7 +2,7 @@
 // Drawn with next/og (Satori), which lays out a subset of CSS: flex only, inline styles, no
 // blur or glow. Anything atmospheric is the backdrop's job. The lower-left corner is left
 // clear, because a backdrop may put a small mark there.
-import { ImageResponse } from 'next/og.js'
+import { ImageResponse } from 'next/og'
 import type { BrandPack } from './pack.js'
 
 export const SHARE_W = 1200

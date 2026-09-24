@@ -117,15 +117,21 @@ jobs:
       # `repository_dispatch` of type `supersuit-artifacts-published`; the host does the bump,
       # the tests and the build, and only its own green result reaches its main branch.
       #
-      # HOSTS_DISPATCH_TOKEN: a fine-grained token with "Contents: read and write" on the host
-      # repositories only (that is the permission repository_dispatch requires). Absent, this
-      # step says so and passes: the hosts' daily check still picks the version up.
+      # CONSUMING_HOSTS (a repository VARIABLE, space-separated owner/repo): who to tell. Kept out
+      # of this file so the public repo does not list its hosts.
+      # HOSTS_DISPATCH_TOKEN (a repository SECRET): a fine-grained token with "Contents: read and
+      # write" on those repositories only (the permission repository_dispatch requires). Absent,
+      # this step says so and passes: each host's daily check still picks the version up.
       - name: Notify consuming hosts
         if: github.event_name == 'push' || inputs.dry_run == false
         env:
           GH_TOKEN: ${{ secrets.HOSTS_DISPATCH_TOKEN }}
-          HOSTS: ContinentalWorks/freedom-artifacts
+          HOSTS: ${{ vars.CONSUMING_HOSTS }}
         run: |
+          if [ -z "${HOSTS:-}" ]; then
+            echo "No CONSUMING_HOSTS variable; nothing to notify."
+            exit 0
+          fi
           if [ -z "${GH_TOKEN:-}" ]; then
             echo "::warning::HOSTS_DISPATCH_TOKEN is not set; hosts will update on their scheduled check instead."
             exit 0

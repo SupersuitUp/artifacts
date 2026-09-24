@@ -1,9 +1,9 @@
 // @vitest-environment node
 // The PNG encode runs outside jsdom: sharp refuses a typed array from jsdom's realm.
 import { describe, it, expect, vi } from 'vitest'
-vi.mock('next/cache.js', () => ({ revalidatePath: vi.fn() }))
-vi.mock('next/navigation.js', () => ({ notFound: () => { throw new Error('NOT_FOUND') } }))
-import { NextRequest } from 'next/server.js'
+vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
+vi.mock('next/navigation', () => ({ notFound: () => { throw new Error('NOT_FOUND') } }))
+import { NextRequest } from 'next/server'
 import { readFile } from 'node:fs/promises'
 import { createArtifactRoutes } from './artifacts.js'
 import { freedomDefault } from '../brand/pack.js'

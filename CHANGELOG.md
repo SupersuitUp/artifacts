@@ -15,20 +15,23 @@ host picks up, and anyone can file one.
   pages, confidential pages (`access: freedom | invite`) with the readers store, the agreement,
   the watermark and the read record, and the share card.
 - **Compiled ESM with declarations** (`lib/`), so a host no longer needs `transpilePackages`.
-  Every relative import carries its `.js` extension and every `next/*` import names its file
-  (`next/server.js`), because `next` has no `exports` map and plain Node ESM refuses an
-  extensionless subpath.
+  Relative imports carry `.js`; `next/*` imports deliberately do NOT. `next/navigation.js` skips
+  the alias Next applies per layer, and every route handler then fails to build on a missing
+  app-router context module. Plain Node ESM cannot resolve the extensionless form, so a host's
+  Vitest inlines the package (README).
 - **No sign-in service is assumed.** `signInOrigin` used to default to one company's sign-in
   host. It now has no default, and a confidential page on a host that sets none shows its door
   with no way through: it fails closed rather than sending readers somewhere the host never named.
 - **The share-card font ships in the tarball** at `fonts/Newsreader-600.ttf` and is found from a
-  host's `node_modules`, where it used to be read from the host's own source tree.
+  host's `node_modules`, where it used to be read from the host's own source tree. Next's tracer
+  does not follow it there, so a host names it in `outputFileTracingIncludes` under a key that is
+  a glob (`'/*/share.png'`; `'/[id]/share.png'` is a character class and matches nothing).
 - **DETECTOR:** a host importing `@freedom/site-shell` is on the pre-package copy.
 - **REMEDY:** depend on `@supersuit/artifacts`, rename the imports, drop the package from
   `transpilePackages`, point Tailwind `content` and any `outputFileTracingIncludes` for the font
-  at `node_modules/@supersuit/artifacts/`, and pass `signInOrigin` explicitly if the host serves
-  confidential pages.
+  at `node_modules/@supersuit/artifacts/`, inline the package in Vitest, and pass `signInOrigin`
+  explicitly if the host serves confidential pages.
 - 92 tests, including one for the fail-closed door, plus `npm run test:packed`, which packs the
-  tarball, imports every export from a host-shaped `node_modules` under plain Node, renders the
-  default font from there, and checks the reader kept `'use client'`. It was verified to fail
-  when the font is left out of `files`.
+  tarball into a small Next.js app (`test/fixture`), builds it, checks the share route's trace
+  carries the font, then serves it and fetches a page, a share card and the publish route. It was
+  verified to fail on a `next/navigation.js` import and on a tarball without `fonts/`.

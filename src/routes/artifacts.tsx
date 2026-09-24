@@ -3,9 +3,9 @@
 // what this returns, so the shell owns the behaviour and the instance owns only
 // the wiring: which store, which brand, which domain, which key.
 import type { Metadata } from 'next'
-import { revalidatePath } from 'next/cache.js'
-import { notFound } from 'next/navigation.js'
-import { NextRequest, NextResponse } from 'next/server.js'
+import { revalidatePath } from 'next/cache'
+import { notFound } from 'next/navigation'
+import { NextRequest, NextResponse } from 'next/server'
 import { isPublishAuthed } from '../artifacts/auth.js'
 import { parseArtifactSource } from '../artifacts/front-matter.js'
 import { narrationText } from '../artifacts/narration.js'
@@ -61,7 +61,7 @@ type Params = { params: Promise<{ id: string }> }
 type PageProps = Params & { searchParams?: Promise<{ key?: string | string[] }> }
 
 async function defaultReadCookie(name: string): Promise<string | undefined> {
-  const { cookies } = await import('next/headers.js')
+  const { cookies } = await import('next/headers')
   return (await cookies()).get(name)?.value
 }
 

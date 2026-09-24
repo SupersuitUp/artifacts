@@ -1,50 +1,77 @@
-// Proves the TARBALL works, not the checkout. Passing unit tests prove the source; they never
-// prove that `files` carries the build, that every `exports` entry resolves under plain Node
-// ESM (where a missing `.js` extension is a crash, not a warning), or that the bundled font is
-// where the share card looks for it once the package sits in someone's node_modules.
+// Proves the TARBALL works inside a real Next.js app, not the checkout.
 //
-// It packs, unpacks into .packed/node_modules/@supersuit/artifacts (inside this repo, so the
-// peers resolve from this repo's node_modules exactly as they would from a host's), then imports
-// every entry and renders the default font from a host-shaped working directory.
-import { execFileSync } from 'node:child_process'
-import { mkdirSync, rmSync, existsSync, readFileSync } from 'node:fs'
+// Unit tests prove the source. They never prove that `files` carries the build, that the
+// compiled imports resolve the way Next's bundler resolves them, that route handlers can load
+// the shell at all, or that the bundled font reaches the deploy. Two of those failed for real
+// while this package was being cut (2026-09-24), with every unit test green:
+//   - `next/navigation.js` (with the extension) skips Next's per-layer alias, so every route
+//     handler died collecting page data on a missing app-router context module.
+//   - The share-card font in node_modules is not followed by Next's file tracer, so it only
+//     reaches the deploy through a host's `outputFileTracingIncludes`.
+//
+// So: pack, unpack into test/fixture/node_modules/@supersuit/artifacts (peers resolve from this
+// repo's node_modules, as they would from a host's), `next build` the fixture, check the trace
+// carries the font, then `next start` it and fetch a page, a share card and a route handler.
+import { execFileSync, spawn } from 'node:child_process'
+import { mkdirSync, rmSync, readFileSync, existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
 const root = resolve(import.meta.dirname, '..')
-const stage = join(root, '.packed')
-rmSync(stage, { recursive: true, force: true })
-const dest = join(stage, 'node_modules/@supersuit/artifacts')
+const fixture = join(root, 'test/fixture')
+const dest = join(fixture, 'node_modules/@supersuit/artifacts')
+const fail = (msg) => { console.error(`check-packed: ${msg}`); process.exit(1) }
+
+rmSync(join(fixture, 'node_modules'), { recursive: true, force: true })
+rmSync(join(fixture, '.next'), { recursive: true, force: true })
 mkdirSync(dest, { recursive: true })
 
-const out = execFileSync('npm', ['pack', '--json', '--pack-destination', stage], { cwd: root, encoding: 'utf8' })
+const out = execFileSync('npm', ['pack', '--json', '--pack-destination', fixture], { cwd: root, encoding: 'utf8' })
 const [{ filename, files }] = JSON.parse(out.slice(out.indexOf('[')))
-execFileSync('tar', ['-xzf', join(stage, filename), '-C', dest, '--strip-components=1'])
+const tgz = join(fixture, filename)
+execFileSync('tar', ['-xzf', tgz, '-C', dest, '--strip-components=1'])
+rmSync(tgz)
 
-const fail = (msg) => { console.error(`check-packed: ${msg}`); process.exit(1) }
 const paths = files.map((f) => f.path)
-for (const bad of paths.filter((p) => /\.test\.|^src\//.test(p))) fail(`tarball carries ${bad}`)
+for (const bad of paths.filter((p) => /\.test\.|^src\/|^test\//.test(p))) fail(`tarball carries ${bad}`)
 if (!paths.includes('fonts/Newsreader-600.ttf')) fail('tarball has no fonts/Newsreader-600.ttf')
-
-const pkg = JSON.parse(readFileSync(join(dest, 'package.json'), 'utf8'))
-const entries = Object.keys(pkg.exports).filter((k) => !k.includes('*') && k !== './package.json')
-const script = `
-  const entries = ${JSON.stringify(entries)};
-  for (const e of entries) {
-    const spec = e === '.' ? '@supersuit/artifacts' : '@supersuit/artifacts' + e.slice(1);
-    const m = await import(spec);
-    if (!Object.keys(m).length) throw new Error(spec + ' exports nothing');
-    console.log('ok', spec, Object.keys(m).length, 'exports');
-  }
-  const { freedomDefault } = await import('@supersuit/artifacts/brand');
-  const font = await freedomDefault.share.font();
-  if (font.data.byteLength < 10000) throw new Error('font is empty');
-  console.log('ok default share font from node_modules,', font.data.byteLength, 'bytes');
-`
-// cwd is the stage, which is shaped like a host root: node_modules/@supersuit/artifacts/...
-// and NOT this repo's root, so the font can only be found the way a host finds it.
-execFileSync(process.execPath, ['--input-type=module', '-e', script], { cwd: stage, stdio: 'inherit' })
-if (!existsSync(join(dest, 'lib/reader/artifact-reader.js'))) fail('no compiled reader')
 const reader = readFileSync(join(dest, 'lib/reader/artifact-reader.js'), 'utf8')
-if (!reader.startsWith("'use client'") && !reader.startsWith('"use client"')) fail("compiled reader lost its 'use client' directive")
-rmSync(stage, { recursive: true, force: true })
-console.log(`check-packed: ${filename} ok (${paths.length} files)`)
+if (!/^['"]use client['"]/.test(reader)) fail("compiled reader lost its 'use client' directive")
+console.log(`check-packed: ${filename}, ${paths.length} files`)
+
+const next = join(root, 'node_modules/next/dist/bin/next')
+execFileSync(process.execPath, [next, 'build'], { cwd: fixture, stdio: 'inherit', env: { ...process.env, NEXT_TELEMETRY_DISABLED: '1' } })
+
+const nft = join(fixture, '.next/server/app/[id]/share.png/route.js.nft.json')
+if (!existsSync(nft)) fail('no trace for the share-card route')
+if (!JSON.parse(readFileSync(nft, 'utf8')).files.some((f) => f.endsWith('Newsreader-600.ttf')))
+  fail('the share-card route trace does not carry fonts/Newsreader-600.ttf')
+
+const port = 3000 + Math.floor(Math.random() * 2000)
+const server = spawn(process.execPath, [next, 'start', '-p', String(port)], { cwd: fixture, stdio: 'ignore', env: { ...process.env, NEXT_TELEMETRY_DISABLED: '1' } })
+const base = `http://127.0.0.1:${port}`
+try {
+  let up = false
+  for (let i = 0; i < 60 && !up; i++) {
+    await new Promise((r) => setTimeout(r, 500))
+    up = await fetch(`${base}/abc23456`).then(() => true, () => false)
+  }
+  if (!up) fail('next start never answered')
+
+  const page = await fetch(`${base}/abc23456`)
+  const html = await page.text()
+  if (page.status !== 200 || !html.includes('Fixture')) fail(`page answered ${page.status}`)
+
+  const png = await fetch(`${base}/abc23456/share.png?v=1`)
+  const bytes = Buffer.from(await png.arrayBuffer())
+  if (png.status !== 200 || bytes.subarray(1, 4).toString() !== 'PNG' || bytes.readUInt32BE(16) !== 1200)
+    fail(`share card answered ${png.status} ${png.headers.get('content-type')}`)
+
+  const publish = await fetch(`${base}/api/artifacts`, { method: 'POST', body: '---\ntitle: T\nsummary: S\n---\nhi' })
+  if (publish.status !== 401) fail(`an unauthenticated publish answered ${publish.status}, not 401`)
+
+  console.log('check-packed: fixture builds; page, share card and publish route answer correctly')
+} finally {
+  server.kill()
+}
+rmSync(join(fixture, 'node_modules'), { recursive: true, force: true })
+rmSync(join(fixture, '.next'), { recursive: true, force: true })
