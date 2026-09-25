@@ -58,6 +58,10 @@ export type ArtifactRoutesConfig = {
   signInOrigin?: string
   /** Who the banner says grants access, e.g. "Example Co". Default the brand name. */
   owner?: string
+  /** The address the state routes' rate limit counts by. Default reads the first hop of
+   *  `x-forwarded-for`, which is correct on Vercel (it overwrites XFF with the real client IP)
+   *  and wrong behind any other proxy that appends rather than replaces; pass this there. */
+  clientIp?: (req: NextRequest) => string
 }
 
 /** Ids are 8 chars from the safe alphabet; anything else is not a page and never reaches the store. */
@@ -85,6 +89,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
   const shareCardUrl = (id: string, updatedAt: string) => `${pageUrl(id)}/share.png?v=${encodeURIComponent(updatedAt)}`
   const stateRoutes = createStateRoutes({
     store, state: config.state, readers: config.readers, readerSecret, publishKey: config.publishKey, pageUrl, signInOrigin, siteUrl,
+    clientIp: config.clientIp,
   })
 
   async function generateMetadata({ params }: Params): Promise<Metadata> {
@@ -452,6 +457,20 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
       const existing = await store.get(id)
       const changed = shapeChanges(existing?.state, parsed.meta.state)
       if (changed.length) return NextResponse.json({ error: changed.join('; ') }, { status: 400 })
+      // The declared shape can be dodged by republishing once with `state` omitted (which clears
+      // it) and then again with the slot's shape flipped: `existing.state` reads as undefined at
+      // that final publish, so the check above sees nothing to compare against. The ANSWERS
+      // never went anywhere, so the truth is in what is actually stored, not in the file.
+      if (config.state) {
+        const shapeOf = new Map<string, string>()
+        for (const e of await config.state.entries(id)) if (!shapeOf.has(e.slot)) shapeOf.set(e.slot, e.shape)
+        const dodged: string[] = []
+        for (const [name, def] of Object.entries(parsed.meta.state.slots)) {
+          const was = shapeOf.get(name)
+          if (was && was !== def.shape) dodged.push(`slot "${name}" changed shape from ${was} to ${def.shape}; rename the slot instead`)
+        }
+        if (dodged.length) return NextResponse.json({ error: dodged.join('; ') }, { status: 400 })
+      }
     }
     const result = await store.save({ id, meta: parsed.meta, markdown: parsed.body })
     if ('notFound' in result) return NextResponse.json({ error: `no artifact with id ${id}` }, { status: 404 })

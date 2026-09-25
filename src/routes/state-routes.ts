@@ -33,6 +33,10 @@ export type StateRoutesContext = {
   pageUrl: (id: string) => string
   signInOrigin?: string
   siteUrl: string
+  /** The address the rate limit counts by. Default reads the first hop of `x-forwarded-for`,
+   *  which is correct on Vercel (it overwrites XFF with the real client IP) and wrong behind any
+   *  other proxy that appends rather than replaces; a host behind one of those passes its own. */
+  clientIp?: (req: NextRequest) => string
 }
 type Params = { params: Promise<{ id: string }> }
 
@@ -40,8 +44,9 @@ export function createStateRoutes(ctx: StateRoutesContext) {
   const anonCookie = (v: string, maxAge: number) => `${ANON_COOKIE}=${v}; Path=/; Max-Age=${maxAge}; HttpOnly; Secure; SameSite=Lax`
   const json = (body: unknown, status = 200) => NextResponse.json(body, { status, headers: { 'cache-control': 'no-store' } })
   const newAnonId = () => { let s = ''; while (s.length < 24) s += randomBytes(24).toString('base64').replace(/[^A-Za-z0-9]/g, ''); return s.slice(0, 24) }
+  const defaultClientIp = (req: NextRequest) => (req.headers.get('x-forwarded-for') ?? '').split(',')[0].trim()
   const ipHash = (req: NextRequest) =>
-    createHash('sha256').update(`${ctx.siteUrl}|${(req.headers.get('x-forwarded-for') ?? '').split(',')[0].trim()}`).digest('hex').slice(0, 16)
+    createHash('sha256').update(`${ctx.siteUrl}|${(ctx.clientIp ?? defaultClientIp)(req)}`).digest('hex').slice(0, 16)
 
   /** Resolve the page and who is asking, or the refusal. Shared by GET and POST. */
   async function open(req: NextRequest, id: string) {
@@ -81,7 +86,7 @@ export function createStateRoutes(ctx: StateRoutesContext) {
     const { a, reader, anonId, signIn } = o
     let clearAnon = false
     if (reader && anonId) {
-      await ctx.state!.moveReader(id, readerKeyFor.anonymous(anonId), writerFor(reader))
+      await ctx.state!.moveReader(readerKeyFor.anonymous(anonId), writerFor(reader))
       clearAnon = true
     }
     const key = reader ? readerKeyFor.signedIn(reader.uid) : anonId ? readerKeyFor.anonymous(anonId) : null
@@ -92,16 +97,30 @@ export function createStateRoutes(ctx: StateRoutesContext) {
 
   async function STATE_POST(req: NextRequest, { params }: Params) {
     const { id } = await params
+    // Refuse on the declared length before reading a byte: a client naming an oversize body
+    // does not get the server to buffer it first.
+    const declaredLength = Number(req.headers.get('content-length') ?? '')
+    if (Number.isFinite(declaredLength) && declaredLength > MAX_BODY) return json({ error: 'request over 16 KB' }, 413)
     const raw = await req.text()
-    if (raw.length > MAX_BODY) return json({ error: 'request over 16 KB' }, 413)
+    // Measured in bytes, not JS string length: a string of multi-byte characters can sit under
+    // the code-unit count and over the byte cap the limit is actually about.
+    if (Buffer.byteLength(raw, 'utf8') > MAX_BODY) return json({ error: 'request over 16 KB' }, 413)
     let b: { slot?: unknown; op?: unknown; value?: unknown; entry?: unknown }
-    try { b = JSON.parse(raw) } catch { return json({ error: 'body must be JSON' }, 400) }
+    try {
+      const parsed: unknown = JSON.parse(raw)
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return json({ error: 'body must be JSON' }, 400)
+      b = parsed as typeof b
+    } catch {
+      return json({ error: 'body must be JSON' }, 400)
+    }
     const o = await open(req, id)
     if ('error' in o) return o.error
     const { a, reader, signIn } = o
     let { anonId } = o
     const slot = typeof b.slot === 'string' ? b.slot : ''
-    const def = a.state!.slots[slot]
+    // Object.hasOwn, never a bracket read: `slots['__proto__']` or `slots['constructor']`
+    // resolves through the prototype chain to a real (truthy) object that names no slot.
+    const def = Object.hasOwn(a.state!.slots, slot) ? a.state!.slots[slot] : undefined
     if (!def) return json({ error: `no slot named ${slot} on this page` }, 400)
     const op = b.op
     if (op !== 'set' && op !== 'append' && op !== 'remove') return json({ error: 'op must be set, append or remove' }, 400)

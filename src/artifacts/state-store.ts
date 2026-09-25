@@ -23,7 +23,10 @@ export interface StateStore {
   append(input: { artifactId: string; slot: string; writer: Writer; value: unknown }): Promise<StateEntry | { full: true }>
   remove(input: { artifactId: string; slot: string; readerKey: string; entryId?: string }): Promise<number>
   removeReader(artifactId: string, readerKey: string): Promise<number>
-  moveReader(artifactId: string, fromKey: string, to: Writer): Promise<number>
+  /** Moves every answer on every page from one reader key to another, not just the page the
+   *  reader signed in from: an anonymous reader who answered several pages before signing in
+   *  must not have the rest stranded under the cookie that is about to be cleared. */
+  moveReader(fromKey: string, to: Writer): Promise<number>
   countAnonWrite(artifactId: string, ipHash: string, minute: number): Promise<number>
 }
 
@@ -77,12 +80,12 @@ export function createStateStore(db: Firestore, base: string): StateStore {
       await Promise.all(mine.map((e) => col().doc(e.id).delete()))
       return mine.length
     },
-    async moveReader(artifactId, fromKey, to) {
-      const from = await load(col().where('artifactId', '==', artifactId).where('readerKey', '==', fromKey))
+    async moveReader(fromKey, to) {
+      const from = await load(col().where('readerKey', '==', fromKey))
       let moved = 0
       for (const e of from) {
         if (e.shape === 'one') {
-          const target = col().doc(oneId(artifactId, e.slot, to.key))
+          const target = col().doc(oneId(e.artifactId, e.slot, to.key))
           // The signed-in answer wins over one given anonymously on this device.
           if (!(await target.get()).exists) {
             await target.set(toStored({ ...e, id: target.id, readerKey: to.key, writer: writerOf(to) }))
@@ -134,12 +137,12 @@ export function createMemoryStateStore(): StateStore {
       for (const e of mine) docs.delete(e.id)
       return mine.length
     },
-    async moveReader(artifactId, fromKey, to) {
+    async moveReader(fromKey, to) {
       let moved = 0
-      for (const e of of(artifactId, fromKey)) {
+      for (const e of [...docs.values()].filter((e) => e.readerKey === fromKey)) {
         docs.delete(e.id)
         if (e.shape === 'one') {
-          const id = oneId(artifactId, e.slot, to.key)
+          const id = oneId(e.artifactId, e.slot, to.key)
           if (docs.has(id)) continue
           docs.set(id, { ...e, id, readerKey: to.key, writer: writerOf(to) })
         } else {

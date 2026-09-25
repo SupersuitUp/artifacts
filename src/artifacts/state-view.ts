@@ -1,5 +1,6 @@
 // What each side is shown. A reader gets their own answers, plus tallies or shared entries where
 // the page allows, and NEVER an email. The publisher (publish key) gets everything.
+import { createHash } from 'node:crypto'
 import { slotVisibility, type Shape, type StateConfig, type Visibility } from './state.js'
 import type { StateEntry } from './state-store.js'
 
@@ -9,6 +10,12 @@ export type SlotView = { shape: Shape; visibility: Visibility; mine: unknown | {
 
 const byAt = (a: StateEntry, b: StateEntry) => a.at.localeCompare(b.at) || a.id.localeCompare(b.id)
 const firstWord = (name: string | null) => (name?.trim() ? name.trim().split(/\s+/)[0] : 'a reader')
+
+// A `one` entry's raw id is `<page>__<slot>__<readerKey>`, and the reader key inside it (`u:<uid>`
+// or `a:<anonId>`) is a credential: whoever reads it can write as that reader by minting the same
+// anonymous cookie. A `shared` slot handed that id straight to every reader, so it is hashed to
+// an opaque, stable value instead. `many` entries keep their random id; it names nothing.
+const opaqueOneId = (id: string) => createHash('sha256').update(id).digest('hex').slice(0, 16)
 
 /** Counts per option. A list value (multiple choice) counts each item; objects are not tallied.
  *  Anonymous answers are counted apart, because anyone can answer again by clearing a cookie. */
@@ -38,7 +45,11 @@ export function stateView(state: StateConfig, entries: StateEntry[], readerKey: 
       mine: def.shape === 'one' ? (mine[0]?.value ?? null) : mine.map((e) => ({ id: e.id, value: e.value, at: e.at })),
     }
     if (visibility === 'tally') view.tally = tallyOf(here)
-    if (visibility === 'shared') view.shared = here.map((e) => ({ id: e.id, name: firstWord(e.writer.name), value: e.value, at: e.at, mine: e.readerKey === readerKey }))
+    if (visibility === 'shared')
+      view.shared = here.map((e) => ({
+        id: def.shape === 'one' ? opaqueOneId(e.id) : e.id,
+        name: firstWord(e.writer.name), value: e.value, at: e.at, mine: e.readerKey === readerKey,
+      }))
     out[slot] = view
   }
   return out
@@ -52,7 +63,14 @@ export function responsesOf(entries: StateEntry[]): Response[] {
   }))
 }
 
-const cell = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v)
+// A cell a spreadsheet reads as a formula (leading =, +, -, @, tab or CR) gets an escaping
+// leading quote first: a reader's answer becomes text a formula, not a command a publisher's
+// spreadsheet app runs the moment the CSV is opened.
+const FORMULA_LEAD = /^[=+\-@\t\r]/
+const cell = (v: string) => {
+  const safe = FORMULA_LEAD.test(v) ? `'${v}` : v
+  return /[",\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe
+}
 export function responsesCsv(rows: Response[]): string {
   const head = 'slot,id,at,email,name,anonymous,value'
   return [head, ...rows.map((r) => [r.slot, r.id, r.at, r.email ?? '', r.name ?? '', String(r.anonymous), JSON.stringify(r.value)].map(cell).join(','))].join('\n')

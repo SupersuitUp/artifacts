@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import { stateView, responsesOf, responsesCsv } from './state-view.js'
+import { createHash } from 'node:crypto'
+import { stateView, responsesOf, responsesCsv, type Response } from './state-view.js'
 import type { StateEntry } from './state-store.js'
+
+const opaque = (id: string) => createHash('sha256').update(id).digest('hex').slice(0, 16)
 
 const e = (o: Partial<StateEntry>): StateEntry => ({
   id: 'x', artifactId: 'p', slot: 'vote', shape: 'one', readerKey: 'u:1',
@@ -42,6 +45,24 @@ describe('stateView', () => {
     const v = stateView({ ...state, slots: { form: state.slots.form } }, entries, 'u:2')
     expect(Object.keys(v)).toEqual(['form'])
   })
+  it('shared "one" entries carry an opaque id, never the raw reader-keyed id; "many" keeps its own', () => {
+    const withPick = { ...state, slots: { ...state.slots, pick: { shape: 'one' as const, visibility: 'shared' as const } } }
+    const picks = [
+      e({ id: 'pageX__pick__u:1', slot: 'pick', value: 'red' }),
+      e({ id: 'pageX__pick__a:zz', slot: 'pick', readerKey: 'a:zz', writer: { name: null, anonymous: true }, value: 'blue', at: '2026-09-24T10:00:01Z' }),
+    ]
+    const v = stateView(withPick, [...entries, ...picks], 'u:1')
+    expect(v.pick.shared).toEqual([
+      { id: opaque('pageX__pick__u:1'), name: 'Sam', value: 'red', at: '2026-09-24T10:00:00Z', mine: true },
+      { id: opaque('pageX__pick__a:zz'), name: 'a reader', value: 'blue', at: '2026-09-24T10:00:01Z', mine: false },
+    ])
+    // The raw one-entry id is a credential (it embeds the reader key); it must never leak.
+    expect(JSON.stringify(v)).not.toContain('pageX__pick')
+    expect(JSON.stringify(v)).not.toContain('u:1')
+    expect(JSON.stringify(v)).not.toContain('a:zz')
+    // "many" entries carry their own (non-reader-keyed) id straight through.
+    expect(v.notes.shared?.map((s) => s.id)).toEqual(['n1', 'n2'])
+  })
 })
 
 describe('responses', () => {
@@ -54,5 +75,18 @@ describe('responses', () => {
       'vote,v1,2026-09-24T10:00:00Z,sam@example.com,Sam Rivera,false,"""a"""',
       'vote,v2,2026-09-24T10:00:00Z,,,true,"""a"""',
     ])
+  })
+  it('escapes CSV formula injection in any cell', () => {
+    const rows: Response[] = [
+      { slot: 'notes', id: 'n1', value: -5, at: '2026-09-24T10:00:00Z', email: null, name: '=cmd|(calc)!A0', anonymous: true },
+      { slot: 'notes', id: 'n2', value: '+1', at: '2026-09-24T10:00:00Z', email: '@evil.example', name: null, anonymous: false },
+    ]
+    const lines = responsesCsv(rows).split('\n')
+    // name starting with "=": escaped
+    expect(lines[1]).toContain(",'=cmd|(calc)!A0,")
+    // value -5 -> JSON.stringify -> "-5", also starts with a dangerous char: escaped
+    expect(lines[1].endsWith("'-5")).toBe(true)
+    // email starting with "@": escaped
+    expect(lines[2]).toContain(",'@evil.example,")
   })
 })

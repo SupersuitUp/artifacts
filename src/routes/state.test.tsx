@@ -17,7 +17,13 @@ const t = '2026-09-24T00:00:00Z'
 const abc: ArtifactRecord = {
   id: 'abc23456', title: 'Vote', summary: 'S', template: 'document', markdown: '# vote',
   createdAt: t, updatedAt: t, versions: [], views: 0,
-  state: { writers: 'anyone', visibility: 'private', slots: { vote: { shape: 'one', visibility: 'tally' }, notes: { shape: 'many' } } },
+  state: {
+    writers: 'anyone', visibility: 'private',
+    slots: {
+      vote: { shape: 'one', visibility: 'tally' }, notes: { shape: 'many' },
+      pick: { shape: 'one', visibility: 'shared' }, board: { shape: 'many', visibility: 'shared' },
+    },
+  },
 }
 const def: ArtifactRecord = {
   id: 'def23456', title: 'Signed', summary: 'S', template: 'document', markdown: '# signed',
@@ -38,8 +44,13 @@ const nostate: ArtifactRecord = {
   id: 'zzz99999', title: 'Plain', summary: 'S', template: 'document', markdown: '# plain',
   createdAt: t, updatedAt: t, versions: [], views: 0,
 }
+const anb: ArtifactRecord = {
+  id: 'anb23456', title: 'Also anyone', summary: 'S', template: 'document', markdown: '# also',
+  createdAt: t, updatedAt: t, versions: [], views: 0,
+  state: { writers: 'anyone', visibility: 'private', slots: { vote: { shape: 'one' } } },
+}
 
-const RECORDS: Record<string, ArtifactRecord> = { abc23456: abc, def23456: def, ghj23456: ghj, pwd23456: pwd, zzz99999: nostate }
+const RECORDS: Record<string, ArtifactRecord> = { abc23456: abc, def23456: def, ghj23456: ghj, pwd23456: pwd, zzz99999: nostate, anb23456: anb }
 
 function fakeStore(overrides: Partial<ArtifactStore> = {}): ArtifactStore {
   return {
@@ -60,13 +71,13 @@ function fakeReaders(): ReadersStore {
   }
 }
 
-function buildRoutes(opts: { store?: ArtifactStore; state?: StateStore | null; readers?: ReadersStore } = {}) {
+function buildRoutes(opts: { store?: ArtifactStore; state?: StateStore | null; readers?: ReadersStore; clientIp?: (req: NextRequest) => string } = {}) {
   const store = opts.store ?? fakeStore()
   const state = opts.state === null ? undefined : (opts.state ?? createMemoryStateStore())
   const readers = opts.readers ?? fakeReaders()
   const routes = createArtifactRoutes({
     store, state, readers, brand: freedomDefault, siteUrl: 'https://artifacts.example.com', publishKey: () => 'k',
-    readerSecret: () => SECRET, signInOrigin: 'https://accounts.example.com',
+    readerSecret: () => SECRET, signInOrigin: 'https://accounts.example.com', clientIp: opts.clientIp,
   })
   return { routes, store, state, readers }
 }
@@ -91,7 +102,9 @@ describe('STATE_GET', () => {
     expect(noState.status).toBe(404)
     expect(await noState.json()).toEqual({ error: 'this page takes no answers' })
     const { routes: noStore } = buildRoutes({ state: null })
-    expect((await noStore.STATE_GET(stateGet('abc23456'), params('abc23456'))).status).toBe(501)
+    const res501 = await noStore.STATE_GET(stateGet('abc23456'), params('abc23456'))
+    expect(res501.status).toBe(501)
+    expect(await res501.json()).toEqual({ error: 'this host keeps no answers' })
   })
 })
 
@@ -148,10 +161,15 @@ describe('STATE_POST', () => {
     const { routes } = buildRoutes()
     const anon = await routes.STATE_POST(statePost('ghj23456', { slot: 'vote', op: 'set', value: 1 }), params('ghj23456'))
     expect(anon.status).toBe(401)
+    expect(await anon.json()).toEqual({
+      error: 'sign in to answer',
+      signIn: 'https://accounts.example.com/artifact/sign-in?to=https%3A%2F%2Fartifacts.example.com%2Fghj23456',
+    })
     const notListed = await routes.STATE_POST(
       statePost('ghj23456', { slot: 'vote', op: 'set', value: 1 }, `${GRANT_COOKIE}=${mintGrant(SECRET, outsider)}`), params('ghj23456'),
     )
     expect(notListed.status).toBe(403)
+    expect(await notListed.json()).toEqual({ error: 'this page is not open to you' })
     const ok = await routes.STATE_POST(
       statePost('ghj23456', { slot: 'vote', op: 'set', value: 1 }, `${GRANT_COOKIE}=${mintGrant(SECRET, listed)}`), params('ghj23456'),
     )
@@ -256,6 +274,111 @@ describe('RESPONSES', () => {
     expect(del.status).toBe(200)
     expect(await del.json()).toEqual({ removed: 1 })
     expect((await state!.entries('abc23456')).filter((e) => e.readerKey === key)).toHaveLength(0)
+  })
+})
+
+describe('fix round 1', () => {
+  it('shared slots never leak reader keys, raw one-entry ids, or emails', async () => {
+    const { routes } = buildRoutes()
+    const memberCookie = `${GRANT_COOKIE}=${mintGrant(SECRET, member)}`
+    const anonPickRes = await routes.STATE_POST(statePost('abc23456', { slot: 'pick', op: 'set', value: 'red' }), params('abc23456'))
+    expect(anonPickRes.status).toBe(200)
+    await routes.STATE_POST(statePost('abc23456', { slot: 'pick', op: 'set', value: 'blue' }, memberCookie), params('abc23456'))
+    const boardRes = await routes.STATE_POST(statePost('abc23456', { slot: 'board', op: 'append', value: 'hi' }, memberCookie), params('abc23456'))
+    expect(boardRes.status).toBe(200)
+    const get = await routes.STATE_GET(stateGet('abc23456', memberCookie), params('abc23456'))
+    const getBody = await get.json()
+    const boardBody = await boardRes.json()
+    for (const body of [getBody, boardBody]) {
+      const text = JSON.stringify(body)
+      expect(text).not.toContain('@')
+      // No reader-key-shaped id (u:<uid> or a:<anonId>) and no raw "<page>__<slot>__..." id.
+      expect(text).not.toMatch(/[au]:[A-Za-z0-9_-]/)
+      expect(text).not.toContain('abc23456__pick__')
+    }
+    const picked = getBody.slots.pick.shared as { id: string }[]
+    expect(picked).toHaveLength(2)
+    for (const s of picked) expect(s.id).toMatch(/^[0-9a-f]{16}$/)
+    const boarded = getBody.slots.board.shared as { id: string }[]
+    expect(boarded).toHaveLength(1)
+    // "many" ids are not reader-keyed, so they pass through unhashed.
+    expect(boarded[0].id).not.toMatch(/^[0-9a-f]{16}$/)
+  })
+
+  it('signing in on one page moves the anonymous answers on every page, not just this one', async () => {
+    const state = createMemoryStateStore()
+    const { routes } = buildRoutes({ state })
+    const first = await routes.STATE_POST(statePost('abc23456', { slot: 'vote', op: 'set', value: 'from-abc' }), params('abc23456'))
+    const anonId = (first.headers.get('set-cookie') ?? '').split('=')[1].split(';')[0]
+    const cookie = `${ANON_COOKIE}=${anonId}`
+    await routes.STATE_POST(statePost('anb23456', { slot: 'vote', op: 'set', value: 'from-anb' }, cookie), params('anb23456'))
+    const signInCookie = `${GRANT_COOKIE}=${mintGrant(SECRET, member)}; ${cookie}`
+    const res = await routes.STATE_GET(stateGet('abc23456', signInCookie), params('abc23456'))
+    expect((await res.json()).slots.vote.mine).toBe('from-abc')
+    const readerKey = `u:${member.uid}`
+    expect((await state.entries('abc23456')).find((e) => e.slot === 'vote')?.readerKey).toBe(readerKey)
+    expect((await state.entries('anb23456')).find((e) => e.slot === 'vote')?.readerKey).toBe(readerKey)
+  })
+
+  it('rate limiting honors a custom clientIp instead of x-forwarded-for', async () => {
+    const { routes } = buildRoutes({ clientIp: () => 'pinned-ip' })
+    let last
+    for (let i = 0; i < 31; i++) {
+      last = await routes.STATE_POST(statePost('abc23456', { slot: 'vote', op: 'set', value: i }, undefined, { 'x-forwarded-for': `1.2.3.${i}` }), params('abc23456'))
+    }
+    expect(last!.status).toBe(429)
+  })
+
+  it('a body that parses to something other than an object → 400, never a 500', async () => {
+    const { routes } = buildRoutes()
+    for (const raw of ['null', '5', '[]', '"hi"', 'true']) {
+      const res = await routes.STATE_POST(statePost('abc23456', raw), params('abc23456'))
+      expect(res.status).toBe(400)
+      expect(await res.json()).toEqual({ error: 'body must be JSON' })
+    }
+  })
+
+  it('a prototype-chain slot name never resolves through the prototype', async () => {
+    const { routes } = buildRoutes()
+    for (const slot of ['__proto__', 'constructor']) {
+      const res = await routes.STATE_POST(statePost('abc23456', { slot, op: 'set', value: 1 }), params('abc23456'))
+      expect(res.status).toBe(400)
+      expect(await res.json()).toEqual({ error: `no slot named ${slot} on this page` })
+    }
+  })
+
+  it('a declared content-length over 16 KB is refused without reading the body', async () => {
+    const { routes } = buildRoutes()
+    const req = statePost('abc23456', { slot: 'vote', op: 'set', value: 1 }, undefined, { 'content-length': '999999' })
+    const res = await routes.STATE_POST(req, params('abc23456'))
+    expect(res.status).toBe(413)
+  })
+
+  it('a multibyte body over the byte cap is refused even though its character length is under it', async () => {
+    const { routes } = buildRoutes()
+    // Each character is 1 UTF-16 code unit but 3 UTF-8 bytes; raw.length would stay under 16 KB
+    // while the actual byte size is nearly 3x that.
+    const value = '中'.repeat(6000)
+    const res = await routes.STATE_POST(statePost('abc23456', { slot: 'notes', op: 'append', value }), params('abc23456'))
+    expect(res.status).toBe(413)
+  })
+
+  it('cannot dodge a shape change by publishing once without state in between', async () => {
+    const state = createMemoryStateStore()
+    // The page currently declares no state (its previous publish omitted it), but the answer
+    // store still holds "many" entries from before that happened.
+    await state.append({ artifactId: 'abc23456', slot: 'vote', writer: { key: 'a:zzzzzzzzzzzzzzzzzzzzzzzz', name: null, anonymous: true }, value: 'old' })
+    const store = fakeStore({ get: vi.fn(async () => ({ ...abc, state: undefined })) })
+    const { routes } = buildRoutes({ store, state })
+    const text = [
+      '---', 'title: Vote', 'summary: S', 'state:', '  writers: anyone', '  slots:', '    vote:', '      shape: one', '---', '# vote',
+    ].join('\n')
+    const res = await routes.POST(new NextRequest('https://artifacts.example.com/api/artifacts?id=abc23456', {
+      method: 'POST', body: text, headers: { authorization: 'Bearer k', 'content-type': 'text/markdown' },
+    }))
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toBe('slot "vote" changed shape from many to one; rename the slot instead')
+    expect(store.save).not.toHaveBeenCalled()
   })
 })
 
