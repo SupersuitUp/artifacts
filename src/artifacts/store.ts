@@ -11,6 +11,7 @@ import { randomInt } from 'node:crypto'
 import { FieldValue, type Firestore } from 'firebase-admin/firestore'
 import type { ArtifactMeta } from './front-matter.js'
 import type { Access } from './reader.js'
+import type { StateConfig } from './state.js'
 
 export type ArtifactRecord = {
   id: string
@@ -26,6 +27,7 @@ export type ArtifactRecord = {
   narrationHash?: string
   password?: string
   access?: Access
+  state?: StateConfig
   markdown: string
   createdAt: string
   updatedAt: string
@@ -100,6 +102,7 @@ async function saveArtifact(col: Col, input: {
     ...(input.meta.narrationHash ? { narrationHash: input.meta.narrationHash } : {}),
     ...(input.meta.password ? { password: input.meta.password } : {}),
     ...(input.meta.access && input.meta.access !== 'public' ? { access: input.meta.access } : {}),
+    ...(input.meta.state ? { state: input.meta.state } : {}),
   }
   if (input.id) {
     const existing = await getArtifact(col, input.id)
@@ -121,8 +124,10 @@ async function saveArtifact(col: Col, input: {
     // Access is the opposite of password on purpose: absent leaves it alone, and only an explicit
     // `access: public` opens the page. Reopening a confidential page must never be a side effect.
     const access = input.meta.access === 'public' ? { access: FieldValue.delete() } : {}
+    // Content, like the body: a republish that no longer declares state removes the slots.
+    const state = input.meta.state ? {} : { state: FieldValue.delete() }
     await ref.update({
-      ...fields, ...password, ...subtitle, ...access, markdown: input.markdown, updatedAt: now, version: next,
+      ...fields, ...password, ...subtitle, ...access, ...state, markdown: input.markdown, updatedAt: now, version: next,
       ...(existing.versions ? { versions: FieldValue.delete() } : {}),
     })
     return { id: input.id, version: next, created: false }

@@ -2,6 +2,7 @@
 // Documented in README, "Front matter".
 import matter from 'gray-matter'
 import { ACCESS_LEVELS, type Access } from './reader.js'
+import { parseStateConfig, type StateConfig } from './state.js'
 
 export type ArtifactMeta = {
   title: string
@@ -27,9 +28,12 @@ export type ArtifactMeta = {
    *  ABSENT CHANGES NOTHING: the level is host-side state, so a republish that omits the line
    *  (or a publisher that strips unknown keys) can never reopen a confidential page. */
   access?: Access | 'public'
+  /** What readers may put into the page. Content, like the body: a republish without it removes
+   *  the slots from the page and KEEPS the answers already given. */
+  state?: StateConfig
 }
 
-const KNOWN = new Set(['title', 'summary', 'subtitle', 'template', 'audience', 'cover', 'id', 'voice', 'narration', 'timings', 'narrationHash', 'password', 'access'])
+const KNOWN = new Set(['title', 'summary', 'subtitle', 'template', 'audience', 'cover', 'id', 'voice', 'narration', 'timings', 'narrationHash', 'password', 'access', 'state'])
 
 export function parseArtifactSource(
   text: string,
@@ -58,6 +62,11 @@ export function parseArtifactSource(
     if (d.access !== 'public' && !ACCESS_LEVELS.includes(d.access as Access))
       return { ok: false, error: `access must be one of: public, ${ACCESS_LEVELS.join(', ')}` }
     meta.access = d.access as Access | 'public'
+  }
+  if (d.state !== undefined) {
+    const s = parseStateConfig(d.state)
+    if (!s.ok) return { ok: false, error: s.error }
+    meta.state = s.state
   }
   return { ok: true, meta, body: content }
 }

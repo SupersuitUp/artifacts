@@ -53,3 +53,14 @@ describe('subtitle', () => {
     expect(r.ok && [r.meta.title, r.meta.subtitle, r.meta.summary]).toEqual(['FREEDOM', 'A First-of-its-Kind System', 'The teaser.'])
   })
 })
+
+describe('state', () => {
+  it('parses a state block', () => {
+    const r = parseArtifactSource('---\ntitle: T\nsummary: S\nstate:\n  writers: anyone\n  slots:\n    progress: { shape: one }\n---\nbody')
+    expect(r.ok && r.meta.state).toEqual({ writers: 'anyone', visibility: 'private', slots: { progress: { shape: 'one' } } })
+  })
+  it('refuses a bad state block with its reason', () => {
+    const r = parseArtifactSource('---\ntitle: T\nsummary: S\nstate:\n  slots:\n    x: { shape: few }\n---\nbody')
+    expect(r).toEqual({ ok: false, error: 'slot "x" needs shape one or many' })
+  })
+})

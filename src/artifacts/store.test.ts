@@ -93,4 +93,12 @@ describe('artifact store', () => {
     expect(await getArtifact(r.id)).toBeNull()
     expect(await deleteArtifact(r.id)).toBe(false)
   })
+  it('a state config rides through, and a re-publish without one clears it', async () => {
+    const state = { writers: 'anyone' as const, visibility: 'private' as const, slots: { vote: { shape: 'one' as const } } }
+    const r = await saveArtifact({ meta: { ...meta, state }, markdown: 'b' })
+    if ('notFound' in r) throw new Error('unexpected')
+    expect((await getArtifact(r.id))?.state).toEqual(state)
+    await saveArtifact({ id: r.id, meta, markdown: 'b2' })
+    expect((await getArtifact(r.id))?.state).toBeUndefined()
+  })
 })
