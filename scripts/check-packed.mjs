@@ -69,7 +69,13 @@ try {
   const publish = await fetch(`${base}/api/artifacts`, { method: 'POST', body: '---\ntitle: T\nsummary: S\n---\nhi' })
   if (publish.status !== 401) fail(`an unauthenticated publish answered ${publish.status}, not 401`)
 
-  console.log('check-packed: fixture builds; page, share card and publish route answer correctly')
+  const w = await fetch(`${base}/api/artifacts/abc23456/state`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-forwarded-for': '203.0.113.9' }, body: JSON.stringify({ slot: 'vote', op: 'set', value: 'yes' }) })
+  const cookie = (w.headers.get('set-cookie') ?? '').split(';')[0]
+  if (w.status !== 200 || !cookie.startsWith('artifact_anon=')) fail(`an anonymous answer answered ${w.status}`)
+  const r = await (await fetch(`${base}/api/artifacts/abc23456/state`, { headers: { cookie } })).json()
+  if (r.slots?.vote?.mine !== 'yes' || r.slots.vote.tally?.anonymous?.yes !== 1) fail(`state read back ${JSON.stringify(r)}`)
+
+  console.log('check-packed: fixture builds; page, share card, publish and state routes answer correctly')
 } finally {
   server.kill()
 }

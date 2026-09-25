@@ -179,6 +179,92 @@ reimplement it. Keep passes short-lived (five minutes is what the tests assume).
 Without `signInOrigin`, a confidential page shows its door with no way through. It fails
 closed, never open.
 
+## Reader answers (`state:`)
+
+A page can take answers from the people reading it: a vote, a reaction, a short response.
+Declare it in front matter:
+
+```yaml
+state:
+  writers: anyone       # or signed-in
+  visibility: tally      # private | tally | shared
+  slots:
+    vote:
+      shape: one          # one value per reader, overwritten by a later `set`
+    reactions:
+      shape: many         # a growing list per reader, built by `append`
+      visibility: shared   # per-slot override of the page default
+```
+
+Four routes, each requiring `state: createStateStore(db, '<base>')` in the config or they answer
+501:
+
+- `GET /api/artifacts/<id>/state`: the reader's own answers plus what the page's visibility lets
+  them see (a tally, or every shared answer).
+- `POST /api/artifacts/<id>/state`: `{ "slot": "vote", "op": "set" | "append" | "remove", "value": ..., "entry": "<id for remove>" }`.
+  `set` is for a `one` slot, `append` for a `many` slot; `remove` takes either.
+- `GET /api/artifacts/<id>/responses` (publish key): every answer with who wrote it, whatever the
+  page's `visibility` says. `?format=csv` returns the same rows as CSV, with formula-injection
+  escaping on any value starting `=`, `+`, `-` or `@`.
+- `DELETE /api/artifacts/<id>/responses?reader=<key>` (publish key): erase one reader's answers.
+
+**Limits**: a value is capped at 8 KB, a `many` slot holds at most 200 entries per reader, and an
+anonymous writer is capped at 30 writes per minute (counted by IP, hashed with the site URL so
+one host cannot correlate a visitor across another).
+
+**Who can write**: a page with `access:` only ever accepts its signed-in readers, whatever
+`writers:` says. `writers: anyone` only takes effect on a page with no `access:`: an anonymous
+writer gets an opaque id in an HttpOnly `artifact_anon` cookie, good for a year. A `shared` slot
+shows a reader everyone else's answer, but an anonymous one only ever by that same opaque id,
+never a name or email; a publisher's `/responses` read and the CSV always show everything.
+
+**Signing in after writing anonymously**: the next `GET /api/artifacts/<id>/state` from a reader
+who is now signed in moves that cookie's answers onto their account, once, and clears the cookie.
+
+**Publishing over an existing shape refuses a change**: adding, removing or reshaping a slot
+(`one` to `many` or back) is refused both against the previous `state:` in front matter and
+against whatever shapes are already sitting in stored answers, so a republish can never silently
+orphan or misread history. Drop `state:` entirely to close the page to new answers; existing ones
+stay.
+
+**Host wiring**:
+
+```ts
+export const artifacts = createArtifactRoutes({
+  store,
+  state: createStateStore(getFirestore(), 'artifacts'),
+  // ...the rest of your config
+})
+```
+
+```ts
+// app/api/artifacts/[id]/state/route.ts
+import type { NextRequest } from 'next/server'
+import { artifacts } from '@/lib/artifacts'
+type Ctx = { params: Promise<{ id: string }> }
+export function GET(request: NextRequest, ctx: Ctx) { return artifacts.STATE_GET(request, ctx) }
+export function POST(request: NextRequest, ctx: Ctx) { return artifacts.STATE_POST(request, ctx) }
+```
+
+```ts
+// app/api/artifacts/[id]/responses/route.ts
+import type { NextRequest } from 'next/server'
+import { artifacts } from '@/lib/artifacts'
+type Ctx = { params: Promise<{ id: string }> }
+export function GET(request: NextRequest, ctx: Ctx) { return artifacts.RESPONSES(request, ctx) }
+export function DELETE(request: NextRequest, ctx: Ctx) { return artifacts.RESPONSES(request, ctx) }
+```
+
+Firestore needs one composite index, on the `<base>State` collection over
+`(artifactId, slot, readerKey)`, for the count an anonymous `append` checks against
+`MAX_MANY_PER_READER`. The cross-page move that runs on sign-in queries by `readerKey` alone and
+needs no index. You will not need to build the index by hand: Firestore's first failing query
+prints a console link that creates it pre-filled, and following that link once is the whole step.
+
+On a proxy other than Vercel's, pass `clientIp` to `createArtifactRoutes` (used for the anonymous
+rate limit): the default reads the first hop of `x-forwarded-for`, which Vercel overwrites with
+the real client IP but another proxy may only append to.
+
 ## Brand packs
 
 A `BrandPack` is data plus at most two components: colours, type, the kicker line above a title,

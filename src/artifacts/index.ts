@@ -7,3 +7,6 @@ export { createArtifactAssets, contentTypeFor, ASSET_NAME, type ArtifactAssets }
 export { isUnlocked, keyHash, unlockCookieName, unlockedUrl } from './unlock.js'
 export { verifyPass, mintPass, verifyGrant, mintGrant, decide, firstName, signInUrl, safeReturnPath, GRANT_COOKIE, ACCESS_LEVELS, type Access, type Reader, type AllowEntry, type Decision } from './reader.js'
 export { createReadersStore, summarize, FLAG_KINDS, type ReadersStore, type FlagKind, type SessionDoc, type FlagDoc } from './readers-store.js'
+export { parseStateConfig, effectiveWriters, slotVisibility, checkValue, shapeChanges, SLOT_NAME, MAX_VALUE_BYTES, MAX_MANY_PER_READER, ANON_WRITES_PER_MINUTE, type StateConfig, type SlotDef, type Shape, type Visibility, type Writers } from './state.js'
+export { createStateStore, createMemoryStateStore, readerKeyFor, type StateStore, type StateEntry, type Writer } from './state-store.js'
+export { stateView, responsesOf, responsesCsv, type SlotView, type Tally, type SharedEntry, type Response as StateResponse } from './state-view.js'
