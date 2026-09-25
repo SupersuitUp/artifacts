@@ -13,6 +13,8 @@ import { ArtifactMarkdown } from '../artifacts/render.js'
 import { ArtifactDoor } from '../artifacts/door.js'
 import { isUnlocked, keyHash, unlockCookieName } from '../artifacts/unlock.js'
 import type { ArtifactStore } from '../artifacts/store.js'
+import { shapeChanges } from '../artifacts/state.js'
+import type { StateStore } from '../artifacts/state-store.js'
 import { ASSET_NAME, contentTypeFor, type ArtifactAssets } from '../artifacts/assets.js'
 import { BrandGround } from '../brand/wrapper.js'
 import { renderShareCard } from '../brand/share-card.js'
@@ -25,9 +27,13 @@ import {
 } from '../artifacts/reader.js'
 import { FLAG_KINDS, summarize, type FlagKind, type ReadersStore } from '../artifacts/readers-store.js'
 import { AckDoor, ConfidentialBanner, NO_PRINT_CSS, NotAllowedDoor, SignInDoor, Watermark, ackText } from '../artifacts/confidential.js'
+import { ARTIFACT_ID_RE } from './ids.js'
+import { createStateRoutes } from './state-routes.js'
 
 export type ArtifactRoutesConfig = {
   store: ArtifactStore
+  /** Where readers' answers live. Without it every state route answers 501. */
+  state?: StateStore
   /** Where uploaded files go. Optional; without it PUT_ASSET answers 501. */
   assets?: ArtifactAssets
   brand: BrandPack
@@ -55,7 +61,7 @@ export type ArtifactRoutesConfig = {
 }
 
 /** Ids are 8 chars from the safe alphabet; anything else is not a page and never reaches the store. */
-export const ARTIFACT_ID = /^[abcdefghjkmnpqrstuvwxyz23456789]{8}$/
+export const ARTIFACT_ID = ARTIFACT_ID_RE
 
 type Params = { params: Promise<{ id: string }> }
 type PageProps = Params & { searchParams?: Promise<{ key?: string | string[] }> }
@@ -77,6 +83,9 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
   const readerSecret = () => config.readerSecret?.()
   const signOutUrl = (id: string) => `/api/reader/leave?to=${encodeURIComponent(pagePath(id))}`
   const shareCardUrl = (id: string, updatedAt: string) => `${pageUrl(id)}/share.png?v=${encodeURIComponent(updatedAt)}`
+  const stateRoutes = createStateRoutes({
+    store, state: config.state, readers: config.readers, readerSecret, publishKey: config.publishKey, pageUrl, signInOrigin, siteUrl,
+  })
 
   async function generateMetadata({ params }: Params): Promise<Metadata> {
     const { id } = await params
@@ -439,6 +448,11 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     const parsed = parseArtifactSource(text)
     if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 })
     const id = request.nextUrl.searchParams.get('id') ?? parsed.meta.id ?? undefined
+    if (id && parsed.meta.state) {
+      const existing = await store.get(id)
+      const changed = shapeChanges(existing?.state, parsed.meta.state)
+      if (changed.length) return NextResponse.json({ error: changed.join('; ') }, { status: 400 })
+    }
     const result = await store.save({ id, meta: parsed.meta, markdown: parsed.body })
     if ('notFound' in result) return NextResponse.json({ error: `no artifact with id ${id}` }, { status: 404 })
     revalidatePath(pagePath(result.id))
@@ -492,5 +506,5 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     return NextResponse.json({ deleted: true })
   }
 
-  return { Page, generateMetadata, POST, GET, DELETE, PUT_ASSET, SHARE_IMAGE, ENTER, LEAVE, TRACK, ACK, ACCESS, READS, dynamic: 'force-dynamic' as const, maxDuration: 30 }
+  return { Page, generateMetadata, POST, GET, DELETE, PUT_ASSET, SHARE_IMAGE, ENTER, LEAVE, TRACK, ACK, ACCESS, READS, ...stateRoutes, dynamic: 'force-dynamic' as const, maxDuration: 30 }
 }
