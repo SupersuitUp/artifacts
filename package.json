@@ -1,6 +1,6 @@
 {
   "name": "@supersuit/artifacts",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Publish markdown as branded, read-aloud pages from a Next.js app: the artifacts store, the route factory, the read-along reader, brand packs, password and confidential pages, and share cards.",
   "license": "MIT",
   "type": "module",
@@ -10,16 +10,41 @@
   },
   "homepage": "https://github.com/SupersuitUp/artifacts#readme",
   "bugs": "https://github.com/SupersuitUp/artifacts/issues",
-  "keywords": ["nextjs", "markdown", "publishing", "firestore", "read-aloud", "og-image"],
+  "keywords": [
+    "nextjs",
+    "markdown",
+    "publishing",
+    "firestore",
+    "read-aloud",
+    "og-image"
+  ],
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
   "exports": {
-    ".": { "types": "./lib/index.d.ts", "default": "./lib/index.js" },
-    "./artifacts": { "types": "./lib/artifacts/index.d.ts", "default": "./lib/artifacts/index.js" },
-    "./routes": { "types": "./lib/routes/artifacts.d.ts", "default": "./lib/routes/artifacts.js" },
-    "./brand": { "types": "./lib/brand/index.d.ts", "default": "./lib/brand/index.js" },
-    "./reader": { "types": "./lib/reader/artifact-reader.d.ts", "default": "./lib/reader/artifact-reader.js" },
-    "./gate": { "types": "./lib/gate.d.ts", "default": "./lib/gate.js" },
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./artifacts": {
+      "types": "./lib/artifacts/index.d.ts",
+      "default": "./lib/artifacts/index.js"
+    },
+    "./routes": {
+      "types": "./lib/routes/artifacts.d.ts",
+      "default": "./lib/routes/artifacts.js"
+    },
+    "./brand": {
+      "types": "./lib/brand/index.d.ts",
+      "default": "./lib/brand/index.js"
+    },
+    "./reader": {
+      "types": "./lib/reader/artifact-reader.d.ts",
+      "default": "./lib/reader/artifact-reader.js"
+    },
+    "./gate": {
+      "types": "./lib/gate.d.ts",
+      "default": "./lib/gate.js"
+    },
     "./fonts/*": "./fonts/*",
     "./package.json": "./package.json"
   },
@@ -46,7 +71,9 @@
     "react-dom": ">=19"
   },
   "peerDependenciesMeta": {
-    "@google-cloud/storage": { "optional": true }
+    "@google-cloud/storage": {
+      "optional": true
+    }
   },
   "dependencies": {
     "gray-matter": "^4.0.3",
@@ -70,5 +97,7 @@
     "typescript": "~5.9.0",
     "vitest": "^4.0.18"
   },
-  "engines": { "node": ">=20" }
+  "engines": {
+    "node": ">=20"
+  }
 }
