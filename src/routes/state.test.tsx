@@ -406,3 +406,114 @@ describe('publish refuses a slot shape change', () => {
     expect(store.save).not.toHaveBeenCalled()
   })
 })
+
+describe('final review fixes', () => {
+  const listedCookie = `${GRANT_COOKIE}=${mintGrant(SECRET, listed)}`
+
+  it('1. a gated page refuses a listed reader who has not accepted the agreement, on GET and POST', async () => {
+    const readers = fakeReaders()
+    readers.acknowledged = vi.fn(async () => false)
+    const { routes } = buildRoutes({ readers })
+    const get = await routes.STATE_GET(stateGet('ghj23456', listedCookie), params('ghj23456'))
+    expect(get.status).toBe(403)
+    expect(await get.json()).toEqual({ error: 'accept the agreement first' })
+    const post = await routes.STATE_POST(statePost('ghj23456', { slot: 'vote', op: 'set', value: 1 }, listedCookie), params('ghj23456'))
+    expect(post.status).toBe(403)
+    expect(await post.json()).toEqual({ error: 'accept the agreement first' })
+    expect(readers.acknowledged).toHaveBeenCalledWith('ghj23456', listed.email)
+    const { routes: acked } = buildRoutes()
+    expect((await acked.STATE_GET(stateGet('ghj23456', listedCookie), params('ghj23456'))).status).toBe(200)
+    expect((await acked.STATE_POST(statePost('ghj23456', { slot: 'vote', op: 'set', value: 1 }, listedCookie), params('ghj23456'))).status).toBe(200)
+  })
+
+  it('3. the publisher JSON and CSV carry the reader key, so DELETE ?reader= is usable', async () => {
+    const { routes } = buildRoutes()
+    const cookie = `${GRANT_COOKIE}=${mintGrant(SECRET, member)}`
+    await routes.STATE_POST(statePost('abc23456', { slot: 'notes', op: 'append', value: 'hello' }, cookie), params('abc23456'))
+    const authed = (path: string) => routes.RESPONSES(new NextRequest(`https://artifacts.example.com/api/artifacts/abc23456/responses${path}`, {
+      headers: { authorization: 'Bearer k' },
+    }), params('abc23456'))
+    expect((await (await authed('')).json()).responses[0].reader).toBe(`u:${member.uid}`)
+    const lines = (await (await authed('?format=csv')).text()).split('\n')
+    expect(lines[0]).toBe('slot,id,at,email,name,anonymous,reader,value')
+    expect(lines[1]).toContain(`,false,u:${member.uid},`)
+  })
+
+  it('4. a slot at its page-wide cap refuses a new answer but still lets a reader replace their own', async () => {
+    const memory = createMemoryStateStore()
+    const full: StateStore = { ...memory, countSlot: async () => 2000 }
+    const { routes } = buildRoutes({ state: full })
+    const memberCookie = `${GRANT_COOKIE}=${mintGrant(SECRET, member)}`
+    // The member already has a vote from before the slot filled up.
+    await memory.set({ artifactId: 'abc23456', slot: 'vote', writer: { key: `u:${member.uid}`, uid: member.uid, name: member.name, anonymous: false }, value: 'old' })
+    const replace = await routes.STATE_POST(statePost('abc23456', { slot: 'vote', op: 'set', value: 'new' }, memberCookie), params('abc23456'))
+    expect(replace.status).toBe(200)
+    expect((await replace.json()).slots.vote.mine).toBe('new')
+    const refused = { error: 'this page is not taking more answers here' }
+    const newOne = await routes.STATE_POST(statePost('abc23456', { slot: 'vote', op: 'set', value: 'x' }, listedCookie), params('abc23456'))
+    expect(newOne.status).toBe(409)
+    expect(await newOne.json()).toEqual(refused)
+    const append = await routes.STATE_POST(statePost('abc23456', { slot: 'notes', op: 'append', value: 'x' }, memberCookie), params('abc23456'))
+    expect(append.status).toBe(409)
+    expect(await append.json()).toEqual(refused)
+  })
+
+  it('7. a POST from a foreign Origin → 403; the site\'s own origin passes', async () => {
+    const { routes } = buildRoutes()
+    const foreign = await routes.STATE_POST(statePost('abc23456', { slot: 'vote', op: 'set', value: 1 }, undefined, { origin: 'https://evil.example.com' }), params('abc23456'))
+    expect(foreign.status).toBe(403)
+    expect(await foreign.json()).toEqual({ error: 'wrong origin' })
+    const same = await routes.STATE_POST(statePost('abc23456', { slot: 'vote', op: 'set', value: 1 }, undefined, { origin: 'https://artifacts.example.com' }), params('abc23456'))
+    expect(same.status).toBe(200)
+  })
+
+  it('9. an anonymous remove with no cookie mints nothing and counts nothing; with a cookie it removes without counting', async () => {
+    const memory = createMemoryStateStore()
+    const counted = vi.fn(memory.countAnonWrite)
+    const { routes, state } = buildRoutes({ state: { ...memory, countAnonWrite: counted } })
+    const bare = await routes.STATE_POST(statePost('abc23456', { slot: 'notes', op: 'remove' }), params('abc23456'))
+    expect(bare.status).toBe(200)
+    expect(bare.headers.get('set-cookie')).toBeNull()
+    expect((await bare.json()).slots.notes.mine).toEqual([])
+    expect(counted).not.toHaveBeenCalled()
+    const first = await routes.STATE_POST(statePost('abc23456', { slot: 'notes', op: 'append', value: 'n' }), params('abc23456'))
+    const anonId = (first.headers.get('set-cookie') ?? '').split('=')[1].split(';')[0]
+    expect(counted).toHaveBeenCalledTimes(1)
+    const removed = await routes.STATE_POST(statePost('abc23456', { slot: 'notes', op: 'remove' }, `${ANON_COOKIE}=${anonId}`), params('abc23456'))
+    expect(removed.status).toBe(200)
+    expect(counted).toHaveBeenCalledTimes(1)
+    expect((await state!.entries('abc23456')).filter((e) => e.slot === 'notes')).toHaveLength(0)
+  })
+
+  it('10. publishing state: to a host with no state store succeeds with a warning', async () => {
+    const store = fakeStore()
+    const { routes } = buildRoutes({ store, state: null })
+    const text = ['---', 'title: Vote', 'summary: S', 'state:', '  slots:', '    vote:', '      shape: one', '---', '# vote'].join('\n')
+    const res = await routes.POST(new NextRequest('https://artifacts.example.com/api/artifacts?id=abc23456', {
+      method: 'POST', body: text, headers: { authorization: 'Bearer k', 'content-type': 'text/markdown' },
+    }))
+    expect(res.status).toBe(200)
+    expect((await res.json()).warning).toBe('this host keeps no answers; state: is stored but inert')
+    const { routes: withState } = buildRoutes({ store: fakeStore() })
+    const plain = await withState.POST(new NextRequest('https://artifacts.example.com/api/artifacts?id=abc23456', {
+      method: 'POST', body: text, headers: { authorization: 'Bearer k', 'content-type': 'text/markdown' },
+    }))
+    expect((await plain.json()).warning).toBeUndefined()
+  })
+})
+
+describe('rateKey', () => {
+  it('5. is an HMAC keyed by the reader secret when set, else by the site URL; stable and 16 hex', async () => {
+    const { rateKey } = await import('./state-routes.js')
+    const site = 'https://artifacts.example.com'
+    const plain = rateKey('1.2.3.4', site)
+    expect(plain).toMatch(/^[0-9a-f]{16}$/)
+    expect(rateKey('1.2.3.4', site)).toBe(plain)
+    const keyed = rateKey('1.2.3.4', site, 'sekrit')
+    expect(keyed).toMatch(/^[0-9a-f]{16}$/)
+    expect(keyed).not.toBe(plain)
+    expect(rateKey('1.2.3.4', site, 'other')).not.toBe(keyed)
+    expect(rateKey('1.2.3.5', site, 'sekrit')).not.toBe(keyed)
+    expect(rateKey('1.2.3.4', 'https://other.example.com', 'sekrit')).not.toBe(keyed)
+  })
+})

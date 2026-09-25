@@ -8,13 +8,13 @@
 // Who is writing: the grant a gated page already uses, or on a page with `writers: anyone`, an
 // anonymous id in an HttpOnly cookie. When both are present the anonymous answers move to the
 // signed-in reader, once, and the cookie is cleared.
-import { createHash, randomBytes } from 'node:crypto'
+import { createHmac, randomBytes } from 'node:crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { isPublishAuthed } from '../artifacts/auth.js'
 import { ARTIFACT_ID_RE } from './ids.js'
 import { GRANT_COOKIE, decide, firstName, signInUrl, verifyGrant, type Reader } from '../artifacts/reader.js'
 import { isUnlocked, unlockCookieName } from '../artifacts/unlock.js'
-import { ANON_WRITES_PER_MINUTE, checkValue, effectiveWriters } from '../artifacts/state.js'
+import { ANON_WRITES_PER_MINUTE, MAX_ENTRIES_PER_SLOT, checkValue, effectiveWriters } from '../artifacts/state.js'
 import { readerKeyFor, type StateStore, type Writer } from '../artifacts/state-store.js'
 import { responsesCsv, responsesOf, stateView } from '../artifacts/state-view.js'
 import type { ArtifactRecord, ArtifactStore } from '../artifacts/store.js'
@@ -23,6 +23,14 @@ import type { ReadersStore } from '../artifacts/readers-store.js'
 export const ANON_COOKIE = 'artifact_anon'
 const ANON_ID = /^[A-Za-z0-9]{24}$/
 const MAX_BODY = 16 * 1024
+
+/** The id an anonymous writer's rate counter is stored under. An HMAC over the site and the IP,
+ *  keyed by the reader secret when the host has one (so the stored value cannot be reversed by
+ *  hashing the IPv4 space), else by the site URL. The site is in the message either way, so two
+ *  hosts sharing a secret still count one visitor under unrelated ids. */
+export function rateKey(ip: string, siteUrl: string, secret?: string): string {
+  return createHmac('sha256', secret || siteUrl).update(`${siteUrl}|${ip}`).digest('hex').slice(0, 16)
+}
 
 export type StateRoutesContext = {
   store: ArtifactStore
@@ -45,8 +53,8 @@ export function createStateRoutes(ctx: StateRoutesContext) {
   const json = (body: unknown, status = 200) => NextResponse.json(body, { status, headers: { 'cache-control': 'no-store' } })
   const newAnonId = () => { let s = ''; while (s.length < 24) s += randomBytes(24).toString('base64').replace(/[^A-Za-z0-9]/g, ''); return s.slice(0, 24) }
   const defaultClientIp = (req: NextRequest) => (req.headers.get('x-forwarded-for') ?? '').split(',')[0].trim()
-  const ipHash = (req: NextRequest) =>
-    createHash('sha256').update(`${ctx.siteUrl}|${(ctx.clientIp ?? defaultClientIp)(req)}`).digest('hex').slice(0, 16)
+  const ipHash = (req: NextRequest) => rateKey((ctx.clientIp ?? defaultClientIp)(req), ctx.siteUrl, ctx.readerSecret())
+  const siteOrigin = new URL(ctx.siteUrl).origin
 
   /** Resolve the page and who is asking, or the refusal. Shared by GET and POST. */
   async function open(req: NextRequest, id: string) {
@@ -62,6 +70,8 @@ export function createStateRoutes(ctx: StateRoutesContext) {
       if (!ctx.readers) return { error: json({ error: 'this page is closed' }, 403) }
       if (!reader) return { error: json({ error: 'sign in to answer', signIn }, 401) }
       if (!decide(a.access, reader, await ctx.readers.allowList(id)).open) return { error: json({ error: 'this page is not open to you' }, 403) }
+      // The page shows its body only after the agreement, so its answers wait for it too.
+      if (!(await ctx.readers.acknowledged(id, reader.email))) return { error: json({ error: 'accept the agreement first' }, 403) }
     }
     const rawAnon = req.cookies.get(ANON_COOKIE)?.value
     const anonId = rawAnon && ANON_ID.test(rawAnon) ? rawAnon : null
@@ -79,6 +89,11 @@ export function createStateRoutes(ctx: StateRoutesContext) {
     }
   }
 
+  // A GET that writes, on purpose: when a signed-in reader still carries an anonymous cookie, the
+  // answers move here, because this is the first request that sees both. It is safe as a GET:
+  // moveReader is idempotent (a second run finds nothing under the cleared key), and the grant
+  // cookie is SameSite=Lax, so a cross-site page can trigger it only by top-level navigation,
+  // which moves the reader's own answers onto the reader's own account and nothing else.
   async function STATE_GET(req: NextRequest, { params }: Params) {
     const { id } = await params
     const o = await open(req, id)
@@ -97,6 +112,10 @@ export function createStateRoutes(ctx: StateRoutesContext) {
 
   async function STATE_POST(req: NextRequest, { params }: Params) {
     const { id } = await params
+    // A cross-site form or fetch carries the reader's cookies (anonymous or Lax grant on a
+    // top-level POST); a browser always names its Origin on a POST, so a foreign one is refused.
+    const origin = req.headers.get('origin')
+    if (origin !== null && origin !== siteOrigin) return json({ error: 'wrong origin' }, 403)
     // Refuse on the declared length before reading a byte: a client naming an oversize body
     // does not get the server to buffer it first.
     const declaredLength = Number(req.headers.get('content-length') ?? '')
@@ -131,6 +150,14 @@ export function createStateRoutes(ctx: StateRoutesContext) {
     if (reader) writer = writerFor(reader)
     else {
       if (effectiveWriters(a.state!, a.access) !== 'anyone') return json({ error: 'sign in to answer', signIn }, 401)
+      // A remove adds nothing, so it is never counted and never mints a cookie: with no cookie
+      // there is nothing of theirs to remove, and the answer is simply the page as it stands.
+      if (op === 'remove') {
+        if (!anonId) return json(await viewBody(a, null, null))
+        const key = readerKeyFor.anonymous(anonId)
+        await ctx.state!.remove({ artifactId: id, slot, readerKey: key, entryId: typeof b.entry === 'string' ? b.entry : undefined })
+        return json(await viewBody(a, null, key))
+      }
       const n = await ctx.state!.countAnonWrite(id, ipHash(req), Math.floor(Date.now() / 60000))
       if (n > ANON_WRITES_PER_MINUTE) return json({ error: 'too many answers from here; try again in a minute' }, 429)
       if (!anonId) { anonId = newAnonId(); setCookie = anonCookie(anonId, 31536000) }
@@ -141,6 +168,12 @@ export function createStateRoutes(ctx: StateRoutesContext) {
     } else {
       const bad = checkValue(b.value)
       if (bad) return json({ error: bad }, 400)
+      // The page-wide cap per slot. Counted before the write and not atomically with it, so a
+      // burst can overshoot by the writes in flight; it bounds the slot, it is not a quota.
+      if ((await ctx.state!.countSlot(id, slot)) >= MAX_ENTRIES_PER_SLOT) {
+        const replacing = op === 'set' && (await ctx.state!.entries(id)).some((e) => e.slot === slot && e.readerKey === writer.key)
+        if (!replacing) return json({ error: 'this page is not taking more answers here' }, 409)
+      }
       const r = op === 'set'
         ? await ctx.state!.set({ artifactId: id, slot, writer, value: b.value })
         : await ctx.state!.append({ artifactId: id, slot, writer, value: b.value })

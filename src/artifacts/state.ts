@@ -14,6 +14,12 @@ export const SLOT_NAME = /^[a-z][a-z0-9-]{0,39}$/
 export const MAX_VALUE_BYTES = 8 * 1024
 export const MAX_MANY_PER_READER = 200
 export const ANON_WRITES_PER_MINUTE = 30
+/** Every reader's answers together, per page per slot. A new answer past it is refused; a reader
+ *  replacing their own `one` answer is not, because that adds nothing. */
+export const MAX_ENTRIES_PER_SLOT = 2000
+/** A `shared` slot shows readers only its newest entries, so one busy page cannot make every read
+ *  ship its whole history. Tallies still count everything. */
+export const SHARED_LIMIT = 100
 
 const VISIBILITIES: readonly Visibility[] = ['private', 'tally', 'shared']
 const isMap = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v)

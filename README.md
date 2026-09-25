@@ -204,16 +204,31 @@ Four routes, each requiring `state: createStateStore(db, '<base>')` in the confi
 - `POST /api/artifacts/<id>/state`: `{ "slot": "vote", "op": "set" | "append" | "remove", "value": ..., "entry": "<id for remove>" }`.
   `set` is for a `one` slot, `append` for a `many` slot; `remove` takes either.
 - `GET /api/artifacts/<id>/responses` (publish key): every answer with who wrote it, whatever the
-  page's `visibility` says. `?format=csv` returns the same rows as CSV, with formula-injection
-  escaping on any value starting `=`, `+`, `-` or `@`.
-- `DELETE /api/artifacts/<id>/responses?reader=<key>` (publish key): erase one reader's answers.
+  page's `visibility` says, including each row's `reader` key. `?format=csv` returns the same rows
+  as CSV (a `reader` column after `anonymous`), with formula-injection escaping on any value
+  starting `=`, `+`, `-` or `@`.
+- `DELETE /api/artifacts/<id>/responses?reader=<key>` (publish key): erase one reader's answers,
+  by the `reader` key from the read above.
 
-**Limits**: a value is capped at 8 KB, a `many` slot holds at most 200 entries per reader, and an
-anonymous writer is capped at 30 writes per minute (counted by IP, hashed with the site URL so
-one host cannot correlate a visitor across another).
+**Limits**: a value is capped at 8 KB and a request body at 16 KB (Vercel caps bodies at 4.5 MB
+before this runs; on any other host, cap the body size at your proxy too). A `many` slot holds at
+most 200 entries per reader, and a slot holds at most 2,000 entries per page across every reader:
+past that a new answer is refused with 409, though a reader can still replace their own `one`
+answer. A `shared` slot shows readers only its newest 100 entries; tallies count everything. A
+`POST` whose `Origin` header names another site is refused with 403.
+
+**The anonymous rate limit**: 30 writes per minute per client address, counted in the
+`<base>StateRate` collection under an HMAC of the address (keyed by your reader secret when set).
+Each counter carries an `expireAt` a day ahead: set a Firestore TTL policy on `expireAt` for that
+collection, or the counters are kept forever. The address is the first hop of `x-forwarded-for`,
+so without one (plain `next start` with no proxy in front) every client shares one bucket: pass
+`clientIp` there. An IPv6 client can rotate addresses within its /64, so treat the limit as a
+brake, not a wall. A `remove` is never counted.
 
 **Who can write**: a page with `access:` only ever accepts its signed-in readers, whatever
-`writers:` says. `writers: anyone` only takes effect on a page with no `access:`: an anonymous
+`writers:` says, and only after they have accepted the page's agreement (403 until then). A page
+with a password takes answers only from a browser that has unlocked it; opening the page with
+`?key=` sets the unlock cookie for the page and for its state API. `writers: anyone` only takes effect on a page with no `access:`: an anonymous
 writer gets an opaque id in an HttpOnly `artifact_anon` cookie, good for a year. A `shared` slot
 shows a reader everyone else's answer, but an anonymous one only ever by that same opaque id,
 never a name or email; a publisher's `/responses` read and the CSV always show everything.
@@ -221,11 +236,13 @@ never a name or email; a publisher's `/responses` read and the CSV always show e
 **Signing in after writing anonymously**: the next `GET /api/artifacts/<id>/state` from a reader
 who is now signed in moves that cookie's answers onto their account, once, and clears the cookie.
 
-**Publishing over an existing shape refuses a change**: adding, removing or reshaping a slot
-(`one` to `many` or back) is refused both against the previous `state:` in front matter and
-against whatever shapes are already sitting in stored answers, so a republish can never silently
-orphan or misread history. Drop `state:` entirely to close the page to new answers; existing ones
-stay.
+**Republishing refuses only a shape change**: a slot going from `one` to `many` or back is
+refused, checked both against the previous `state:` in front matter and against the shapes already
+sitting in stored answers, so a republish can never misread history. Adding and removing slots is
+allowed and the answers are kept: a removed slot's answers stop showing to readers and still come
+back in `/responses`, and they reappear if the slot does. Drop `state:` entirely to close the page
+to new answers; existing ones stay. Publishing `state:` to a host with no state store succeeds,
+with a `warning` in the response saying the answers have nowhere to go.
 
 **Host wiring**:
 
@@ -255,11 +272,14 @@ export function GET(request: NextRequest, ctx: Ctx) { return artifacts.RESPONSES
 export function DELETE(request: NextRequest, ctx: Ctx) { return artifacts.RESPONSES(request, ctx) }
 ```
 
-Firestore needs one composite index, on the `<base>State` collection over
-`(artifactId, slot, readerKey)`, for the count an anonymous `append` checks against
-`MAX_MANY_PER_READER`. The cross-page move that runs on sign-in queries by `readerKey` alone and
-needs no index. You will not need to build the index by hand: Firestore's first failing query
-prints a console link that creates it pre-filled, and following that link once is the whole step.
+**Firestore indexes**: every `append` runs a count over `(artifactId, slot, readerKey)` on
+`<base>State` for `MAX_MANY_PER_READER`, and every new answer runs a count over
+`(artifactId, slot)` for the per-slot total. Firestore may serve both from its single-field
+indexes. If it asks for a composite index instead, the first failure surfaces as a 500 on a
+reader's write, with a create-index link in your host's logs; following it once is the whole step.
+The cross-page move that runs on sign-in queries by `readerKey` alone. Consider a single-field
+index exemption for the `json` field of `<base>State`: it holds whole answers as strings and is
+never queried, so indexing it only costs writes and storage.
 
 On a proxy other than Vercel's, pass `clientIp` to `createArtifactRoutes` (used for the anonymous
 rate limit): the default reads the first hop of `x-forwarded-for`, which Vercel overwrites with

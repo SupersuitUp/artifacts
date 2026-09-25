@@ -1,7 +1,7 @@
 // What each side is shown. A reader gets their own answers, plus tallies or shared entries where
 // the page allows, and NEVER an email. The publisher (publish key) gets everything.
 import { createHash } from 'node:crypto'
-import { slotVisibility, type Shape, type StateConfig, type Visibility } from './state.js'
+import { SHARED_LIMIT, slotVisibility, type Shape, type StateConfig, type Visibility } from './state.js'
 import type { StateEntry } from './state-store.js'
 
 export type Tally = { signedIn: Record<string, number>; anonymous: Record<string, number> }
@@ -46,7 +46,7 @@ export function stateView(state: StateConfig, entries: StateEntry[], readerKey: 
     }
     if (visibility === 'tally') view.tally = tallyOf(here)
     if (visibility === 'shared')
-      view.shared = here.map((e) => ({
+      view.shared = here.slice(-SHARED_LIMIT).map((e) => ({
         id: def.shape === 'one' ? opaqueOneId(e.id) : e.id,
         name: firstWord(e.writer.name), value: e.value, at: e.at, mine: e.readerKey === readerKey,
       }))
@@ -55,11 +55,12 @@ export function stateView(state: StateConfig, entries: StateEntry[], readerKey: 
   return out
 }
 
-export type Response = { slot: string; id: string; value: unknown; at: string; email: string | null; name: string | null; anonymous: boolean }
+/** `reader` is the key `DELETE /responses?reader=` takes. Publisher-only: it is a credential. */
+export type Response = { slot: string; id: string; value: unknown; at: string; email: string | null; name: string | null; anonymous: boolean; reader: string }
 
 export function responsesOf(entries: StateEntry[]): Response[] {
   return entries.slice().sort(byAt).map((e) => ({
-    slot: e.slot, id: e.id, value: e.value, at: e.at, email: e.writer.email ?? null, name: e.writer.name, anonymous: e.writer.anonymous,
+    slot: e.slot, id: e.id, value: e.value, at: e.at, email: e.writer.email ?? null, name: e.writer.name, anonymous: e.writer.anonymous, reader: e.readerKey,
   }))
 }
 
@@ -72,6 +73,6 @@ const cell = (v: string) => {
   return /[",\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe
 }
 export function responsesCsv(rows: Response[]): string {
-  const head = 'slot,id,at,email,name,anonymous,value'
-  return [head, ...rows.map((r) => [r.slot, r.id, r.at, r.email ?? '', r.name ?? '', String(r.anonymous), JSON.stringify(r.value)].map(cell).join(','))].join('\n')
+  const head = 'slot,id,at,email,name,anonymous,reader,value'
+  return [head, ...rows.map((r) => [r.slot, r.id, r.at, r.email ?? '', r.name ?? '', String(r.anonymous), r.reader, JSON.stringify(r.value)].map(cell).join(','))].join('\n')
 }

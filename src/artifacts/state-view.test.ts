@@ -68,18 +68,18 @@ describe('stateView', () => {
 describe('responses', () => {
   it('lists everything with who, and writes CSV with JSON values', () => {
     const rows = responsesOf(entries.slice(0, 2))
-    expect(rows[0]).toEqual({ slot: 'vote', id: 'v1', value: 'a', at: '2026-09-24T10:00:00Z', email: 'sam@example.com', name: 'Sam Rivera', anonymous: false })
-    expect(rows[1]).toMatchObject({ email: null, anonymous: true })
+    expect(rows[0]).toEqual({ slot: 'vote', id: 'v1', value: 'a', at: '2026-09-24T10:00:00Z', email: 'sam@example.com', name: 'Sam Rivera', anonymous: false, reader: 'u:1' })
+    expect(rows[1]).toMatchObject({ email: null, anonymous: true, reader: 'a:zz' })
     expect(responsesCsv(rows).split('\n')).toEqual([
-      'slot,id,at,email,name,anonymous,value',
-      'vote,v1,2026-09-24T10:00:00Z,sam@example.com,Sam Rivera,false,"""a"""',
-      'vote,v2,2026-09-24T10:00:00Z,,,true,"""a"""',
+      'slot,id,at,email,name,anonymous,reader,value',
+      'vote,v1,2026-09-24T10:00:00Z,sam@example.com,Sam Rivera,false,u:1,"""a"""',
+      'vote,v2,2026-09-24T10:00:00Z,,,true,a:zz,"""a"""',
     ])
   })
   it('escapes CSV formula injection in any cell', () => {
     const rows: Response[] = [
-      { slot: 'notes', id: 'n1', value: -5, at: '2026-09-24T10:00:00Z', email: null, name: '=cmd|(calc)!A0', anonymous: true },
-      { slot: 'notes', id: 'n2', value: '+1', at: '2026-09-24T10:00:00Z', email: '@evil.example', name: null, anonymous: false },
+      { slot: 'notes', id: 'n1', value: -5, at: '2026-09-24T10:00:00Z', email: null, name: '=cmd|(calc)!A0', anonymous: true, reader: 'a:x' },
+      { slot: 'notes', id: 'n2', value: '+1', at: '2026-09-24T10:00:00Z', email: '@evil.example', name: null, anonymous: false, reader: 'u:x' },
     ]
     const lines = responsesCsv(rows).split('\n')
     // name starting with "=": escaped
@@ -88,5 +88,26 @@ describe('responses', () => {
     expect(lines[1].endsWith("'-5")).toBe(true)
     // email starting with "@": escaped
     expect(lines[2]).toContain(",'@evil.example,")
+  })
+})
+
+describe('SHARED_LIMIT', () => {
+  it('a shared slot shows only the newest SHARED_LIMIT entries; the tally still counts all', async () => {
+    const { SHARED_LIMIT } = await import('./state.js')
+    const cfg = { writers: 'anyone' as const, visibility: 'private' as const, slots: {
+      board: { shape: 'many' as const, visibility: 'shared' as const },
+      poll: { shape: 'one' as const, visibility: 'tally' as const },
+    } }
+    const n = SHARED_LIMIT + 5
+    const at = (i: number) => new Date(Date.UTC(2026, 8, 24, 0, 0, i)).toISOString()
+    const list = [
+      ...Array.from({ length: n }, (_, i) => e({ id: `b${i}`, slot: 'board', shape: 'many', value: i, at: at(i) })),
+      ...Array.from({ length: n }, (_, i) => e({ id: `p${i}`, slot: 'poll', readerKey: `u:${i}`, value: 'yes', at: at(i) })),
+    ]
+    const v = stateView(cfg, list, null)
+    expect(v.board.shared).toHaveLength(SHARED_LIMIT)
+    expect(v.board.shared![0].value).toBe(5)
+    expect(v.board.shared![SHARED_LIMIT - 1].value).toBe(n - 1)
+    expect(v.poll.tally!.signedIn.yes).toBe(n)
   })
 })

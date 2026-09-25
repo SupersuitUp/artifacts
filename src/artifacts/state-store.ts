@@ -2,7 +2,8 @@
 //
 //   <base>State/<page>__<slot>__<readerKey>   shape one, one document per reader per slot
 //   <base>State/<auto>                        shape many, one document per entry
-//   <base>StateRate/<page>__<ipHash>__<min>   anonymous write counter, one per minute
+//   <base>StateRate/<page>__<ipHash>__<min>   anonymous write counter, one per minute, with an
+//                                             `expireAt` a day ahead for a Firestore TTL policy
 //
 // One document per answer keeps every page far from Firestore's 1 MiB document cap, which the
 // lightpaper hit on 2026-09-24 when history lived on the page document. Values are stored as a
@@ -11,7 +12,7 @@
 // The Firestore implementation has no emulator test here; it is proven on the live host after
 // each release that changes it. The memory implementation carries the contract tests.
 import { randomUUID } from 'node:crypto'
-import { FieldValue, type Firestore } from 'firebase-admin/firestore'
+import { FieldValue, Timestamp, type Firestore } from 'firebase-admin/firestore'
 import { MAX_MANY_PER_READER, type Shape } from './state.js'
 
 export type Writer = { key: string; uid?: string; email?: string; name: string | null; anonymous: boolean }
@@ -27,7 +28,11 @@ export interface StateStore {
    *  reader signed in from: an anonymous reader who answered several pages before signing in
    *  must not have the rest stranded under the cookie that is about to be cleared. */
   moveReader(fromKey: string, to: Writer): Promise<number>
+  /** Records one anonymous write and returns the count for that minute. The Firestore store
+   *  stamps each counter with `expireAt` a day ahead, for a TTL policy to sweep. */
   countAnonWrite(artifactId: string, ipHash: string, minute: number): Promise<number>
+  /** Every reader's entries in one slot on one page, for MAX_ENTRIES_PER_SLOT. */
+  countSlot(artifactId: string, slot: string): Promise<number>
 }
 
 export const readerKeyFor = {
@@ -101,8 +106,11 @@ export function createStateStore(db: Firestore, base: string): StateStore {
     },
     async countAnonWrite(artifactId, ipHash, minute) {
       const ref = rate().doc(`${artifactId}__${ipHash}__${minute}`)
-      await ref.set({ count: FieldValue.increment(1), at: new Date().toISOString() }, { merge: true })
+      await ref.set({ count: FieldValue.increment(1), at: new Date().toISOString(), expireAt: Timestamp.fromMillis(Date.now() + 86_400_000) }, { merge: true })
       return ((await ref.get()).data()?.count as number) ?? 1
+    },
+    async countSlot(artifactId, slot) {
+      return (await col().where('artifactId', '==', artifactId).where('slot', '==', slot).count().get()).data().count
     },
   }
   return store
@@ -158,5 +166,6 @@ export function createMemoryStateStore(): StateStore {
       counts.set(k, n)
       return n
     },
+    countSlot: async (artifactId, slot) => of(artifactId).filter((e) => e.slot === slot).length,
   }
 }

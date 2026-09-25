@@ -134,8 +134,11 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     const open = isUnlocked({ id, password: a.password, key, cookie })
     // Opened by the key in the URL: remember it in a cookie holding the hash, never the
     // password, scoped to this page, so a refresh or a shared device does not ask again.
+    // The same cookie again on the page's state API: a cookie scoped to the page path is never
+    // sent to /api/artifacts/<id>/state, so without it a password page could not take answers.
+    const unlockLine = (path: string) => `${unlockCookieName(id)}=${keyHash(id, a.password!)}; Path=${path}; Max-Age=31536000; SameSite=Lax; Secure`
     const remember = open && a.password && key !== undefined && cookie !== keyHash(id, a.password)
-      ? `document.cookie=${JSON.stringify(`${unlockCookieName(id)}=${keyHash(id, a.password)}; Path=${pagePath(id)}; Max-Age=31536000; SameSite=Lax; Secure`)}`
+      ? [pagePath(id), `/api/artifacts/${id}`].map((p) => `document.cookie=${JSON.stringify(unlockLine(p))}`).join(';')
       : null
     if (!open) {
       return (
@@ -476,7 +479,10 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     if ('notFound' in result) return NextResponse.json({ error: `no artifact with id ${id}` }, { status: 404 })
     revalidatePath(pagePath(result.id))
     return NextResponse.json(
-      { id: result.id, url: pageUrl(result.id), version: result.version },
+      {
+        id: result.id, url: pageUrl(result.id), version: result.version,
+        ...(parsed.meta.state && !config.state ? { warning: 'this host keeps no answers; state: is stored but inert' } : {}),
+      },
       { status: result.created ? 201 : 200 },
     )
   }

@@ -141,6 +141,13 @@ describe('createArtifactRoutes', () => {
       expect(out).toContain('artifact_key_abc23456=')
       expect(out).not.toContain('day ones')
     })
+    it('sets the same unlock cookie for the page AND for its state API, so a browser can answer', async () => {
+      const { keyHash } = await import('../artifacts/unlock.js')
+      const out = renderToStaticMarkup(await withCookie().Page(open('day ones')))
+      const v = `artifact_key_abc23456=${keyHash('abc23456', 'day ones')}`
+      expect(out).toContain(`${v}; Path=/abc23456; Max-Age=31536000; SameSite=Lax; Secure`)
+      expect(out).toContain(`${v}; Path=/api/artifacts/abc23456; Max-Age=31536000; SameSite=Lax; Secure`)
+    })
     it('opens on the cookie alone', async () => {
       const { keyHash } = await import('../artifacts/unlock.js')
       const out = renderToStaticMarkup(await withCookie(keyHash('abc23456', 'day ones')).Page(open()))

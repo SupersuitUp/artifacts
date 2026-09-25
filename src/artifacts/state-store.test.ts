@@ -59,3 +59,15 @@ describe('the state store contract', () => {
     expect(await s.entries('q')).toEqual([])
   })
 })
+
+describe('countSlot', () => {
+  it('counts every reader\'s entries in one slot on one page', async () => {
+    await s.set({ artifactId: 'p', slot: 'vote', writer: sam, value: 'a' })
+    await s.set({ artifactId: 'p', slot: 'vote', writer: anon, value: 'b' })
+    await s.append({ artifactId: 'p', slot: 'notes', writer: sam, value: 1 })
+    await s.set({ artifactId: 'q', slot: 'vote', writer: sam, value: 'a' })
+    expect(await s.countSlot('p', 'vote')).toBe(2)
+    expect(await s.countSlot('p', 'notes')).toBe(1)
+    expect(await s.countSlot('p', 'none')).toBe(0)
+  })
+})
