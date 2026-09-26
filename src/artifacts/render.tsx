@@ -7,6 +7,8 @@
 import type { ReactNode } from 'react'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { hasNotesWidget, headingsOf, type Heading } from './widgets.js'
+import { HeadingNotes, NoteToggle, NotesEarlier, NotesProvider } from '../widgets/notes.js'
 
 const GOLD = '#C2A15C'
 
@@ -111,6 +113,9 @@ const components: Components = {
   code: ({ className, children }) => {
     const lang = /language-(\w+)/.exec(className ?? '')?.[1]
     if (lang === 'links') return <LinkCards source={textOf(children)} />
+    // A notes fence is the widget's place on the page. Without notes enabled (the host keeps no
+    // answers) it draws nothing: its settings are not prose and never shown as code.
+    if (lang === 'notes') return null
     if (!className) {
       return <code className="rounded bg-white/10 px-1.5 py-0.5 text-[0.9em] text-zinc-100">{children}</code>
     }
@@ -120,7 +125,7 @@ const components: Components = {
     // A links fence renders its own block; do not wrap it in <pre>.
     const inner = Array.isArray(children) ? children[0] : children
     const cls = (inner as { props?: { className?: string } })?.props?.className ?? ''
-    if (/language-links/.test(cls)) return <>{children}</>
+    if (/language-(links|notes)/.test(cls)) return <>{children}</>
     return (
       <pre
         data-artifact-code
@@ -157,12 +162,60 @@ const components: Components = {
   },
 }
 
-export function ArtifactMarkdown({ markdown }: { markdown: string }) {
+const HEADING_CLASS: Record<number, string> = {
+  1: 'mt-10 mb-4 font-serif text-3xl text-zinc-50',
+  2: 'mt-10 mb-3 font-serif text-2xl text-zinc-50',
+  3: 'mt-8 mb-2 text-lg font-semibold text-zinc-100',
+  4: 'mt-6 mb-2 font-semibold text-zinc-100',
+  5: 'mt-6 mb-2 font-semibold text-zinc-100',
+  6: 'mt-6 mb-2 font-semibold text-zinc-100',
+}
+
+/** Components for a page with a notes block: every heading gets its slug as an id, a note
+ *  control, and its notes after it. The heading is found by its source line, so the slug is the
+ *  one headingsOf derived, the same one a note stores. */
+function notesComponents(headings: Heading[]): Components {
+  const byLine = new Map(headings.map((h) => [h.line, h]))
+  const heading = (depth: 1 | 2 | 3 | 4 | 5 | 6): Components['h1'] =>
+    function NotedHeading({ node, children }) {
+      const Tag = `h${depth}` as const
+      const h = byLine.get(node?.position?.start.line ?? -1)
+      if (!h) return <Tag className={HEADING_CLASS[depth]}>{children}</Tag>
+      return (
+        <>
+          <Tag id={h.slug} className={HEADING_CLASS[depth]}>
+            {children}
+            <NoteToggle slug={h.slug} />
+          </Tag>
+          <HeadingNotes slug={h.slug} text={h.text} />
+        </>
+      )
+    }
+  const Code = components.code!
+  return {
+    ...components,
+    h1: heading(1), h2: heading(2), h3: heading(3), h4: heading(4), h5: heading(5), h6: heading(6),
+    code: (props) => (/language-notes/.test(props.className ?? '') ? <NotesEarlier /> : <Code {...props} />),
+  }
+}
+
+/** `notes` turns on the notes widget, for a host that keeps answers; it draws only when the
+ *  page carries a ```notes block. */
+export function ArtifactMarkdown({ markdown, notes }: { markdown: string; notes?: { artifactId: string; accent?: string } }) {
+  const on = !!notes && hasNotesWidget(markdown)
+  const headings = on ? headingsOf(markdown) : []
+  const body = (
+    <ReactMarkdown remarkPlugins={[remarkGfm]} components={on ? notesComponents(headings) : components}>
+      {markdown}
+    </ReactMarkdown>
+  )
   return (
     <div className="text-[17px] text-zinc-200">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
-        {markdown}
-      </ReactMarkdown>
+      {on ? (
+        <NotesProvider artifactId={notes!.artifactId} headings={headings.map(({ slug, text }) => ({ slug, text }))} accent={notes!.accent}>
+          {body}
+        </NotesProvider>
+      ) : body}
     </div>
   )
 }

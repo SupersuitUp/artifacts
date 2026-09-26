@@ -36,4 +36,8 @@ describe('narration text', () => {
     expect(normalizeWord('"Hello,"')).toBe('hello')
     expect(normalizeWord('fifty-nine.')).toBe('fiftynine')
   })
+  it('never speaks the notes widget: its fence is not prose', () => {
+    const t = narrationText({ title: 'T', summary: 'S', markdown: '## Sales\n\nWords.\n\n```notes\nvisibility: shared\n```\n\nAfter.' })
+    expect(t.split('\n')).toEqual(['T', 'S', 'Sales', 'Words.', 'After.'])
+  })
 })

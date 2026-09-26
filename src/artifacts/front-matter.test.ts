@@ -64,3 +64,30 @@ describe('state', () => {
     expect(r).toEqual({ ok: false, error: 'slot "x" needs shape one or many' })
   })
 })
+
+describe('widgets in the body', () => {
+  it('a notes block declares the notes slot, creating state: with its defaults', () => {
+    const r = parseArtifactSource('---\ntitle: T\nsummary: S\n---\n## Sales\n\n```notes\n```\n')
+    expect(r.ok && r.meta.state).toEqual({ writers: 'signed-in', visibility: 'private', slots: { notes: { shape: 'many' } } })
+  })
+  it('the first real page (access, shared, notes declared many) parses to the state it wrote', () => {
+    const src = '---\ntitle: T\nsummary: S\naccess: freedom\nstate:\n  writers: signed-in\n  visibility: shared\n  slots:\n    notes: { shape: many }\n---\n## Sales\n\n```notes\n```\n'
+    const r = parseArtifactSource(src)
+    expect(r.ok && r.meta.state).toEqual({ writers: 'signed-in', visibility: 'shared', slots: { notes: { shape: 'many' } } })
+  })
+  it('refuses with the line number in the FILE, counting the front matter', () => {
+    const src = '---\ntitle: T\nsummary: S\n---\n## A\n\n```notes\n```\n\n## B\n\n```notes\n```\n'
+    expect(parseArtifactSource(src)).toEqual({ ok: false, error: 'line 12: a page takes at most one notes block' })
+  })
+  it('refuses a notes block on a page whose state: declares notes as one', () => {
+    const src = '---\ntitle: T\nsummary: S\nstate:\n  slots:\n    notes: { shape: one }\n---\n\n```notes\n```\n'
+    expect(parseArtifactSource(src)).toEqual({ ok: false, error: 'line 9: the notes block writes to slot "notes" as shape many, and state: declares it shape one; rename that slot' })
+  })
+  it('refuses a poll block, which this version does not draw', () => {
+    expect(parseArtifactSource('---\ntitle: T\nsummary: S\n---\n```poll next-city\nquestion: x\n```\n')).toEqual({ ok: false, error: 'line 5: the poll widget is not available in this version of the artifacts package' })
+  })
+  it('a page with no widget keeps its state exactly as written, or none', () => {
+    const r = parseArtifactSource('---\ntitle: T\nsummary: S\n---\n# plain\n\n```bash\nls\n```\n')
+    expect(r.ok && r.meta.state).toBeUndefined()
+  })
+})

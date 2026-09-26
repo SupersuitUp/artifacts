@@ -71,3 +71,14 @@ describe('countSlot', () => {
     expect(await s.countSlot('p', 'none')).toBe(0)
   })
 })
+
+describe('hasOne', () => {
+  it('says whether this reader already holds a one answer in this slot, without loading the page', async () => {
+    const mem = createMemoryStateStore()
+    expect(await mem.hasOne!('p', 'vote', sam.key)).toBe(false)
+    await mem.set({ artifactId: 'p', slot: 'vote', writer: sam, value: 'a' })
+    expect(await mem.hasOne!('p', 'vote', sam.key)).toBe(true)
+    expect(await mem.hasOne!('p', 'other', sam.key)).toBe(false)
+    expect(await mem.hasOne!('q', 'vote', sam.key)).toBe(false)
+  })
+})

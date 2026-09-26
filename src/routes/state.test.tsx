@@ -517,3 +517,49 @@ describe('rateKey', () => {
     expect(rateKey('1.2.3.4', 'https://other.example.com', 'sekrit')).not.toBe(keyed)
   })
 })
+
+describe('0.3.0: the notes widget and the parked fixes', () => {
+  const noted: ArtifactRecord = {
+    id: 'nts23456', title: 'Work', summary: 'S', template: 'document', markdown: '## Sales\n\nWords.\n\n```notes\n```\n', access: 'freedom',
+    createdAt: t, updatedAt: t, versions: [], views: 0,
+    state: { writers: 'signed-in', visibility: 'shared', slots: { notes: { shape: 'many' } } },
+  }
+  const withNoted = () => buildRoutes({ store: fakeStore({ get: vi.fn(async (id: string) => (id === 'nts23456' ? noted : RECORDS[id] ?? null)) }) })
+  const memberCookie = `${GRANT_COOKIE}=${mintGrant(SECRET, member)}`
+
+  it('a signed-in reader appends { slug, heading, note } to notes, and every reader sees it with a first name', async () => {
+    const { routes } = withNoted()
+    const res = await routes.STATE_POST(statePost('nts23456', { slot: 'notes', op: 'append', value: { slug: 'sales', heading: 'Sales', note: 'Pipeline review' } }, memberCookie), params('nts23456'))
+    expect(res.status).toBe(200)
+    const other = `${GRANT_COOKIE}=${mintGrant(SECRET, listed)}`
+    const g = await (await routes.STATE_GET(stateGet('nts23456', other), params('nts23456'))).json()
+    expect(g.slots.notes.shared).toEqual([expect.objectContaining({ name: 'Jordan', value: { slug: 'sales', heading: 'Sales', note: 'Pipeline review' }, mine: false })])
+    expect(JSON.stringify(g)).not.toContain('jordan@example.com')
+  })
+
+  it('on a page with a notes block, a note that is not { slug, heading, note } is refused', async () => {
+    const { routes } = withNoted()
+    for (const [value, error] of [
+      ['hello', 'a note is { slug, heading, note }'],
+      [{ slug: 'sales', heading: 'Sales', note: '  ' }, 'a note needs some text'],
+      [{ slug: 'Sales Team', heading: 'Sales', note: 'x' }, 'a note needs the slug of the heading it is under'],
+    ] as const) {
+      const r = await routes.STATE_POST(statePost('nts23456', { slot: 'notes', op: 'append', value }, memberCookie), params('nts23456'))
+      expect(r.status).toBe(400)
+      expect(await r.json()).toEqual({ error })
+    }
+  })
+
+  it('the replace-at-cap check reads this reader\'s one answer, never every entry on the page', async () => {
+    const memory = createMemoryStateStore()
+    const entries = vi.fn(memory.entries)
+    const full: StateStore = { ...memory, entries, countSlot: async () => 2000 }
+    const { routes } = buildRoutes({ state: full })
+    await memory.set({ artifactId: 'abc23456', slot: 'vote', writer: { key: `u:${member.uid}`, uid: member.uid, name: member.name, anonymous: false }, value: 'old' })
+    entries.mockClear()
+    const replace = await routes.STATE_POST(statePost('abc23456', { slot: 'vote', op: 'set', value: 'new' }, memberCookie), params('abc23456'))
+    expect(replace.status).toBe(200)
+    // One read for the response view is expected; the cap check itself must not add one.
+    expect(entries).toHaveBeenCalledTimes(1)
+  })
+})

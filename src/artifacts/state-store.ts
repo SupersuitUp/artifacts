@@ -33,6 +33,9 @@ export interface StateStore {
   countAnonWrite(artifactId: string, ipHash: string, minute: number): Promise<number>
   /** Every reader's entries in one slot on one page, for MAX_ENTRIES_PER_SLOT. */
   countSlot(artifactId: string, slot: string): Promise<number>
+  /** Does this reader already hold a `one` answer in this slot? One document read. Optional so a
+   *  host's own store keeps working; without it the route falls back to loading the page. */
+  hasOne?(artifactId: string, slot: string, readerKey: string): Promise<boolean>
 }
 
 export const readerKeyFor = {
@@ -112,6 +115,7 @@ export function createStateStore(db: Firestore, base: string): StateStore {
     async countSlot(artifactId, slot) {
       return (await col().where('artifactId', '==', artifactId).where('slot', '==', slot).count().get()).data().count
     },
+    hasOne: async (artifactId, slot, readerKey) => (await col().doc(oneId(artifactId, slot, readerKey)).get()).exists,
   }
   return store
 }
@@ -167,5 +171,6 @@ export function createMemoryStateStore(): StateStore {
       return n
     },
     countSlot: async (artifactId, slot) => of(artifactId).filter((e) => e.slot === slot).length,
+    hasOne: async (artifactId, slot, readerKey) => docs.has(oneId(artifactId, slot, readerKey)),
   }
 }

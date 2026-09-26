@@ -148,6 +148,21 @@ describe('createArtifactRoutes', () => {
       expect(out).toContain(`${v}; Path=/abc23456; Max-Age=31536000; SameSite=Lax; Secure`)
       expect(out).toContain(`${v}; Path=/api/artifacts/abc23456; Max-Age=31536000; SameSite=Lax; Secure`)
     })
+    it('a page with state: sets the answer-API cookie whenever it opens, even on the page cookie alone', async () => {
+      const { keyHash } = await import('../artifacts/unlock.js')
+      const stateful: ArtifactRecord = { ...shut, state: { writers: 'anyone', visibility: 'private', slots: { vote: { shape: 'one' } } } }
+      const r = createArtifactRoutes({
+        store: fakeStore({ get: vi.fn(async () => stateful) }), brand: freedomDefault, siteUrl: 'https://example.com',
+        publishKey: () => 'k', readCookie: async () => keyHash('abc23456', 'day ones'),
+      })
+      const out = renderToStaticMarkup(await r.Page(open()))
+      const v = `artifact_key_abc23456=${keyHash('abc23456', 'day ones')}`
+      expect(out).toContain(`${v}; Path=/api/artifacts/abc23456;`)
+      expect(out).not.toContain(`${v}; Path=/abc23456;`)
+      // A page with no state: has no answer API to open.
+      const plain = renderToStaticMarkup(await withCookie(keyHash('abc23456', 'day ones')).Page(open()))
+      expect(plain).not.toContain('Path=/api/artifacts/abc23456')
+    })
     it('opens on the cookie alone', async () => {
       const { keyHash } = await import('../artifacts/unlock.js')
       const out = renderToStaticMarkup(await withCookie(keyHash('abc23456', 'day ones')).Page(open()))
@@ -184,5 +199,31 @@ describe('createArtifactRoutes', () => {
     const r = createArtifactRoutes({ store, brand: freedomDefault, siteUrl: 'https://example.com', publishKey: () => 'k', pagePrefix: '/a/' })
     const ok = await r.POST(post(GOOD, 'k'))
     expect((await ok.json()).url).toBe('https://example.com/a/abc23456')
+  })
+
+  describe('a page with a notes block', () => {
+    const noted: ArtifactRecord = { ...rec, markdown: '## Sales\n\nWords.\n\n```notes\n```\n', state: { writers: 'signed-in', visibility: 'shared', slots: { notes: { shape: 'many' } } } }
+    it('draws a note control beside each heading on a host that keeps answers', async () => {
+      const { createMemoryStateStore } = await import('../artifacts/state-store.js')
+      const r = createArtifactRoutes({ store: fakeStore({ get: vi.fn(async () => noted) }), state: createMemoryStateStore(), brand: freedomDefault, siteUrl: 'https://example.com', publishKey: () => 'k' })
+      const out = renderToStaticMarkup(await r.Page({ params: Promise.resolve({ id: 'abc23456' }) }))
+      expect(out).toContain('data-note-toggle="sales"')
+      expect(out).toContain('data-artifact-notes')
+    })
+    it('draws none on a host with no state store, and never shows the fence as code', async () => {
+      const r = createArtifactRoutes({ store: fakeStore({ get: vi.fn(async () => noted) }), brand: freedomDefault, siteUrl: 'https://example.com', publishKey: () => 'k' })
+      const out = renderToStaticMarkup(await r.Page({ params: Promise.resolve({ id: 'abc23456' }) }))
+      expect(out).not.toContain('data-note-toggle')
+      expect(out).not.toContain('<pre')
+    })
+    it('publishing a notes block stores the notes slot, and a second block is refused with its line', async () => {
+      const r = createArtifactRoutes({ store, brand: freedomDefault, siteUrl: 'https://example.com', publishKey: () => 'k' })
+      const ok = await r.POST(post('---\ntitle: T\nsummary: S\n---\n## A\n\n```notes\n```\n', 'k'))
+      expect(ok.status).toBe(201)
+      expect((store.save as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0].meta.state).toEqual({ writers: 'signed-in', visibility: 'private', slots: { notes: { shape: 'many' } } })
+      const two = await r.POST(post('---\ntitle: T\nsummary: S\n---\n```notes\n```\n\n```notes\n```\n', 'k'))
+      expect(two.status).toBe(400)
+      expect(await two.json()).toEqual({ error: 'line 8: a page takes at most one notes block' })
+    })
   })
 })

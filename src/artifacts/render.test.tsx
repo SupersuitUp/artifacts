@@ -60,4 +60,32 @@ describe('ArtifactMarkdown', () => {
     expect(out).toContain('<pre')
     expect(out).toContain('data-artifact-code')
   })
+
+  describe('the notes widget', () => {
+    const md = '# Title\n\n## Sales\n\nWords.\n\n## Sales\n\n```notes\nvisibility: shared\n```\n'
+    const withNotes = (m: string) => renderToStaticMarkup(<ArtifactMarkdown markdown={m} notes={{ artifactId: 'abc23456', accent: '#c9a96e' }} />)
+    it('puts a note control, marked not to be spoken, beside every heading, with the heading\'s slug as its id', () => {
+      const out = withNotes(md)
+      expect(out).toContain('id="title"')
+      expect(out).toContain('id="sales"')
+      expect(out).toContain('id="sales-1"')
+      for (const slug of ['title', 'sales', 'sales-1']) expect(out).toMatch(new RegExp(`<button[^>]*data-note-toggle="${slug}"[^>]*>`))
+      expect(out).toMatch(/<button[^>]*data-nospeak[^>]*data-note-toggle="sales"|<button[^>]*data-note-toggle="sales"[^>]*data-nospeak/)
+    })
+    it('draws the fence as the notes block, never as code', () => {
+      const out = withNotes(md)
+      expect(out).toContain('data-artifact-notes')
+      expect(out).not.toContain('<pre')
+      expect(out).not.toContain('visibility: shared')
+    })
+    it('without a state store (no notes prop) the fence draws nothing and headings get no control', () => {
+      const out = html(md)
+      expect(out).not.toContain('data-note-toggle')
+      expect(out).not.toContain('<pre')
+      expect(out).not.toContain('visibility')
+    })
+    it('a page with no notes fence gets no controls even when notes are possible', () => {
+      expect(withNotes('## Sales\n\nWords.')).not.toContain('data-note-toggle')
+    })
+  })
 })

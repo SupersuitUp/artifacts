@@ -1,6 +1,6 @@
 {
   "name": "@supersuit/artifacts",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Publish markdown as branded, read-aloud pages from a Next.js app: the artifacts store, the route factory, the read-along reader, brand packs, password and confidential pages, and share cards.",
   "license": "MIT",
   "type": "module",

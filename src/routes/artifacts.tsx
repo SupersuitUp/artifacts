@@ -137,9 +137,15 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     // The same cookie again on the page's state API: a cookie scoped to the page path is never
     // sent to /api/artifacts/<id>/state, so without it a password page could not take answers.
     const unlockLine = (path: string) => `${unlockCookieName(id)}=${keyHash(id, a.password!)}; Path=${path}; Max-Age=31536000; SameSite=Lax; Secure`
-    const remember = open && a.password && key !== undefined && cookie !== keyHash(id, a.password)
-      ? [pagePath(id), `/api/artifacts/${id}`].map((p) => `document.cookie=${JSON.stringify(unlockLine(p))}`).join(';')
-      : null
+    // The API copy is set on EVERY open of a page with state:, because the page cannot see it (a
+    // cookie scoped to /api/... never reaches the page path): a reader who unlocked the page
+    // before its API cookie existed would otherwise be refused every answer until they reopened
+    // the ?key= link.
+    const paths = !open || !a.password ? [] : [
+      ...(key !== undefined && cookie !== keyHash(id, a.password) ? [pagePath(id)] : []),
+      ...(a.state ? [`/api/artifacts/${id}`] : key !== undefined && cookie !== keyHash(id, a.password) ? [`/api/artifacts/${id}`] : []),
+    ]
+    const remember = paths.length ? paths.map((p) => `document.cookie=${JSON.stringify(unlockLine(p))}`).join(';') : null
     if (!open) {
       return (
         <BrandGround pack={brand}>
@@ -200,7 +206,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
             </div>
           ) : null}
           <article className="mx-auto max-w-2xl px-6 pb-24">
-            <ArtifactMarkdown markdown={a.markdown} />
+            <ArtifactMarkdown markdown={a.markdown} notes={config.state && a.state ? { artifactId: a.id, accent: brand.accent } : undefined} />
           </article>
         </div>
         {a.narration && words.length > 0 ? (
@@ -316,7 +322,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
             </div>
           ) : null}
           <article className="mx-auto max-w-2xl px-6 pb-24">
-            <ArtifactMarkdown markdown={a.markdown} />
+            <ArtifactMarkdown markdown={a.markdown} notes={config.state && a.state ? { artifactId: a.id, accent: brand.accent } : undefined} />
           </article>
         </div>
         {a.narration && words.length > 0 ? (

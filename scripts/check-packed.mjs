@@ -36,6 +36,8 @@ for (const bad of paths.filter((p) => /\.test\.|^src\/|^test\//.test(p))) fail(`
 if (!paths.includes('fonts/Newsreader-600.ttf')) fail('tarball has no fonts/Newsreader-600.ttf')
 const reader = readFileSync(join(dest, 'lib/reader/artifact-reader.js'), 'utf8')
 if (!/^['"]use client['"]/.test(reader)) fail("compiled reader lost its 'use client' directive")
+const notesJs = readFileSync(join(dest, 'lib/widgets/notes.js'), 'utf8')
+if (!/^['"]use client['"]/.test(notesJs)) fail("compiled notes widget lost its 'use client' directive")
 console.log(`check-packed: ${filename}, ${paths.length} files`)
 
 const next = join(root, 'node_modules/next/dist/bin/next')
@@ -75,7 +77,20 @@ try {
   const r = await (await fetch(`${base}/api/artifacts/abc23456/state`, { headers: { cookie } })).json()
   if (r.slots?.vote?.mine !== 'yes' || r.slots.vote.tally?.anonymous?.yes !== 1) fail(`state read back ${JSON.stringify(r)}`)
 
-  console.log('check-packed: fixture builds; page, share card, publish and state routes answer correctly')
+  // The notes widget: the page draws a control beside each heading, and a note posts and reads
+  // back through the state API as { slug, heading, note }.
+  const notesHtml = await (await fetch(`${base}/nts23456`)).text()
+  if (!notesHtml.includes('data-note-toggle="sales"') || !notesHtml.includes('data-artifact-notes')) fail('the notes page drew no note controls')
+  if (notesHtml.includes('language-notes')) fail('the notes fence rendered as code')
+  const nw = await fetch(`${base}/api/artifacts/nts23456/state`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-forwarded-for': '203.0.113.10' }, body: JSON.stringify({ slot: 'notes', op: 'append', value: { slug: 'sales', heading: 'Sales', note: 'packed' } }) })
+  const ncookie = (nw.headers.get('set-cookie') ?? '').split(';')[0]
+  if (nw.status !== 200) fail(`a note answered ${nw.status}`)
+  const bad = await fetch(`${base}/api/artifacts/nts23456/state`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-forwarded-for': '203.0.113.10', cookie: ncookie }, body: JSON.stringify({ slot: 'notes', op: 'append', value: 'loose' }) })
+  if (bad.status !== 400) fail(`a malformed note answered ${bad.status}, not 400`)
+  const nr = await (await fetch(`${base}/api/artifacts/nts23456/state`, { headers: { cookie: ncookie } })).json()
+  if (nr.slots?.notes?.shared?.[0]?.value?.note !== 'packed') fail(`notes read back ${JSON.stringify(nr)}`)
+
+  console.log('check-packed: fixture builds; page, share card, publish, state routes and the notes widget answer correctly')
 } finally {
   server.kill()
 }

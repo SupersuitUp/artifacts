@@ -10,3 +10,4 @@ export { createReadersStore, summarize, FLAG_KINDS, type ReadersStore, type Flag
 export { parseStateConfig, effectiveWriters, slotVisibility, checkValue, shapeChanges, SLOT_NAME, MAX_VALUE_BYTES, MAX_MANY_PER_READER, ANON_WRITES_PER_MINUTE, MAX_ENTRIES_PER_SLOT, SHARED_LIMIT, type StateConfig, type SlotDef, type Shape, type Visibility, type Writers } from './state.js'
 export { createStateStore, createMemoryStateStore, readerKeyFor, type StateStore, type StateEntry, type Writer } from './state-store.js'
 export { stateView, responsesOf, responsesCsv, type SlotView, type Tally, type SharedEntry, type Response as StateResponse } from './state-view.js'
+export { slugify, headingsOf, scanWidgets, mergeWidgetState, hasNotesWidget, checkNoteValue, placeNotes, NOTES_SLOT, MAX_NOTE_CHARS, type Heading, type NotesWidget, type NoteValue, type PlacedNote } from './widgets.js'

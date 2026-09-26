@@ -3,6 +3,7 @@
 import matter from 'gray-matter'
 import { ACCESS_LEVELS, type Access } from './reader.js'
 import { parseStateConfig, type StateConfig } from './state.js'
+import { mergeWidgetState, scanWidgets } from './widgets.js'
 
 export type ArtifactMeta = {
   title: string
@@ -68,5 +69,14 @@ export function parseArtifactSource(
     if (!s.ok) return { ok: false, error: s.error }
     meta.state = s.state
   }
+  // Widgets declare their own slots, so a notes block is merged into state: here, before the
+  // page is stored, and the state API and the republish shape checks see it like any slot.
+  // Errors name the line in the FILE: the body's lines are counted after the front matter's.
+  const offset = text.endsWith(content) ? (text.slice(0, text.length - content.length).match(/\n/g) ?? []).length : 0
+  const w = scanWidgets(content, offset)
+  if (!w.ok) return { ok: false, error: w.error }
+  const merged = mergeWidgetState(meta.state, w.notes)
+  if (!merged.ok) return { ok: false, error: merged.error }
+  if (merged.state) meta.state = merged.state
   return { ok: true, meta, body: content }
 }

@@ -25,7 +25,8 @@ Firestore), and optionally `@google-cloud/storage >= 7` for uploaded files.
 | `createArtifactAssets(bucket, prefix)` | Uploaded images for a page, in a Cloud Storage bucket |
 | `freedomDefault`, `BrandPack` | The default look and the type any other look implements |
 | `BrandGround`, `BrandMark` | The pack's page backdrop and mark, for your own pages (a home, a 404) |
-| `parseArtifactSource` | The front-matter contract, as a parser you can call before publishing |
+| `parseArtifactSource` | The front-matter contract, as a parser you can call before publishing (widget fences included) |
+| `headingsOf`, `scanWidgets`, `placeNotes` | The notes widget's pure parts: heading slugs, fence validation, where each note shows |
 | `mintPass`, `verifyPass` | The reader pass, for the sign-in side (see below) |
 | `ARTIFACT_PUBLIC_PREFIXES` (`/gate`) | Paths to leave open if you mount artifacts inside a gated site |
 
@@ -284,6 +285,55 @@ never queried, so indexing it only costs writes and storage.
 On a proxy other than Vercel's, pass `clientIp` to `createArtifactRoutes` (used for the anonymous
 rate limit): the default reads the first hop of `x-forwarded-for`, which Vercel overwrites with
 the real client IP but another proxy may only append to.
+
+## Widgets in a page
+
+A widget is a fenced block in a page's markdown that gives readers a place to answer, drawn by
+the shell in the page's brand and kept through the state API above. Widgets need a host with a
+state store (`state:` in the config); on a host without one they draw nothing, and the publish
+response carries the no-answers warning.
+
+This version draws one widget, **notes**. Poll, form and checklist are coming: a fence named
+`poll`, `form` or `checklist` is refused at publish until then, so a page never ships a code
+block that turns into a live widget on a later update.
+
+### Notes
+
+````markdown
+## Sales
+
+The weekly pipeline review.
+
+```notes
+visibility: shared   # optional: private | shared
+```
+````
+
+- **A small "note" control sits beside every heading.** A reader opens it, writes, and saves. The
+  note appears under that heading; with `visibility: shared` every reader sees every note with
+  the writer's first name ("a reader" for a signed-out one), with `private` each reader sees only
+  their own and the publisher sees all through `/responses`.
+- **At most one notes block per page.** Where it sits is where the page shows "Notes on earlier
+  versions" (below).
+- **The block declares its own slot**: `notes`, shape `many`. A page needs no `state:` for it;
+  without one the page takes `writers: signed-in` and `visibility: private`. A page may declare
+  the slot itself (`slots: { notes: { shape: many } }`) and set `writers:` and `visibility:` as
+  usual. Refused at publish, naming the line in the file: a second notes block, a name after
+  `notes`, any key but `visibility`, `visibility: tally`, a `notes` slot declared `shape: one`,
+  and a block visibility that disagrees with one `state:` sets on the `notes` slot.
+- **A note is `{ slug, heading, note }`**: the slug and the text of the heading it was left under,
+  and up to 4,000 characters of text. On a page with a notes block the server refuses any other
+  shape in the `notes` slot. Slugs follow GitHub's rule (lowercase, punctuation dropped, spaces
+  to dashes, a repeated heading `-1`, `-2`), and each heading carries its slug as its `id`, so
+  `#sales` links to it.
+- **Notes survive a changed heading.** A note shows under the heading with its slug; failing
+  that, under a heading with exactly its text; otherwise under "Notes on earlier versions", with
+  the heading it was left under. It never attaches to a different section.
+- **Narration skips it.** The fence is not prose, and everything the widget draws is marked
+  `data-nospeak`, so the narrator and the read-along highlighter read the page as before.
+- On a gated page (`access:`) only signed-in readers the page is open to, after the agreement,
+  can leave or read notes; the banner, watermark and print refusal are unchanged. On a public
+  page with `writers: signed-in`, the control offers sign-in through `signInOrigin`.
 
 ## Brand packs
 

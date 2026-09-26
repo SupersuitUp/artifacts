@@ -16,6 +16,7 @@ import { GRANT_COOKIE, decide, firstName, signInUrl, verifyGrant, type Reader } 
 import { isUnlocked, unlockCookieName } from '../artifacts/unlock.js'
 import { ANON_WRITES_PER_MINUTE, MAX_ENTRIES_PER_SLOT, checkValue, effectiveWriters } from '../artifacts/state.js'
 import { readerKeyFor, type StateStore, type Writer } from '../artifacts/state-store.js'
+import { NOTES_SLOT, checkNoteValue, hasNotesWidget } from '../artifacts/widgets.js'
 import { responsesCsv, responsesOf, stateView } from '../artifacts/state-view.js'
 import type { ArtifactRecord, ArtifactStore } from '../artifacts/store.js'
 import type { ReadersStore } from '../artifacts/readers-store.js'
@@ -166,12 +167,14 @@ export function createStateRoutes(ctx: StateRoutesContext) {
     if (op === 'remove') {
       await ctx.state!.remove({ artifactId: id, slot, readerKey: writer.key, entryId: typeof b.entry === 'string' ? b.entry : undefined })
     } else {
-      const bad = checkValue(b.value)
+      const bad = checkValue(b.value) ?? (slot === NOTES_SLOT && hasNotesWidget(a.markdown) ? checkNoteValue(b.value) : null)
       if (bad) return json({ error: bad }, 400)
       // The page-wide cap per slot. Counted before the write and not atomically with it, so a
       // burst can overshoot by the writes in flight; it bounds the slot, it is not a quota.
       if ((await ctx.state!.countSlot(id, slot)) >= MAX_ENTRIES_PER_SLOT) {
-        const replacing = op === 'set' && (await ctx.state!.entries(id)).some((e) => e.slot === slot && e.readerKey === writer.key)
+        const replacing = op === 'set' && (ctx.state!.hasOne
+          ? await ctx.state!.hasOne(id, slot, writer.key)
+          : (await ctx.state!.entries(id)).some((e) => e.slot === slot && e.readerKey === writer.key))
         if (!replacing) return json({ error: 'this page is not taking more answers here' }, 409)
       }
       const r = op === 'set'
