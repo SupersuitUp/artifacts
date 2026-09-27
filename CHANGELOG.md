@@ -3,6 +3,17 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.4.4 (2026-09-26)
+
+**The glow stays on the cool-to-magenta arc.**
+
+- 0.4.3's nine colours included coral, amber and lime, which put the warm half of the spectrum on
+  the page and read as a rainbow. `GLOW_PASTELS` is now brand blue, magenta, teal, purple, pink,
+  cyan, violet, sky and lavender: as many colours, none of them red, orange, yellow or green.
+- **DETECTOR:** the animated ground shows orange, yellow or green.
+- **REMEDY:** update the dependency. A pack that passes its own `backdrop.colors` keeps them.
+- **Tests:** every default colour's hue sits between cyan and pink.
+
 ## 0.4.3 (2026-09-26)
 
 **The bubble ground runs smooth on a phone, and the glow runs the whole spectrum.**

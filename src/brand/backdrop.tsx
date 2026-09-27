@@ -4,18 +4,19 @@
 // would need one.
 import type { Backdrop } from './pack.js'
 
-/** The Freedom Glow: a blue core and the full spectrum it separates into, one bubble per colour.
+/** The Freedom Glow: blue light moving through the cool-to-magenta arc, one bubble per colour.
+ *  Never the warm half (no red, orange, yellow or green), so no frame can read as a rainbow.
  *  Saturated rather than pastel; the veil is what keeps a light page reading as light. */
 export const GLOW_PASTELS = [
-  '90,150,255', // blue
-  '165,120,245', // violet
-  '235,110,210', // magenta
-  '255,120,150', // rose
-  '255,150,110', // coral
-  '255,195,90', // amber
-  '170,225,100', // lime
-  '90,215,170', // mint
-  '80,200,240', // cyan
+  '31,107,255', // brand blue
+  '224,82,196', // magenta
+  '25,181,201', // teal
+  '156,92,240', // purple
+  '255,111,174', // pink
+  '34,195,230', // cyan
+  '123,107,230', // violet
+  '90,162,255', // sky
+  '199,125,255', // lavender
 ]
 
 // [animation, duration s, transform-origin] per bubble, after animate-ui's six plus three more.

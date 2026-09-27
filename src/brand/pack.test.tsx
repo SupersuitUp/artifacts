@@ -68,4 +68,14 @@ describe('brand packs', () => {
     const out = renderToStaticMarkup(<BrandGround pack={{ ...freedomDefault, backdrop: { kind: 'bubbles' } }}><p /></BrandGround>)
     expect(out.match(/class="a-bubble"/g)?.length).toBe(GLOW_PASTELS.length)
   })
+  it('the default glow never carries the warm half, so it cannot read as a rainbow', () => {
+    for (const c of GLOW_PASTELS) {
+      const [r, g, b] = c.split(',').map(Number)
+      const max = Math.max(r, g, b), min = Math.min(r, g, b)
+      const d = max - min
+      const hue = d === 0 ? 0 : max === r ? (60 * ((g - b) / d) + 360) % 360 : max === g ? 60 * ((b - r) / d) + 120 : 60 * ((r - g) / d) + 240
+      // cyan (~180) round through blue and violet to magenta-pink (~335); no red, orange, yellow, green
+      expect(hue >= 175 && hue <= 340, `${c} has hue ${Math.round(hue)}`).toBe(true)
+    }
+  })
 })
