@@ -8,7 +8,21 @@ import type { Bucket } from '@google-cloud/storage'
 export interface ArtifactAssets {
   /** Store `bytes` for artifact `id` under `name`; return the public URL. */
   put(id: string, name: string, bytes: Buffer, contentType: string): Promise<string>
+  /**
+   * A signed URL the publisher PUTs a big file to directly, skipping the route handler.
+   * `digest` is the first 8 hex of the bytes' sha256, so the key is the one put() would use.
+   * Optional: a host without it answers 501 and the publisher falls back to put().
+   */
+  signUpload?(id: string, name: string, digest: string, contentType: string): Promise<{ uploadUrl: string; headers: Record<string, string>; url: string }>
+  /** After a signed upload: make it readable and return its URL, or null if nothing arrived. */
+  finishUpload?(id: string, name: string, digest: string): Promise<string | null>
 }
+
+/** The digest half of a stored name: the first 8 hex of the bytes' sha256. */
+export const ASSET_DIGEST = /^[0-9a-f]{8}$/
+
+const CACHE_CONTROL = 'public, max-age=31536000, immutable'
+
 
 /** Names are one path segment: letters, digits, dot, dash, underscore. */
 export const ASSET_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,120}$/
@@ -45,7 +59,11 @@ export function contentTypeFor(name: string): string | undefined {
  * URL and stay cached, which is the whole benefit.
  */
 export function hashedName(name: string, bytes: Buffer): string {
-  const digest = createHash('sha256').update(bytes).digest('hex').slice(0, 8)
+  return storedName(name, createHash('sha256').update(bytes).digest('hex').slice(0, 8))
+}
+
+/** `name` with `digest` spliced in before the extension, the way hashedName stores it. */
+export function storedName(name: string, digest: string): string {
   const dot = name.lastIndexOf('.')
   // A name with no extension is legal here, so append rather than assume there is a dot.
   return dot <= 0 ? `${name}.${digest}` : `${name.slice(0, dot)}.${digest}${name.slice(dot)}`
@@ -60,12 +78,40 @@ export function createArtifactAssets(bucket: Bucket, prefix: string): ArtifactAs
       await file.save(bytes, {
         contentType,
         resumable: false,
-        metadata: { cacheControl: 'public, max-age=31536000, immutable' },
+        metadata: { cacheControl: CACHE_CONTROL },
       })
       try {
         await file.makePublic()
       } catch {
         // A bucket with uniform public access has nothing to make public; the URL below still serves.
+      }
+      return `https://storage.googleapis.com/${bucket.name}/${key}`
+    },
+    // A route handler on Vercel refuses a body over 4.5 MB (FUNCTION_PAYLOAD_TOO_LARGE), which is
+    // about five minutes of narration. An hour-long paper's audio (~55 MB) could never publish.
+    // So a big file goes to the bucket directly, on a URL signed with the host's own service
+    // account, to the same hashed key and with the same cache header put() writes.
+    async signUpload(id, name, digest, contentType) {
+      const key = `${clean}/${id}/${storedName(name, digest)}`
+      const headers = { 'content-type': contentType, 'cache-control': CACHE_CONTROL }
+      const [uploadUrl] = await bucket.file(key).getSignedUrl({
+        version: 'v4',
+        action: 'write',
+        expires: Date.now() + 15 * 60 * 1000,
+        contentType,
+        extensionHeaders: { 'cache-control': CACHE_CONTROL },
+      })
+      return { uploadUrl, headers, url: `https://storage.googleapis.com/${bucket.name}/${key}` }
+    },
+    async finishUpload(id, name, digest) {
+      const key = `${clean}/${id}/${storedName(name, digest)}`
+      const file = bucket.file(key)
+      const [there] = await file.exists()
+      if (!there) return null
+      try {
+        await file.makePublic()
+      } catch {
+        // uniform bucket access: already public
       }
       return `https://storage.googleapis.com/${bucket.name}/${key}`
     },

@@ -141,6 +141,29 @@ describe('createArtifactRoutes', () => {
     expect((await r.PUT_ASSET(req('abc23456', 'a.webp', ''), p('abc23456', 'a.webp'))).status).toBe(400)
     expect((await routes.PUT_ASSET(req('abc23456', 'cover.webp'), p('abc23456', 'cover.webp'))).status).toBe(501)
   })
+  it('UPLOAD signs a direct upload, then finishes it, with the same refusals as PUT_ASSET', async () => {
+    const signUpload = vi.fn(async (id: string, name: string, digest: string, type: string) => ({ uploadUrl: 'https://signed/x', headers: { 'content-type': type }, url: `https://cdn/${id}/${name}.${digest}` }))
+    const finishUpload = vi.fn(async (id: string, name: string, digest: string) => (digest === 'deadbeef' ? `https://cdn/${id}/${name}.${digest}` : null))
+    const r = createArtifactRoutes({ store, brand: freedomDefault, siteUrl: 'https://example.com', publishKey: () => 'k', assets: { put: vi.fn(), signUpload, finishUpload } })
+    const req = (id: string, name: string, body: unknown, key = 'k') =>
+      new NextRequest(`http://x/api/artifacts/${id}/uploads/${name}`, { method: 'POST', body: JSON.stringify(body), headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' } })
+    const p = (id: string, name: string) => ({ params: Promise.resolve({ id, name }) })
+    const signed = await r.UPLOAD(req('abc23456', 'n.mp3', { digest: 'deadbeef' }), p('abc23456', 'n.mp3'))
+    expect(signed.status).toBe(201)
+    expect((await signed.json()).uploadUrl).toBe('https://signed/x')
+    expect(signUpload.mock.calls[0][3]).toBe('audio/mpeg')
+    const done = await r.UPLOAD(req('abc23456', 'n.mp3', { digest: 'deadbeef', done: true }), p('abc23456', 'n.mp3'))
+    expect(done.status).toBe(201)
+    expect((await done.json()).url).toBe('https://cdn/abc23456/n.mp3.deadbeef')
+    expect((await r.UPLOAD(req('abc23456', 'n.mp3', { digest: 'cafef00d', done: true }), p('abc23456', 'n.mp3'))).status).toBe(409)
+    expect((await r.UPLOAD(req('abc23456', 'n.mp3', { digest: 'nothex!!' }), p('abc23456', 'n.mp3'))).status).toBe(400)
+    expect((await r.UPLOAD(req('abc23456', 'n.mp3', { digest: 'deadbeef' }, 'nope'), p('abc23456', 'n.mp3'))).status).toBe(401)
+    expect((await r.UPLOAD(req('zzzzzzzz', 'n.mp3', { digest: 'deadbeef' }), p('zzzzzzzz', 'n.mp3'))).status).toBe(404)
+    expect((await r.UPLOAD(req('abc23456', 'x.exe', { digest: 'deadbeef' }), p('abc23456', 'x.exe'))).status).toBe(415)
+    // a host whose assets cannot sign says so, and the publisher falls back to PUT_ASSET
+    const old = createArtifactRoutes({ store, brand: freedomDefault, siteUrl: 'https://example.com', publishKey: () => 'k', assets: { put: vi.fn() } })
+    expect((await old.UPLOAD(req('abc23456', 'n.mp3', { digest: 'deadbeef' }), p('abc23456', 'n.mp3'))).status).toBe(501)
+  })
   describe('a page with a password', () => {
     const shut: ArtifactRecord = { ...rec, password: 'day ones', markdown: '# the secret body' }
     const withCookie = (cookie?: string) => createArtifactRoutes({

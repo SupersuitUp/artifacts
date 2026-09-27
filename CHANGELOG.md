@@ -3,6 +3,29 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.4.1 (2026-09-26)
+
+**Big files upload straight to the bucket.**
+
+- A route handler on Vercel refuses a body over 4.5 MB (`FUNCTION_PAYLOAD_TOO_LARGE`), about five
+  minutes of narration, so a long page's audio could never publish; `PUT_ASSET`'s own 16 MiB cap
+  was never reached. New route `UPLOAD` (`POST /api/artifacts/<id>/uploads/<name>`, publish key,
+  JSON `{ digest }`) returns a v4 signed URL and the headers to send; the publisher PUTs the bytes
+  there, then calls again with `{ digest, done: true }`, which makes the object readable and
+  returns its URL (409 if nothing arrived). The key is the same hashed name `put()` writes, with
+  the same `immutable` cache header. `ArtifactAssets` gains optional `signUpload` and
+  `finishUpload`; `createArtifactAssets` implements both. `storedName`, `hashedName` and
+  `ASSET_DIGEST` are exported.
+- **DETECTOR:** publishing a page whose narration is longer than about five minutes fails with
+  `narration upload failed 413: ... FUNCTION_PAYLOAD_TOO_LARGE`.
+- **REMEDY:** add `app/api/artifacts/[id]/uploads/[name]/route.ts` exporting `POST` that calls
+  the routes' `UPLOAD`, the same shape as the assets route. The bucket's service account needs no
+  new permission when the host signs with a service-account key. Until the route exists the
+  publisher gets a 404 and falls back to `PUT_ASSET`.
+- **Tests:** signing targets put()'s key with its cache header; finishing refuses a missing
+  object; the route's refusals match `PUT_ASSET`'s, a bad digest is 400, and a host whose assets
+  cannot sign answers 501.
+
 ## 0.4.0 (2026-09-26)
 
 **Light and dark modes, a table of contents, and an animated ground.**

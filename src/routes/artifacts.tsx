@@ -15,7 +15,7 @@ import { isUnlocked, keyHash, unlockCookieName } from '../artifacts/unlock.js'
 import type { ArtifactStore } from '../artifacts/store.js'
 import { shapeChanges } from '../artifacts/state.js'
 import type { StateStore } from '../artifacts/state-store.js'
-import { ASSET_NAME, contentTypeFor, type ArtifactAssets } from '../artifacts/assets.js'
+import { ASSET_DIGEST, ASSET_NAME, contentTypeFor, type ArtifactAssets } from '../artifacts/assets.js'
 import { BrandGround } from '../brand/wrapper.js'
 import { themedPack } from '../brand/theme.js'
 import { showToc, tocOf, TocInline, TocRail } from '../artifacts/toc.js'
@@ -480,6 +480,33 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     return NextResponse.json({ id, name, url }, { status: 201 })
   }
 
+  /**
+   * POST /api/artifacts/<id>/uploads/<name> with `{ digest }`: a signed URL to PUT a big file to
+   * directly, because a route handler cannot take one (Vercel caps a body at 4.5 MB). Then the
+   * same call with `{ digest, done: true }` makes it readable and returns its URL; 409 when the
+   * bytes never arrived. 501 on a host whose assets cannot sign, so the publisher falls back.
+   */
+  async function UPLOAD(request: NextRequest, { params }: { params: Promise<{ id: string; name: string }> }) {
+    if (!isPublishAuthed(request, config.publishKey())) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const assets = config.assets
+    if (!assets?.signUpload || !assets.finishUpload) return NextResponse.json({ error: 'this host does not take direct uploads' }, { status: 501 })
+    const { id, name } = await params
+    if (!ARTIFACT_ID.test(id)) return NextResponse.json({ error: `no artifact with id ${id}` }, { status: 404 })
+    if (!(await store.get(id))) return NextResponse.json({ error: `no artifact with id ${id}` }, { status: 404 })
+    if (!ASSET_NAME.test(name)) return NextResponse.json({ error: 'asset name must be one path segment: letters, digits, dot, dash, underscore' }, { status: 400 })
+    const type = contentTypeFor(name)
+    if (!type) return NextResponse.json({ error: 'asset type not allowed; use webp, png, jpg, gif, mp3 or json' }, { status: 415 })
+    const body = (await request.json().catch(() => ({}))) as { digest?: unknown; done?: unknown }
+    const digest = typeof body.digest === 'string' ? body.digest : ''
+    if (!ASSET_DIGEST.test(digest)) return NextResponse.json({ error: 'digest must be the first 8 hex of the sha256 of the bytes' }, { status: 400 })
+    if (body.done === true) {
+      const url = await assets.finishUpload(id, name, digest)
+      if (!url) return NextResponse.json({ error: 'nothing was uploaded to that url' }, { status: 409 })
+      return NextResponse.json({ id, name, url }, { status: 201 })
+    }
+    return NextResponse.json({ id, name, ...(await assets.signUpload(id, name, digest, type)) }, { status: 201 })
+  }
+
   /** GET /<id>/share.png: the page's title card. 404 when the pack draws none, so a
    *  tenant on the static default never serves a half-styled card. */
   async function SHARE_IMAGE(_request: NextRequest, { params }: Params) {
@@ -499,5 +526,5 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     return NextResponse.json({ deleted: true })
   }
 
-  return { Page, generateMetadata, POST, GET, DELETE, PUT_ASSET, SHARE_IMAGE, ENTER, LEAVE, TRACK, ACK, ACCESS, READS, ...stateRoutes, dynamic: 'force-dynamic' as const, maxDuration: 30 }
+  return { Page, generateMetadata, POST, GET, DELETE, PUT_ASSET, UPLOAD, SHARE_IMAGE, ENTER, LEAVE, TRACK, ACK, ACCESS, READS, ...stateRoutes, dynamic: 'force-dynamic' as const, maxDuration: 30 }
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { ASSET_NAME, contentTypeFor, createArtifactAssets, hashedName } from './assets.js'
+import { ASSET_NAME, contentTypeFor, createArtifactAssets, hashedName, storedName } from './assets.js'
 
 describe('artifact assets', () => {
   it('accepts sane names and refuses paths', () => {
@@ -37,5 +37,37 @@ describe('artifact assets', () => {
     expect(url).toBe(`https://storage.googleapis.com/b/tenants/t/artifacts/abc23456/${stored}`)
     expect((bucket.file as unknown as ReturnType<typeof vi.fn>).mock.calls[0][0]).toBe(`tenants/t/artifacts/abc23456/${stored}`)
     expect(save).toHaveBeenCalled()
+  })
+  // A route handler cannot take a body over 4.5 MB on Vercel, so an hour of narration (~55 MB)
+  // died with FUNCTION_PAYLOAD_TOO_LARGE. Big files go straight to the bucket on a signed URL.
+  it('signs a direct upload to the same hashed key put() would use, with the same cache header', async () => {
+    const getSignedUrl = vi.fn(async () => ['https://signed.example/put'])
+    const bucket = { name: 'b', file: vi.fn(() => ({ getSignedUrl })) } as unknown as import('@google-cloud/storage').Bucket
+    const assets = createArtifactAssets(bucket, 'tenants/t/artifacts')
+    const digest = hashedName('n.mp3', Buffer.from('audio')).split('.')[1]
+    const out = await assets.signUpload!('abc23456', 'n.mp3', digest, 'audio/mpeg')
+    expect(out.uploadUrl).toBe('https://signed.example/put')
+    expect(out.url).toBe(`https://storage.googleapis.com/b/tenants/t/artifacts/abc23456/${hashedName('n.mp3', Buffer.from('audio'))}`)
+    expect(out.headers['content-type']).toBe('audio/mpeg')
+    expect(out.headers['cache-control']).toBe('public, max-age=31536000, immutable')
+    const opts = (getSignedUrl.mock.calls[0] as unknown[])[0] as Record<string, unknown>
+    expect(opts.action).toBe('write')
+    expect(opts.version).toBe('v4')
+    expect(opts.contentType).toBe('audio/mpeg')
+  })
+  it('finishes an upload only when the object arrived', async () => {
+    const makePublic = vi.fn(async () => {})
+    let there = true
+    const exists = vi.fn(async () => [there])
+    const bucket = { name: 'b', file: vi.fn(() => ({ exists, makePublic })) } as unknown as import('@google-cloud/storage').Bucket
+    const assets = createArtifactAssets(bucket, 'p')
+    expect(await assets.finishUpload!('abc23456', 'n.mp3', 'deadbeef')).toBe('https://storage.googleapis.com/b/p/abc23456/n.deadbeef.mp3')
+    expect(makePublic).toHaveBeenCalled()
+    there = false
+    expect(await assets.finishUpload!('abc23456', 'n.mp3', 'deadbeef')).toBeNull()
+  })
+  it('storedName is what hashedName produces', () => {
+    expect(storedName('a.png', '0123abcd')).toBe('a.0123abcd.png')
+    expect(storedName('narration', '0123abcd')).toBe('narration.0123abcd')
   })
 })
