@@ -6,6 +6,10 @@ describe('narration text', () => {
     const t = narrationText({ title: 'T', summary: 'S', markdown: '# Head\n\nBody one.\n\n## Two\n\nBody two.' })
     expect(t.split('\n')).toEqual(['T', 'S', 'Head', 'Body one.', 'Two', 'Body two.'])
   })
+  it('reads the subtitle between the title and the summary, where the page shows it', () => {
+    const t = narrationText({ title: 'T', subtitle: 'Sub line.', summary: 'S', markdown: 'Body.' })
+    expect(t.split('\n')).toEqual(['T', 'Sub line.', 'S', 'Body.'])
+  })
   it('skips link hosts, link cards, code, callout labels and footnotes', () => {
     const md = [
       'See [Anthropic](https://www.anthropic.com/x) now.',

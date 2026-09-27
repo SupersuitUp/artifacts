@@ -3,6 +3,20 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.7.1 (2026-09-27)
+
+**The narrator reads the subtitle.** `narrationText` built the spoken text from the title, the
+summary and the body, while the page renders a `subtitle:` between the title and the summary with
+no `data-nospeak`. So the audio skipped the page's first line under the title, and the highlighter
+expected words the narration never said.
+
+- `narrationText` takes an optional `subtitle` and reads it second; the narration-text route
+  passes it.
+- DETECTOR: a page with a `subtitle:` whose audio goes straight from the title to the summary.
+- REMEDY: bump, then republish the page so its narration is regenerated (the spoken text changed,
+  so the narration hash no longer matches and the publisher re-narrates).
+- Tests: `narration.test.ts` pins title, subtitle, summary, body order.
+
 ## 0.7.0 (2026-09-27)
 
 **A real version history: every page names its version, lists every version with its change note,

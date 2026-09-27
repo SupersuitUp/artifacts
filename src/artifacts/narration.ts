@@ -81,8 +81,12 @@ export function narrationTextFromMarkdown(markdown: string): string {
   return clean(out)
 }
 
-export function narrationText(input: { title: string; summary: string; markdown: string }): string {
-  return [input.title.trim(), input.summary.trim(), narrationTextFromMarkdown(input.markdown)].filter(Boolean).join('\n')
+// The subtitle renders between the title and the summary with no data-nospeak, so the
+// highlighter expects it there; leaving it out made the narrator skip the page's first line.
+export function narrationText(input: { title: string; subtitle?: string; summary: string; markdown: string }): string {
+  return [input.title.trim(), (input.subtitle ?? '').trim(), input.summary.trim(), narrationTextFromMarkdown(input.markdown)]
+    .filter(Boolean)
+    .join('\n')
 }
 
 /** Tokens the highlighter and the timings agree on: whitespace-split, lowercased, letters and digits only. */

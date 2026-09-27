@@ -557,7 +557,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     const { id } = await params
     const a = await store.get(id)
     if (!a) return NextResponse.json({ error: `no artifact with id ${id}` }, { status: 404 })
-    return NextResponse.json({ id, text: narrationText({ title: a.title, summary: a.summary, markdown: a.markdown }) })
+    return NextResponse.json({ id, text: narrationText({ title: a.title, subtitle: a.subtitle, summary: a.summary, markdown: a.markdown }) })
   }
 
   /** PUT /api/artifacts/<id>/assets/<name>: raw bytes in, public URL out. 16 MiB cap. */
