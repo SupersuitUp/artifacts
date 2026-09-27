@@ -1,8 +1,21 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const docs = new Map<string, Record<string, unknown>>()
+// A subcollection lists the docs stored under `<id>/<name>/`, like Firestore's; `select` narrows
+// the fields, which is how a history listing avoids loading every past body.
+const listing = (prefix: string, fields?: string[]) => ({
+  get: vi.fn(async () => ({
+    docs: [...docs.entries()]
+      .filter(([k]) => k.startsWith(prefix) && !k.slice(prefix.length).includes('/'))
+      .map(([k, d]) => ({ id: k.slice(prefix.length), data: () => (fields ? Object.fromEntries(fields.filter((f) => f in d).map((f) => [f, d[f]])) : d) })),
+  })),
+})
 const fakeDoc = (id: string): Record<string, unknown> => ({
-  collection: (name: string) => ({ doc: (vid: string) => fakeDoc(`${id}/${name}/${vid}`) }),
+  collection: (name: string) => ({
+    doc: (vid: string) => fakeDoc(`${id}/${name}/${vid}`),
+    select: (...fields: string[]) => listing(`${id}/${name}/`, fields),
+    ...listing(`${id}/${name}/`),
+  }),
   get: vi.fn(async () => ({ exists: docs.has(id), data: () => docs.get(id), id })),
   set: vi.fn(async (d: Record<string, unknown>) => {
     docs.set(id, d)
@@ -119,5 +132,86 @@ describe('artifact store', () => {
     expect((await getArtifact(r.id))?.definitions).toEqual(definitions)
     await saveArtifact({ id: r.id, meta, markdown: 'b2' })
     expect((await getArtifact(r.id))?.definitions).toBeUndefined()
+  })
+
+})
+
+describe('version history', () => {
+  beforeEach(() => docs.clear())
+  const pub = async (markdown: string, extra: { id?: string; note?: string; amend?: boolean } = {}) => {
+    const r = await saveArtifact({ meta, markdown, ...extra })
+    if ('notFound' in r) throw new Error('unexpected')
+    return r
+  }
+  it('a change note rides with its version and moves into history when superseded', async () => {
+    const { id } = await pub('v1', { note: 'First draft' })
+    expect((await getArtifact(id))?.note).toBe('First draft')
+    await pub('v2', { id, note: 'Tightened the opening' })
+    expect((await getArtifact(id))?.note).toBe('Tightened the opening')
+    expect(docs.get(`${id}/versions/000001`)?.note).toBe('First draft')
+  })
+  it('a publish with no note records the version with no note, never an invented one', async () => {
+    const { id } = await pub('v1', { note: 'First draft' })
+    await pub('v2', { id })
+    const rec = await getArtifact(id)
+    expect(rec?.version).toBe(2)
+    expect(rec?.note).toBeUndefined()
+  })
+  it('a note repeated from the version it replaces is a stale line left in the file, and is dropped', async () => {
+    const { id } = await pub('v1', { note: 'Added the pricing section' })
+    await pub('v2', { id, note: 'Added the pricing section' })
+    expect((await getArtifact(id))?.note).toBeUndefined()
+  })
+  it('the same body again with no note is not a new version', async () => {
+    const { id } = await pub('same')
+    const r = await pub('same', { id })
+    expect(r.version).toBe(1)
+    expect(docs.get(`${id}/versions/000001`)).toBeUndefined()
+  })
+  it('an amend finishes the same publish: the body changes, the version and its note do not', async () => {
+    const { id } = await pub('![a](./local.png)', { note: 'New chart' })
+    const r = await pub('![a](https://cdn.example.com/a.png)', { id, amend: true })
+    expect(r.version).toBe(1)
+    const rec = await getArtifact(id)
+    expect(rec?.markdown).toBe('![a](https://cdn.example.com/a.png)')
+    expect(rec?.note).toBe('New chart')
+    expect(docs.get(`${id}/versions/000001`)).toBeUndefined()
+  })
+  it('history lists every version newest first, current included, without any body', async () => {
+    const { id } = await pub('v1', { note: 'one' })
+    await pub('v2', { id })
+    await pub('v3', { id, note: 'three' })
+    const h = await store.history!(id)
+    expect(h?.map((v) => [v.version, v.note ?? null, v.current ?? false])).toEqual([[3, 'three', true], [2, null, false], [1, 'one', false]])
+    for (const v of h!) expect(v).not.toHaveProperty('markdown')
+    expect(h!.every((v) => typeof v.at === 'string' && v.at.length > 0)).toBe(true)
+    expect(await store.history!('nosuchid')).toBeNull()
+  })
+  it('one version by number: a past one from history, the current one from the page, a missing one is null', async () => {
+    const { id } = await pub('v1', { note: 'one' })
+    await pub('v2', { id })
+    expect(await store.version!(id, 1)).toMatchObject({ version: 1, markdown: 'v1', note: 'one', title: 'T' })
+    expect(await store.version!(id, 2)).toMatchObject({ version: 2, markdown: 'v2', current: true })
+    expect(await store.version!(id, 3)).toBeNull()
+    expect(await store.version!(id, 0)).toBeNull()
+    expect(await store.version!('nosuchid', 1)).toBeNull()
+  })
+  it('a page still carrying the legacy array lists and serves its history from it', async () => {
+    docs.set('legacy02', { id: 'legacy02', title: 'T', summary: 'S', template: 'document', markdown: 'v3',
+      createdAt: 'a', updatedAt: 'c', views: 0, versions: [{ markdown: 'v1', at: 'a' }, { markdown: 'v2', at: 'b' }] })
+    expect((await store.history!('legacy02'))?.map((v) => v.version)).toEqual([3, 2, 1])
+    expect(await store.version!('legacy02', 2)).toMatchObject({ version: 2, markdown: 'v2', at: 'b' })
+  })
+  it('a note can be written onto any version after the fact, and cleared', async () => {
+    const { id } = await pub('v1')
+    await pub('v2', { id })
+    expect(await store.setNote!(id, 1, 'Backfilled')).toBe(true)
+    expect(docs.get(`${id}/versions/000001`)?.note).toBe('Backfilled')
+    expect(await store.setNote!(id, 2, 'Current')).toBe(true)
+    expect((await getArtifact(id))?.note).toBe('Current')
+    expect(await store.setNote!(id, 2, null)).toBe(true)
+    expect((await getArtifact(id))?.note).toBeUndefined()
+    expect(await store.setNote!(id, 9, 'x')).toBe(false)
+    expect(await store.setNote!('nosuchid', 1, 'x')).toBe(false)
   })
 })

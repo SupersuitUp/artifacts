@@ -68,12 +68,14 @@ The rest, each exporting the named handler(s) from `artifacts`:
 
 | File | Handlers |
 |---|---|
+| `app/[id]/v/[n]/page.tsx` | `default` = `VersionPage`, `generateMetadata` = `generateVersionMetadata` |
 | `app/[id]/share.png/route.tsx` | `GET` = `SHARE_IMAGE` |
 | `app/api/artifacts/route.ts` | `POST` (publish) |
 | `app/api/artifacts/[id]/route.ts` | `GET`, `DELETE` |
 | `app/api/artifacts/[id]/assets/[name]/route.ts` | `PUT` = `PUT_ASSET` |
 | `app/api/artifacts/[id]/access/route.ts` | `GET`, `POST` = `ACCESS` |
 | `app/api/artifacts/[id]/reads/route.ts` | `GET` = `READS` |
+| `app/api/artifacts/[id]/versions/route.ts` | `GET`, `POST` = `VERSIONS` |
 | `app/api/reader/enter/route.ts` | `GET` = `ENTER` |
 | `app/api/reader/leave/route.ts` | `GET` = `LEAVE` |
 | `app/api/reader/ack/route.ts` | `POST` = `ACK` |
@@ -109,6 +111,28 @@ hostname and pick by the `host` header.
 body. The response carries the page's id and URL. Posting a file whose front matter carries
 that `id:` republishes it in place, keeping every earlier version.
 
+## Version history
+
+Every page names its version under the summary, "Version 4 · Updated <minute> · History", and
+History opens a panel listing every version newest first: its number, the minute it went live in
+the reader's own time zone, and its change note. The panel is drawn over the page (a sheet on a
+phone, a side panel on a desk), so opening it moves no text. Each past version is readable at
+`/<id>/v/<n>`, read-only, under a banner naming it and linking the current page, behind exactly
+the same password or confidential door as the page itself. A version that does not exist is a
+404; on a shut page the door comes first, so it never says which versions exist.
+
+**Do not write a "Version history" section in the markdown.** Say what changed when you publish:
+
+- `POST /api/artifacts?id=<id>&note=<one line>`, or a `change:` line in the front matter. The query
+  wins. A note is one line, 280 characters at most.
+- No note records the version with none. A `change:` still in the file from the previous publish
+  is recognised as stale and not repeated on the next version.
+- `&amend=1` finishes the publish the previous POST started (a publisher's second and third POSTs,
+  carrying uploaded image URLs and then narration) instead of starting a new version. A republish
+  whose body is unchanged and carries no note is not a new version either.
+- `GET /api/artifacts/<id>/versions` lists the history; `POST` it `{ "version": 2, "note": "..." }`
+  (or `"note": null`) to write a note onto a version after the fact.
+
 ## Front matter
 
 ```markdown
@@ -133,6 +157,7 @@ summary: Three bets, what each costs, and what we stop doing to afford them.
 | `theme` | `light`, `dark` or `system` (follow the reader's device). Overrides the brand pack's mode for this page |
 | `toc` | The table of contents. Absent, it appears once the page has four `##` sections; `false` never; `true` from one |
 | `definitions` | Terms defined inline (below). A republish without it removes them |
+| `change` | One line saying what this version changed (see Version history) |
 | `template` | `document`, the only one so far |
 
 An unknown key is refused, so a typo fails loudly instead of being ignored.

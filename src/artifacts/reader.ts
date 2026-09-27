@@ -119,6 +119,7 @@ export function signInUrl(signInOrigin: string, pageUrl: string): string {
  *  nothing else, so the redirect cannot be pointed off the host. */
 export function safeReturnPath(to: string | null | undefined, prefix = '/'): string | null {
   if (typeof to !== 'string') return null
-  const m = new RegExp(`^${prefix.replace(/\//g, '\\/')}([abcdefghjkmnpqrstuvwxyz23456789]{8})$`).exec(to)
-  return m ? `${prefix}${m[1]}` : null
+  // One page, or one past version of it (/<id>/v/<n>): nothing else on this host, nothing off it.
+  const m = new RegExp(`^${prefix.replace(/\//g, '\\/')}([abcdefghjkmnpqrstuvwxyz23456789]{8})(\\/v\\/[1-9]\\d{0,5})?$`).exec(to)
+  return m ? `${prefix}${m[1]}${m[2] ?? ''}` : null
 }

@@ -105,4 +105,11 @@ describe('theme and toc', () => {
     expect(parseArtifactSource('---\ntitle: T\nsummary: S\ntheme: sepia\n---\nx')).toEqual({ ok: false, error: 'theme must be one of: light, dark, system' })
     expect(parseArtifactSource('---\ntitle: T\nsummary: S\ntoc: yes please\n---\nx')).toEqual({ ok: false, error: 'toc must be true or false' })
   })
+  it('change: is one line of text saying what this version changed', () => {
+    const r = parseArtifactSource('---\ntitle: T\nsummary: S\nchange: "Rewrote the\n  opening"\n---\nx')
+    expect(r.ok && r.meta.change).toBe('Rewrote the opening')
+    const none = parseArtifactSource('---\ntitle: T\nsummary: S\nchange: ""\n---\nx')
+    expect(none.ok && none.meta.change).toBeUndefined()
+    expect(parseArtifactSource('---\ntitle: T\nsummary: S\nchange: [a, b]\n---\nx')).toEqual({ ok: false, error: 'change must be one line of text' })
+  })
 })

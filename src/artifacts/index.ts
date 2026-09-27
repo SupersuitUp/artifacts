@@ -1,7 +1,7 @@
 export { parseArtifactSource, type ArtifactMeta } from './front-matter.js'
 export { ArtifactMarkdown } from './render.js'
 export { narrationText, narrationTextFromMarkdown, normalizeWord } from './narration.js'
-export { createArtifactStore, newArtifactId, type ArtifactStore, type ArtifactRecord, type SaveResult } from './store.js'
+export { createArtifactStore, newArtifactId, cleanNote, MAX_CHANGE_NOTE_CHARS, type ArtifactStore, type ArtifactRecord, type SaveResult, type SaveInput, type VersionEntry, type VersionRecord } from './store.js'
 export { isPublishAuthed } from './auth.js'
 export { createArtifactAssets, contentTypeFor, storedName, hashedName, ASSET_NAME, ASSET_DIGEST, type ArtifactAssets } from './assets.js'
 export { isUnlocked, keyHash, unlockCookieName, unlockedUrl } from './unlock.js'

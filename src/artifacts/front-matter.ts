@@ -41,9 +41,12 @@ export type ArtifactMeta = {
   /** Terms this page defines inline: the first occurrence of each is underlined and opens its
    *  definition. Content, like the body: a republish without it removes them. */
   definitions?: Definition[]
+  /** One line saying what changed in this version. Stored with the version it arrives on; a line
+   *  left in the file from the previous publish is recognised and not repeated. */
+  change?: string
 }
 
-const KNOWN = new Set(['title', 'summary', 'subtitle', 'template', 'audience', 'cover', 'id', 'voice', 'narration', 'timings', 'narrationHash', 'password', 'access', 'state', 'theme', 'toc', 'definitions'])
+const KNOWN = new Set(['title', 'summary', 'subtitle', 'template', 'audience', 'cover', 'id', 'voice', 'narration', 'timings', 'narrationHash', 'password', 'access', 'state', 'theme', 'toc', 'definitions', 'change'])
 
 export function parseArtifactSource(
   text: string,
@@ -67,6 +70,10 @@ export function parseArtifactSource(
   for (const k of ['subtitle', 'audience', 'cover', 'id', 'voice', 'narration', 'timings', 'narrationHash', 'password'] as const) {
     const v = d[k]
     if (typeof v === 'string' && v) meta[k] = v
+  }
+  if (d.change !== undefined && d.change !== null) {
+    if (typeof d.change !== 'string') return { ok: false, error: 'change must be one line of text' }
+    if (d.change.trim()) meta.change = d.change.replace(/\s+/g, ' ').trim()
   }
   if (d.access !== undefined) {
     if (d.access !== 'public' && !ACCESS_LEVELS.includes(d.access as Access))

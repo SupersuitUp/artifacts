@@ -55,8 +55,13 @@ describe('decide', () => {
 describe('redirects stay on this host', () => {
   it('accepts one page path and nothing else', () => {
     expect(safeReturnPath('/j75wybat')).toBe('/j75wybat')
-    for (const bad of ['//evil.example/j75wybat', 'https://evil.example/', '/j75wybat/x', '/api/x', '', null, '/J75WYBAT'])
+    for (const bad of ['//evil.example/j75wybat', 'https://evil.example/', '/j75wybat/x', '/api/x', '', null, '/J75WYBAT',
+      '/j75wybat/v/0', '/j75wybat/v/01', '/j75wybat/v/2/x', '/j75wybat/v/', '/j75wybat/v/2//evil.example'])
       expect(safeReturnPath(bad as string)).toBeNull()
+  })
+  it('accepts one past version of a page, so signing in from it lands back on it', () => {
+    expect(safeReturnPath('/j75wybat/v/2')).toBe('/j75wybat/v/2')
+    expect(safeReturnPath('/a/j75wybat/v/12', '/a/')).toBe('/a/j75wybat/v/12')
   })
   it('the sign-in url carries the page', () => {
     expect(signInUrl('https://accounts.example.com', 'https://artifacts.example.com/j75wybat'))

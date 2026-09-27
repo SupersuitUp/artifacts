@@ -4,7 +4,7 @@
 // the wiring: which store, which brand, which domain, which key.
 import type { Metadata } from 'next'
 import { revalidatePath } from 'next/cache'
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import { NextRequest, NextResponse } from 'next/server'
 import { isPublishAuthed } from '../artifacts/auth.js'
 import { parseArtifactSource } from '../artifacts/front-matter.js'
@@ -12,7 +12,7 @@ import { narrationText } from '../artifacts/narration.js'
 import { ArtifactMarkdown } from '../artifacts/render.js'
 import { ArtifactDoor } from '../artifacts/door.js'
 import { isUnlocked, keyHash, unlockCookieName } from '../artifacts/unlock.js'
-import type { ArtifactStore } from '../artifacts/store.js'
+import { cleanNote, type ArtifactStore, type VersionEntry } from '../artifacts/store.js'
 import { shapeChanges } from '../artifacts/state.js'
 import type { StateStore } from '../artifacts/state-store.js'
 import { ASSET_DIGEST, ASSET_NAME, contentTypeFor, type ArtifactAssets } from '../artifacts/assets.js'
@@ -24,6 +24,7 @@ import type { BrandPack } from '../brand/pack.js'
 import { ArtifactReader, type WordTiming } from '../reader/artifact-reader.js'
 import { ReaderWatch } from '../reader/reader-watch.js'
 import { UpdatedTime } from '../reader/updated-time.js'
+import { VersionHistory } from '../reader/version-history.js'
 import {
   ACCESS_LEVELS, GRANT_COOKIE, GRANT_TTL_SECONDS, decide, firstName, mintGrant, safeReturnPath, signInUrl, verifyGrant, verifyPass,
   type Access, type Reader,
@@ -72,6 +73,11 @@ export const ARTIFACT_ID = ARTIFACT_ID_RE
 
 type Params = { params: Promise<{ id: string }> }
 type PageProps = Params & { searchParams?: Promise<{ key?: string | string[] }> }
+type VersionParams = { params: Promise<{ id: string; n: string }> }
+type VersionProps = VersionParams & { searchParams?: Promise<{ key?: string | string[] }> }
+type Rec = NonNullable<Awaited<ReturnType<ArtifactStore['get']>>>
+/** A version number as it appears in a URL: no zero, no leading zero, so each version has one address. */
+const VERSION_N = /^[1-9]\d{0,5}$/
 
 async function defaultReadCookie(name: string): Promise<string | undefined> {
   const { cookies } = await import('next/headers')
@@ -127,11 +133,33 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     }
   }
 
+  /** GET /<id>/v/<n>: the metadata of a past version. Never indexed, like every page. */
+  async function generateVersionMetadata({ params }: VersionParams): Promise<Metadata> {
+    const { id, n } = await params
+    const m = await generateMetadata({ params: Promise.resolve({ id }) })
+    if (!VERSION_N.test(n) || m.title === 'Not found') return { title: 'Not found', robots: { index: false, follow: false } }
+    return { ...m, title: `${String(m.title)} (version ${n})`, alternates: { canonical: `${pagePath(id)}/v/${n}` } }
+  }
+
   async function Page({ params, searchParams }: PageProps) {
     const { id } = await params
+    return serve(id, searchParams, null)
+  }
+
+  /** /<id>/v/<n>: one past version, read-only, behind exactly the door the current page has. */
+  async function VersionPage({ params, searchParams }: VersionProps) {
+    const { id, n } = await params
+    if (!VERSION_N.test(n)) notFound()
+    return serve(id, searchParams, Number(n))
+  }
+
+  /** The current page (n null) or one past version, through the same gate. The version is looked
+   *  up only AFTER the gate opens, so a shut page never says which versions exist. */
+  async function serve(id: string, searchParams: PageProps['searchParams'], n: number | null) {
     const a = ARTIFACT_ID.test(id) ? await store.get(id) : null
     if (!a) notFound()
-    if (a.access) return GatedPage(a, id)
+    const render = (top: boolean) => (n === null ? Body(a, { top }) : VersionBody(a, n, { top }))
+    if (a.access) return GatedPage(a, id, render, n)
     // A password shuts the body, never the title: the header stays so the reader knows which
     // page they were sent, and the unfurl (generateMetadata) keeps reading as the page.
     const sp = (await searchParams) ?? {}
@@ -174,18 +202,20 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
         </BrandGround>
       )
     }
-    void store.bumpViews(id)
+    const page = await render(true)
+    if (n === null) void store.bumpViews(id)
     return (
       <BrandGround pack={pack} mode={a.theme}>
         {remember ? <script dangerouslySetInnerHTML={{ __html: remember }} /> : null}
-        {await Body(a, { top: true })}
+        {page}
       </BrandGround>
     )
   }
 
   /** A page with `access:`. The body is rendered only after the reader is known and allowed;
    *  everyone else gets the title, the summary, and a door. */
-  async function GatedPage(a: NonNullable<Awaited<ReturnType<ArtifactStore['get']>>>, id: string) {
+  async function GatedPage(a: Rec, id: string, render: (top: boolean) => Promise<React.ReactNode>, n: number | null) {
+    const here = n === null ? pageUrl(id) : `${pageUrl(id)}/v/${n}`
     const readCookie = config.readCookie ?? defaultReadCookie
     const reader = verifyGrant(readerSecret(), await readCookie(GRANT_COOKIE))
     const allow = config.readers && reader ? await config.readers.allowList(id) : []
@@ -213,7 +243,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
           {header}
           {d.why === 'not-allowed'
             ? <NotAllowedDoor brand={brand} reader={d.reader} signOutUrl={signOutUrl(id)} />
-            : <SignInDoor brand={brand} href={signInOrigin ? signInUrl(signInOrigin, pageUrl(id)) : undefined} />}
+            : <SignInDoor brand={brand} href={signInOrigin ? signInUrl(signInOrigin, here) : undefined} />}
         </BrandGround>
       )
     }
@@ -227,7 +257,8 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
         </BrandGround>
       )
     }
-    void store.bumpViews(id)
+    const page = await render(false)
+    if (n === null) void store.bumpViews(id)
     return (
       <BrandGround pack={pack} mode={a.theme}>
         <style dangerouslySetInnerHTML={{ __html: NO_PRINT_CSS }} />
@@ -237,14 +268,78 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
         <div className="px-6 pt-20 sm:pt-24">
           <ConfidentialBanner name={firstName(r, allow)} email={r.email} reason={d.reason} owner={owner} brand={brand} signOutUrl={signOutUrl(id)} />
         </div>
-        {await Body(a, { top: false })}
+        {page}
         <ReaderWatch artifactId={id} endpoint="/api/reader/track" accent={brand.accent} />
       </BrandGround>
     )
   }
 
+  /** Every version of a page, newest first, or null when the store keeps none. A failed read hides
+   *  the History control rather than failing the page. */
+  async function historyOf(id: string): Promise<VersionEntry[] | null> {
+    if (!store.history) return null
+    return store.history(id).catch(() => null)
+  }
+
+  /** "Version N · Updated <minute> · History": the line under the summary. */
+  function VersionLine({ a, n, at, history }: { a: Rec; n: number; at: string; history: VersionEntry[] | null }) {
+    return (
+      <p data-nospeak className="mt-4 text-xs opacity-60">
+        {`Version ${n} · Updated `}<UpdatedTime iso={at} />
+        {history && history.length > 1 ? (
+          <>
+            {' · '}
+            <VersionHistory items={history} base={pagePath(a.id)} viewing={n} />
+          </>
+        ) : null}
+      </p>
+    )
+  }
+
+  /** A past version: its own body and title, read-only (no narration, no answers), under a banner. */
+  async function VersionBody(a: Rec, n: number, { top }: { top: boolean }) {
+    const v = store.version ? await store.version(a.id, n) : null
+    if (!v) notFound()
+    if (v.current) redirect(pagePath(a.id))
+    const history = await historyOf(a.id)
+    const of = history?.[0]?.version ?? n
+    const title = v.title ?? a.title
+    const summary = v.summary ?? a.summary
+    const toc = showToc(v.markdown, a.toc) ? tocOf(v.markdown) : []
+    return (
+      <>
+        {toc.length ? <TocRail items={toc} /> : null}
+        <div data-nospeak className={`mx-auto max-w-2xl px-6 ${top ? 'pt-20 sm:pt-24' : 'pt-8'}`}>
+          <p data-version-banner role="status" className="rounded-lg border px-4 py-3 text-sm" style={{ borderColor: brand.accent }}>
+            {`You are reading version ${n} of ${of}. `}
+            <a href={pagePath(a.id)} className="underline underline-offset-4" style={{ color: brand.accent }}>Read the current version</a>
+          </p>
+        </div>
+        <div className={`mx-auto max-w-2xl px-6 ${top ? 'pt-10 sm:pt-12' : 'pt-10'} pb-8 text-center`}>
+          <p data-nospeak className="mb-4 text-[11px] font-medium uppercase tracking-[0.3em]" style={{ color: brand.accent }}>
+            {brand.kicker}
+          </p>
+          <h1 className="text-4xl sm:text-5xl" style={{ fontFamily: brand.type.display, color: brand.ink }}>
+            {title}
+          </h1>
+          {v.subtitle ? (
+            <p className="mx-auto mt-4 max-w-xl text-xl sm:text-2xl" style={{ fontFamily: brand.type.display, color: brand.ink }}>
+              {v.subtitle}
+            </p>
+          ) : null}
+          <p className="mx-auto mt-6 max-w-xl text-lg italic opacity-80">{summary}</p>
+          <VersionLine a={a} n={n} at={v.at} history={history} />
+        </div>
+        <article className="mx-auto max-w-2xl px-6 pb-24">
+          {toc.length ? <TocInline items={toc} /> : null}
+          <ArtifactMarkdown markdown={v.markdown} definitions={a.definitions} />
+        </article>
+      </>
+    )
+  }
+
   /** The page itself, shared by open and gated pages. */
-  async function Body(a: NonNullable<Awaited<ReturnType<ArtifactStore['get']>>>, { top }: { top: boolean }) {
+  async function Body(a: Rec, { top }: { top: boolean }) {
     let words: WordTiming[] = []
     if (a.narration && a.timings) {
       try {
@@ -272,9 +367,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
               </p>
             ) : null}
             <p className="mx-auto mt-6 max-w-xl text-lg italic opacity-80">{a.summary}</p>
-            <p data-nospeak className="mt-4 text-xs opacity-50">
-              Updated <UpdatedTime iso={a.updatedAt} />
-            </p>
+            <VersionLine a={a} n={a.version ?? (a.versions?.length ?? 0) + 1} at={a.updatedAt} history={await historyOf(a.id)} />
           </div>
           {a.cover ? (
             <div className="mx-auto max-w-2xl px-6 pb-8">
@@ -443,7 +536,11 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
         if (dodged.length) return NextResponse.json({ error: dodged.join('; ') }, { status: 400 })
       }
     }
-    const result = await store.save({ id, meta: parsed.meta, markdown: parsed.body })
+    // What changed, in the author's words: `?note=` from the publisher, else the file's `change:`.
+    // `?amend=1` is the publisher finishing the publish it started (image URLs, then narration).
+    const note = cleanNote(request.nextUrl.searchParams.get('note')) ?? parsed.meta.change
+    const amend = request.nextUrl.searchParams.get('amend') === '1'
+    const result = await store.save({ id, meta: parsed.meta, markdown: parsed.body, note, amend })
     if ('notFound' in result) return NextResponse.json({ error: `no artifact with id ${id}` }, { status: 404 })
     revalidatePath(pagePath(result.id))
     return NextResponse.json(
@@ -517,6 +614,24 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     return renderShareCard(pack, a.title)
   }
 
+  /** GET|POST /api/artifacts/<id>/versions, publish key: the history, and a note written onto one
+   *  version after the fact. POST body: { version: number, note: string | null }. */
+  async function VERSIONS(request: NextRequest, { params }: Params) {
+    if (!isPublishAuthed(request, config.publishKey())) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const { id } = await params
+    if (!store.history || !store.setNote) return NextResponse.json({ error: 'this store keeps no history' }, { status: 501 })
+    const history = ARTIFACT_ID.test(id) ? await store.history(id) : null
+    if (!history) return NextResponse.json({ error: `no artifact with id ${id}` }, { status: 404 })
+    if (request.method === 'GET') return NextResponse.json({ id, current: history[0]?.version, versions: history }, { headers: { 'cache-control': 'no-store' } })
+    const b = (await request.json().catch(() => null)) as { version?: unknown; note?: unknown } | null
+    if (!b || !Number.isInteger(b.version) || (b.note !== null && typeof b.note !== 'string'))
+      return NextResponse.json({ error: 'body is { version: <number>, note: <one line, or null to clear> }' }, { status: 400 })
+    if (!(await store.setNote(id, b.version as number, b.note as string | null)))
+      return NextResponse.json({ error: `no version ${String(b.version)} of ${id}` }, { status: 404 })
+    revalidatePath(pagePath(id))
+    return NextResponse.json({ id, versions: await store.history(id) })
+  }
+
   async function DELETE(request: NextRequest, { params }: Params) {
     if (!isPublishAuthed(request, config.publishKey())) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     const { id } = await params
@@ -526,5 +641,5 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     return NextResponse.json({ deleted: true })
   }
 
-  return { Page, generateMetadata, POST, GET, DELETE, PUT_ASSET, UPLOAD, SHARE_IMAGE, ENTER, LEAVE, TRACK, ACK, ACCESS, READS, ...stateRoutes, dynamic: 'force-dynamic' as const, maxDuration: 30 }
+  return { Page, generateMetadata, VersionPage, generateVersionMetadata, VERSIONS, POST, GET, DELETE, PUT_ASSET, UPLOAD, SHARE_IMAGE, ENTER, LEAVE, TRACK, ACK, ACCESS, READS, ...stateRoutes, dynamic: 'force-dynamic' as const, maxDuration: 30 }
 }

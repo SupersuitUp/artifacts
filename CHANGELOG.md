@@ -3,6 +3,47 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.7.0 (2026-09-27)
+
+**A real version history: every page names its version, lists every version with its change note,
+and serves each past version at its own URL.**
+
+- The line under the summary reads "Version N · Updated <minute> · History". History opens a
+  panel (`VersionHistory`, a client component) drawn through a portal on `document.body` like the
+  definition layer, so it never reflows the page: a bottom sheet above the narration bar on a
+  phone, a side panel on a desk. Each row is the version number, the exact minute in the reader's
+  zone, and the note. Authors were hand-writing "Version history" sections at the end of their
+  markdown; the store already kept every version, so the page now shows them.
+- Past versions render read-only at `/<id>/v/<n>` (`VersionPage`, `generateVersionMetadata`) under
+  a banner, "You are reading version N of M", linking the current page. Same password and
+  confidential gate as the page, looked up only after the gate opens; no narration, no answers,
+  no view counted. The current number redirects to the page; anything else missing is a 404.
+- A change note travels with each version: `?note=` on the publish POST or `change:` in the
+  front matter. None given, none stored. A note identical to the one it replaces is dropped as a
+  stale front matter line.
+- `?amend=1` finishes the same publish, so a publisher's image and narration POSTs no longer mint
+  two or three versions per publish; a republish with an unchanged body and no note is not a new
+  version either. History docs now keep the title, subtitle and summary they were published with.
+- New store methods `history`, `version`, `setNote` (optional on the interface); new route
+  `VERSIONS` (`GET` lists, `POST {version, note}` backfills a note); `safeReturnPath` accepts
+  `/<id>/v/<n>` so signing in from a past version returns to it.
+- **DETECTOR:** a page whose line under the summary has no "Version N", or a markdown file ending
+  in a hand-written "Version history" section. A host with no `app/[id]/v/[n]/page.tsx` 404s
+  every History link.
+- **REMEDY:** take 0.7.0, and add two route files: `app/[id]/v/[n]/page.tsx` (default
+  `VersionPage`, `generateMetadata` = `generateVersionMetadata`) and
+  `app/api/artifacts/[id]/versions/route.ts` (`GET`, `POST` = `VERSIONS`). Publishers pass
+  `note=` on the first POST and `amend=1` on the ones that follow it.
+- **Tests:** `store.test.ts` (notes ride and move to history, none invented, stale note dropped,
+  unchanged body and amend make no version, listing without bodies, one version, legacy array,
+  backfill), `versions.test.tsx` (header line, banner, no narration or view, redirect, 404s, gate
+  parity for password and confidential pages case by case, no history leaked through a door,
+  sign-in returns to the version, the API, note and amend reach the store),
+  `version-history.test.tsx` (portal on body, no text change, rows and links, close paths),
+  `reader.test.ts` (return paths), `front-matter.test.ts` (`change:`). Mutation-checked: removing
+  the gate for versions fails four parity tests; dropping the stale-note rule and the current
+  redirect each fail their test.
+
 ## 0.6.0 (2026-09-27)
 
 **"Updated" names the exact minute, in the reader's own time zone.**

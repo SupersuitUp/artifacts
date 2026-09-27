@@ -64,6 +64,15 @@ try {
   if (page.status !== 200 || !html.includes('Fixture')) fail(`page answered ${page.status}`)
   if ((html.match(/data-defined-term="harness"/g) ?? []).length !== 1) fail('the defined term is not underlined exactly once')
 
+  // Version history: the page names its version and carries the History control; a past version
+  // renders under its banner at its own URL; a version that does not exist is a 404.
+  if (!html.includes('Version 2') || !html.includes('data-version-history') || !html.includes('First draft')) fail('the page has no version line or history')
+  const v1 = await fetch(`${base}/abc23456/v/1`)
+  const v1html = await v1.text()
+  if (v1.status !== 200 || !v1html.includes('the first body') || !v1html.includes('You are reading version 1 of 2')) fail(`version 1 answered ${v1.status}`)
+  const v9 = await fetch(`${base}/abc23456/v/9`)
+  if (v9.status !== 404) fail(`a missing version answered ${v9.status}, not 404`)
+
   const png = await fetch(`${base}/abc23456/share.png?v=1`)
   const bytes = Buffer.from(await png.arrayBuffer())
   if (png.status !== 200 || bytes.subarray(1, 4).toString() !== 'PNG' || bytes.readUInt32BE(16) !== 1200)
@@ -91,7 +100,7 @@ try {
   const nr = await (await fetch(`${base}/api/artifacts/nts23456/state`, { headers: { cookie: ncookie } })).json()
   if (nr.slots?.notes?.shared?.[0]?.value?.note !== 'packed') fail(`notes read back ${JSON.stringify(nr)}`)
 
-  console.log('check-packed: fixture builds; page, share card, publish, state routes and the notes widget answer correctly')
+  console.log('check-packed: fixture builds; page, version history, share card, publish, state routes and the notes widget answer correctly')
 } finally {
   server.kill()
 }
