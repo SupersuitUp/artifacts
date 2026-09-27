@@ -3,6 +3,18 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.4.2 (2026-09-26)
+
+**The read-along highlight waits for play.**
+
+- The first word's timing starts at 0, so an untouched page sat with its first word lit before
+  anything played. `ArtifactReader` now lights nothing until the first play or seek. The word
+  choice is exported as `litWordIndex(words, now, started)`.
+- **DETECTOR:** a narrated page shows its first word highlighted at 0:00 before play.
+- **REMEDY:** update the dependency; no host change.
+- **Tests:** nothing lit before start; the word under the playhead once started; nothing in a
+  gap after a word ends.
+
 ## 0.4.1 (2026-09-26)
 
 **Big files upload straight to the bucket.**
