@@ -9,7 +9,11 @@ describe('ArtifactMarkdown', () => {
     const out = html('![The stack, animated](https://cdn.example.com/02-the-stack.abc12345.mp4)')
     expect(out).toContain('<video')
     expect(out).toContain('src="https://cdn.example.com/02-the-stack.abc12345.mp4"')
-    for (const a of ['autoPlay', 'muted', 'loop', 'playsInline']) expect(out.toLowerCase()).toContain(a.toLowerCase())
+    for (const a of ['muted', 'loop', 'playsinline', 'data-artifact-video']) expect(out).toContain(a)
+    // Not autoplay: that makes every video on the page download at once. VideoAutoplay starts
+    // each one as it nears the screen.
+    expect(out).not.toContain('autoplay')
+    expect(out).toContain('preload="metadata"')
     expect(out).toContain('aria-label="The stack, animated"')
     expect(out).not.toContain('<img')
     expect(html('![still](https://cdn.example.com/a.png)')).toContain('<img')

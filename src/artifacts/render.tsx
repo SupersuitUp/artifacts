@@ -9,6 +9,7 @@ import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { hasNotesWidget, headingsOf, type Heading } from './widgets.js'
 import { HeadingNotes, NoteToggle, NotesEarlier, NotesProvider } from '../widgets/notes.js'
+import { VideoAutoplay } from '../reader/video-autoplay.js'
 
 // Every colour is a theme variable (brand/theme.ts), so a page follows its light, dark or system mode.
 const GOLD = 'var(--a-accent)'
@@ -76,13 +77,15 @@ export function isReachableHref(href: unknown): href is string {
  *  is decoded frame by frame on the CPU and stuttered on an iPhone at 24fps (2026-09-27); video
  *  is decoded in hardware. */
 const VIDEO = /\.mp4(?:[?#].*)?$/i
+const VIDEO_IN_MD = /\]\([^)\s]+\.mp4(?:[?#][^)]*)?\)/i
 const escapeAttr = (s: string) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
 // Written as markup, not JSX: React renders `muted` as a property and leaves it out of server
-// HTML, and iOS refuses to autoplay a video whose markup is not muted. `playsinline` keeps
-// iPhone from going full screen.
+// HTML, and iOS refuses to play a video unprompted whose markup is not muted. `playsinline` keeps
+// iPhone from going full screen. No `autoplay`: VideoAutoplay starts each one as it nears the
+// screen, so a page of videos does not download them all on open.
 function InlineVideo({ src, label }: { src: string; label: string }) {
-  const html = `<video src="${escapeAttr(src)}" aria-label="${escapeAttr(label)}" autoplay muted loop playsinline preload="auto" disablepictureinpicture class="block w-full"></video>`
+  const html = `<video src="${escapeAttr(src)}" aria-label="${escapeAttr(label)}" data-artifact-video muted loop playsinline preload="metadata" disablepictureinpicture class="block w-full"></video>`
   return <span className="my-6 block overflow-hidden rounded-lg border border-[color:var(--a-line)]" dangerouslySetInnerHTML={{ __html: html }} />
 }
 
@@ -246,6 +249,7 @@ export function ArtifactMarkdown({ markdown, notes }: { markdown: string; notes?
           {body}
         </NotesProvider>
       ) : body}
+      {VIDEO_IN_MD.test(markdown) ? <VideoAutoplay /> : null}
     </div>
   )
 }

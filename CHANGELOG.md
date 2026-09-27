@@ -3,6 +3,20 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.4.7 (2026-09-27)
+
+**A page of videos opens as fast as a page of text.**
+
+- 0.4.6 marked every inline video `autoplay`, so all of them downloaded the moment the page opened
+  (21 diagrams, 6.8 MB, competing with the text and narration on a phone). The markup now carries
+  `preload="metadata"` and `data-artifact-video` instead, and a small client component,
+  `VideoAutoplay`, mounted only on pages that embed an `.mp4`, loads and plays each video as it
+  comes within a screen of view and pauses it when it leaves.
+- **DETECTOR:** a page with many inline videos is slow to become readable on cellular.
+- **REMEDY:** update the dependency; no host change.
+- **Tests:** the markup no longer autoplays and preloads only metadata; `VideoAutoplay` plays a
+  video only once it intersects, raises its preload, and pauses it when it leaves.
+
 ## 0.4.6 (2026-09-27)
 
 **Pages play video: `![alt](x.mp4)` is a silent, looping, autoplaying inline video.**
