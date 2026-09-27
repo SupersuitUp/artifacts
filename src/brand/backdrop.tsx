@@ -4,22 +4,11 @@
 // would need one.
 import type { Backdrop } from './pack.js'
 
-/** The Freedom Glow: blue light moving through the cool-to-magenta arc, one bubble per colour.
- *  Never the warm half (no red, orange, yellow or green), so no frame can read as a rainbow.
- *  Saturated rather than pastel; the veil is what keeps a light page reading as light. */
-export const GLOW_PASTELS = [
-  '31,107,255', // brand blue
-  '224,82,196', // magenta
-  '25,181,201', // teal
-  '156,92,240', // purple
-  '255,111,174', // pink
-  '34,195,230', // cyan
-  '123,107,230', // violet
-  '90,162,255', // sky
-  '199,125,255', // lavender
-]
+/** The Freedom Glow's colours (a blue core and the spectrum it separates into), mixed most of
+ *  the way to cream so a light page still reads as light. */
+export const GLOW_PASTELS = ['150,190,255', '215,185,240', '160,225,220', '250,195,180', '250,215,160', '190,210,255']
 
-// [animation, duration s, transform-origin] per bubble, after animate-ui's six plus three more.
+// [animation, duration s, transform-origin] per bubble, after the original's six.
 const MOTION: [string, number, string][] = [
   ['a-bubble-v', 30, 'center center'],
   ['a-bubble-c', 20, 'calc(50% - 400px) center'],
@@ -27,26 +16,18 @@ const MOTION: [string, number, string][] = [
   ['a-bubble-h', 40, 'calc(50% - 200px) center'],
   ['a-bubble-c', 20, 'calc(50% - 800px) calc(50% + 200px)'],
   ['a-bubble-v', 35, 'calc(50% + 300px) calc(50% - 200px)'],
-  ['a-bubble-h', 45, 'calc(50% + 200px) calc(50% + 300px)'],
-  ['a-bubble-c', 30, 'calc(50% + 600px) calc(50% - 300px)'],
-  ['a-bubble-v', 25, 'calc(50% - 300px) calc(50% + 400px)'],
 ]
 
-// [top %, left %] per bubble: spread over the page so neighbours overlap at their edges only.
-// Stacked in the middle, nine translucent hues average to grey.
-const HOME: [number, number][] = [
-  [-10, -15], [-15, 45], [15, 20], [30, -20], [35, 50], [55, 10], [65, 45], [80, -15], [85, 35],
-]
-
-// Only `transform` animates, on its own layer, so the browser moves finished bitmaps and never
-// repaints. The first version put a 40px blur over the whole viewport and hard-light blended every
-// bubble, which re-rasterised the full screen each frame and stuttered on a phone; the radial
-// gradients already fade to nothing, so neither was buying softness.
+// Each bubble is blurred on its OWN layer and only `transform` animates, so the browser rasterises
+// it once and slides the bitmap. The first version blurred a full-screen parent and hard-light
+// blended every bubble, which re-rasterised the whole viewport each frame and stuttered on a
+// phone (2026-09-26). The colours and layout are unchanged from that version on purpose: an
+// attempt to also widen the palette was reverted the same night ("really not a fan").
 const CSS = `
 @keyframes a-bubble-v{0%,100%{transform:translate3d(0,-50%,0)}50%{transform:translate3d(0,50%,0)}}
 @keyframes a-bubble-c{0%{transform:rotate(0deg)}50%{transform:rotate(180deg)}100%{transform:rotate(360deg)}}
 @keyframes a-bubble-h{0%,100%{transform:translate3d(-50%,-10%,0)}50%{transform:translate3d(50%,10%,0)}}
-[data-artifact-backdrop] .a-bubble{position:absolute;width:70%;height:60%;border-radius:9999px;will-change:transform;backface-visibility:hidden;animation-timing-function:ease-in-out;animation-iteration-count:infinite}
+[data-artifact-backdrop] .a-bubble{position:absolute;width:80%;height:80%;top:10%;left:10%;border-radius:9999px;filter:blur(40px);will-change:transform;backface-visibility:hidden;animation-timing-function:ease;animation-iteration-count:infinite}
 @media (prefers-reduced-motion: reduce){[data-artifact-backdrop] .a-bubble{animation:none!important}}
 `
 
@@ -68,13 +49,11 @@ export function Bubbles({ backdrop }: { backdrop: Backdrop }) {
               key={i}
               className="a-bubble"
               style={{
-                background: `radial-gradient(closest-side, rgba(${c},0.9) 0%, rgba(${c},0.6) 35%, rgba(${c},0.2) 70%, rgba(${c},0) 100%)`,
+                background: `radial-gradient(circle at center, rgba(${c},0.8) 0, rgba(${c},0) 50%)`,
                 animationName: name,
                 animationDuration: `${secs}s`,
                 animationDirection: i % 2 ? 'reverse' : 'normal',
                 transformOrigin: origin,
-                top: `${HOME[i % HOME.length][0]}%`,
-                left: `${HOME[i % HOME.length][1]}%`,
               }}
             />
           )

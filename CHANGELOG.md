@@ -3,6 +3,20 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.4.5 (2026-09-27)
+
+**The bubble ground looks as it did in 0.4.2, and stays smooth.**
+
+- The palette and layout changes of 0.4.3 and 0.4.4 are reverted: the six original pastels, the
+  original stacking and gradient. What stays is the performance fix, done differently: each bubble
+  carries its own `filter: blur(40px)` on its own layer (`will-change: transform`), so it is
+  rasterised once and slid, instead of one blur over the whole screen re-rasterised every frame.
+  The hard-light blend stays off; side by side the render is indistinguishable.
+- **DETECTOR:** the ground shows saturated magenta, teal or pink bubbles (0.4.3/0.4.4).
+- **REMEDY:** update the dependency.
+- **Tests:** the blur sits on the bubble, never on a full-screen wrapper; no blend; one bubble per
+  default colour.
+
 ## 0.4.4 (2026-09-26)
 
 **The glow stays on the cool-to-magenta arc.**

@@ -57,25 +57,11 @@ describe('brand packs', () => {
     expect(out.indexOf('data-artifact-backdrop')).toBeLessThan(out.indexOf('hi'))
     expect(renderToStaticMarkup(<BrandGround pack={freedomDefault}><p /></BrandGround>)).not.toContain('data-artifact-backdrop')
   })
-  it('bubbles animate on the compositor only: no full-screen blur or blend to repaint every frame', () => {
+  it('bubbles animate on the compositor only: no blur or blend over the whole screen', () => {
     const out = renderToStaticMarkup(<BrandGround pack={{ ...freedomDefault, backdrop: { kind: 'bubbles' } }}><p /></BrandGround>)
-    expect(out).not.toMatch(/filter:\s*blur/)
+    expect(out).not.toMatch(/style="[^"]*filter:\s*blur/)
     expect(out).not.toContain('mix-blend-mode')
-    expect(out).toContain('will-change:transform')
-  })
-  it('the default glow runs the whole spectrum, one bubble per colour', () => {
-    expect(GLOW_PASTELS.length).toBeGreaterThanOrEqual(9)
-    const out = renderToStaticMarkup(<BrandGround pack={{ ...freedomDefault, backdrop: { kind: 'bubbles' } }}><p /></BrandGround>)
+    expect(out).toMatch(/\.a-bubble\{[^}]*filter:blur\(40px\)[^}]*will-change:transform/)
     expect(out.match(/class="a-bubble"/g)?.length).toBe(GLOW_PASTELS.length)
-  })
-  it('the default glow never carries the warm half, so it cannot read as a rainbow', () => {
-    for (const c of GLOW_PASTELS) {
-      const [r, g, b] = c.split(',').map(Number)
-      const max = Math.max(r, g, b), min = Math.min(r, g, b)
-      const d = max - min
-      const hue = d === 0 ? 0 : max === r ? (60 * ((g - b) / d) + 360) % 360 : max === g ? 60 * ((b - r) / d) + 120 : 60 * ((r - g) / d) + 240
-      // cyan (~180) round through blue and violet to magenta-pink (~335); no red, orange, yellow, green
-      expect(hue >= 175 && hue <= 340, `${c} has hue ${Math.round(hue)}`).toBe(true)
-    }
   })
 })
