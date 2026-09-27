@@ -4,6 +4,7 @@ import matter from 'gray-matter'
 import { ACCESS_LEVELS, type Access } from './reader.js'
 import { parseStateConfig, type StateConfig } from './state.js'
 import { mergeWidgetState, scanWidgets } from './widgets.js'
+import { THEME_MODES, type ThemeMode } from '../brand/theme.js'
 
 export type ArtifactMeta = {
   title: string
@@ -32,9 +33,13 @@ export type ArtifactMeta = {
   /** What readers may put into the page. Content, like the body: a republish without it removes
    *  the slots from the page and KEEPS the answers already given. */
   state?: StateConfig
+  /** Light, dark, or the reader's device, overriding the brand pack's mode for this page. */
+  theme?: ThemeMode
+  /** The table of contents: absent draws it once the page has four sections, false never. */
+  toc?: boolean
 }
 
-const KNOWN = new Set(['title', 'summary', 'subtitle', 'template', 'audience', 'cover', 'id', 'voice', 'narration', 'timings', 'narrationHash', 'password', 'access', 'state'])
+const KNOWN = new Set(['title', 'summary', 'subtitle', 'template', 'audience', 'cover', 'id', 'voice', 'narration', 'timings', 'narrationHash', 'password', 'access', 'state', 'theme', 'toc'])
 
 export function parseArtifactSource(
   text: string,
@@ -63,6 +68,14 @@ export function parseArtifactSource(
     if (d.access !== 'public' && !ACCESS_LEVELS.includes(d.access as Access))
       return { ok: false, error: `access must be one of: public, ${ACCESS_LEVELS.join(', ')}` }
     meta.access = d.access as Access | 'public'
+  }
+  if (d.theme !== undefined) {
+    if (!THEME_MODES.includes(d.theme as ThemeMode)) return { ok: false, error: `theme must be one of: ${THEME_MODES.join(', ')}` }
+    meta.theme = d.theme as ThemeMode
+  }
+  if (d.toc !== undefined) {
+    if (typeof d.toc !== 'boolean') return { ok: false, error: 'toc must be true or false' }
+    meta.toc = d.toc
   }
   if (d.state !== undefined) {
     const s = parseStateConfig(d.state)

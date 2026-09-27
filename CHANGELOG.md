@@ -3,6 +3,34 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.4.0 (2026-09-26)
+
+**Light and dark modes, a table of contents, and an animated ground.**
+
+- **Modes.** `BrandPack` gains `light` (a second palette), `mode` (`light`, `dark` or `system`,
+  default `dark`) and `backdrop`. A page may override the mode with `theme:` in its front matter.
+  Every colour the page draws is now a CSS variable set by `BrandGround` for the mode, so `system`
+  follows the reader's device. `freedomDefault` carries a light palette.
+- **Table of contents.** Built from the page's `##` headings: a sticky rail in the left margin at
+  `xl` widths, highlighting the section being read, and a closed "Contents" list above the body
+  below that. Both are `data-nospeak`. It appears once a page has four sections; `toc: false`
+  removes it and `toc: true` draws it from one. Every heading now carries its slug as an `id`,
+  with or without the notes widget.
+- **Bubbles.** `backdrop: { kind: 'bubbles' }` draws drifting colour behind the page in plain CSS,
+  held still under `prefers-reduced-motion`. A pack with its own `Wrapper` draws its own ground
+  and ignores `backdrop`.
+- **Long words wrap.** The body is `break-words`, so a bare URL in prose no longer pushes a phone
+  sideways (a 390px screen scrolled 7px on the first page checked).
+- **DETECTOR:** a page's root carries `data-artifact-theme`; an open page with four sections
+  carries `data-artifact-toc`. A host whose pages still show zinc-on-black text in a light mode is
+  building from a Tailwind `content` list that does not scan this package's `lib/`.
+- **REMEDY:** none required. A pack with no `mode` keeps its dark look, and `theme`/`toc` are new
+  optional keys. A host whose publisher strips unknown front matter keys must forward `theme` and
+  `toc` for pages to set them.
+- **Tests:** theme CSS per mode and the fallback light palette; the ground, the wrapper-pack path
+  and the backdrop; `theme` and `toc` parsed, refused, stored and cleared on republish; heading ids
+  without notes; the route's mode and both contents placements.
+
 ## 0.3.0 (2026-09-25)
 
 **Notes, the first widget.** A ```` ```notes ```` block in a page puts a small "note" control

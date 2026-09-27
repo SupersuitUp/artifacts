@@ -1,5 +1,13 @@
 import type { ComponentType, ReactNode } from 'react'
 import { newsreader } from './default-share.js'
+import type { ThemeMode } from './theme.js'
+
+/** One set of page colours. */
+export type Palette = { ground: string; ink: string; accent: string }
+
+/** The animated ground behind a page. `bubbles` is soft colour drifting under a veil of the
+ *  ground colour. Colours are `r,g,b` triplets. */
+export type Backdrop = { kind: 'bubbles'; colors?: string[]; veil?: number }
 
 /**
  * A brand pack is what makes an operator's pages theirs: data plus at most two
@@ -9,10 +17,16 @@ import { newsreader } from './default-share.js'
 export type BrandPack = {
   id: string
   name: string
-  /** CSS colours. */
+  /** CSS colours: the DARK palette, which is every pack's original one. */
   ground: string
   ink: string
   accent: string
+  /** The light palette. Absent, a warm paper palette with this pack's accent is used. */
+  light?: Palette
+  /** The mode a page opens in unless its front matter says otherwise. Default `dark`. */
+  mode?: ThemeMode
+  /** An animated ground drawn behind the page. Ignored when the pack has its own Wrapper. */
+  backdrop?: Backdrop
   /** CSS font-family values for headings and body. */
   type: { display: string; body: string }
   /** The small uppercase line above a title, e.g. "From Sam Rivera". */
@@ -44,6 +58,7 @@ export const freedomDefault: BrandPack = {
   ground: '#0e0f13',
   ink: '#ece7dc',
   accent: '#c9a96e',
+  light: { ground: '#f6f1e7', ink: '#1c1a17', accent: '#8a6a2c' },
   type: {
     display: 'Georgia, "Iowan Old Style", "Times New Roman", serif',
     body: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif',

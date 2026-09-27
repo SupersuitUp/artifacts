@@ -12,6 +12,7 @@ import { FieldValue, type Firestore } from 'firebase-admin/firestore'
 import type { ArtifactMeta } from './front-matter.js'
 import type { Access } from './reader.js'
 import type { StateConfig } from './state.js'
+import type { ThemeMode } from '../brand/theme.js'
 
 export type ArtifactRecord = {
   id: string
@@ -28,6 +29,8 @@ export type ArtifactRecord = {
   password?: string
   access?: Access
   state?: StateConfig
+  theme?: ThemeMode
+  toc?: boolean
   markdown: string
   createdAt: string
   updatedAt: string
@@ -103,6 +106,8 @@ async function saveArtifact(col: Col, input: {
     ...(input.meta.password ? { password: input.meta.password } : {}),
     ...(input.meta.access && input.meta.access !== 'public' ? { access: input.meta.access } : {}),
     ...(input.meta.state ? { state: input.meta.state } : {}),
+    ...(input.meta.theme ? { theme: input.meta.theme } : {}),
+    ...(input.meta.toc !== undefined ? { toc: input.meta.toc } : {}),
   }
   if (input.id) {
     const existing = await getArtifact(col, input.id)
@@ -126,8 +131,13 @@ async function saveArtifact(col: Col, input: {
     const access = input.meta.access === 'public' ? { access: FieldValue.delete() } : {}
     // Content, like the body: a republish that no longer declares state removes the slots.
     const state = input.meta.state ? {} : { state: FieldValue.delete() }
+    // How the page looks is content too: a line the file no longer carries goes back to the default.
+    const look = {
+      ...(input.meta.theme ? {} : { theme: FieldValue.delete() }),
+      ...(input.meta.toc !== undefined ? {} : { toc: FieldValue.delete() }),
+    }
     await ref.update({
-      ...fields, ...password, ...subtitle, ...access, ...state, markdown: input.markdown, updatedAt: now, version: next,
+      ...fields, ...password, ...subtitle, ...access, ...state, ...look, markdown: input.markdown, updatedAt: now, version: next,
       ...(existing.versions ? { versions: FieldValue.delete() } : {}),
     })
     return { id: input.id, version: next, created: false }

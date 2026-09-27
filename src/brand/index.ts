@@ -1,3 +1,5 @@
-export { freedomDefault, type BrandPack, type ShareCardAssets } from './pack.js'
+export { freedomDefault, type BrandPack, type ShareCardAssets, type Palette, type Backdrop } from './pack.js'
 export { BrandGround, BrandMark } from './wrapper.js'
 export { renderShareCard } from './share-card.js'
+export { THEME_MODES, type ThemeMode, themeCss, themedPack, resolveMode } from './theme.js'
+export { GLOW_PASTELS } from './backdrop.js'

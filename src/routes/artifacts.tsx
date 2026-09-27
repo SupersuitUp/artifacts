@@ -17,6 +17,8 @@ import { shapeChanges } from '../artifacts/state.js'
 import type { StateStore } from '../artifacts/state-store.js'
 import { ASSET_NAME, contentTypeFor, type ArtifactAssets } from '../artifacts/assets.js'
 import { BrandGround } from '../brand/wrapper.js'
+import { themedPack } from '../brand/theme.js'
+import { showToc, tocOf, TocInline, TocRail } from '../artifacts/toc.js'
 import { renderShareCard } from '../brand/share-card.js'
 import type { BrandPack } from '../brand/pack.js'
 import { ArtifactReader, type WordTiming } from '../reader/artifact-reader.js'
@@ -76,7 +78,11 @@ async function defaultReadCookie(name: string): Promise<string | undefined> {
 }
 
 export function createArtifactRoutes(config: ArtifactRoutesConfig) {
-  const { store, brand, siteUrl } = config
+  const { store, siteUrl } = config
+  // The pack as configured draws the share card; the page paints with its theme variables, so a
+  // page follows its light, dark or system mode (brand/theme.ts).
+  const pack = config.brand
+  const brand = themedPack(pack)
   const prefix = config.pagePrefix ?? '/'
   const pageUrl = (id: string) => `${siteUrl}${prefix}${id}`
   const pagePath = (id: string) => `${prefix}${id}`
@@ -148,7 +154,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     const remember = paths.length ? paths.map((p) => `document.cookie=${JSON.stringify(unlockLine(p))}`).join(';') : null
     if (!open) {
       return (
-        <BrandGround pack={brand}>
+        <BrandGround pack={pack} mode={a.theme}>
           <div className="mx-auto max-w-2xl px-6 pt-24 pb-8 text-center sm:pt-28">
             <p data-nospeak className="mb-4 text-[11px] font-medium uppercase tracking-[0.3em]" style={{ color: brand.accent }}>
               {brand.kicker}
@@ -168,57 +174,10 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
       )
     }
     void store.bumpViews(id)
-    let words: WordTiming[] = []
-    if (a.narration && a.timings) {
-      try {
-        const r = await fetch(a.timings, { next: { revalidate: 3600 } })
-        if (r.ok) words = ((await r.json()) as { words: WordTiming[] }).words ?? []
-      } catch {
-        words = []
-      }
-    }
-    const when = new Date(a.updatedAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
     return (
-      <BrandGround pack={brand}>
+      <BrandGround pack={pack} mode={a.theme}>
         {remember ? <script dangerouslySetInnerHTML={{ __html: remember }} /> : null}
-        <div id="artifact-narration-root">
-          <div className="mx-auto max-w-2xl px-6 pt-24 pb-8 text-center sm:pt-28">
-            <p data-nospeak className="mb-4 text-[11px] font-medium uppercase tracking-[0.3em]" style={{ color: brand.accent }}>
-              {brand.kicker}
-            </p>
-            <h1 className="text-4xl sm:text-5xl" style={{ fontFamily: brand.type.display, color: brand.ink }}>
-              {a.title}
-            </h1>
-            {a.subtitle ? (
-              <p className="mx-auto mt-4 max-w-xl text-xl sm:text-2xl" style={{ fontFamily: brand.type.display, color: brand.ink }}>
-                {a.subtitle}
-              </p>
-            ) : null}
-            <p className="mx-auto mt-6 max-w-xl text-lg italic opacity-80">{a.summary}</p>
-            <p data-nospeak className="mt-4 text-xs opacity-50">
-              Updated {when}
-            </p>
-          </div>
-          {a.cover ? (
-            <div className="mx-auto max-w-2xl px-6 pb-8">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={a.cover} alt="" className="w-full rounded-xl border border-white/10" />
-            </div>
-          ) : null}
-          <article className="mx-auto max-w-2xl px-6 pb-24">
-            <ArtifactMarkdown markdown={a.markdown} notes={config.state && a.state ? { artifactId: a.id, accent: brand.accent } : undefined} />
-          </article>
-        </div>
-        {a.narration && words.length > 0 ? (
-          <ArtifactReader
-            src={a.narration}
-            words={words}
-            rootId="artifact-narration-root"
-            label={brand.narratorLabel(a.voice)}
-            accent={brand.accent}
-            ground={brand.ground}
-          />
-        ) : null}
+        {await Body(a, { top: true })}
       </BrandGround>
     )
   }
@@ -249,7 +208,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     if (!d.open) {
       if (d.why === 'not-allowed' && config.readers) void config.readers.flag({ artifactId: id, reader: d.reader, kind: 'refused' }).catch(() => {})
       return (
-        <BrandGround pack={brand}>
+        <BrandGround pack={pack} mode={a.theme}>
           {header}
           {d.why === 'not-allowed'
             ? <NotAllowedDoor brand={brand} reader={d.reader} signOutUrl={signOutUrl(id)} />
@@ -261,7 +220,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     // The agreement comes before the body, every reader, once per page. No agreement, no body.
     if (config.readers && !(await config.readers.acknowledged(id, r.email))) {
       return (
-        <BrandGround pack={brand}>
+        <BrandGround pack={pack} mode={a.theme}>
           {header}
           <AckDoor brand={brand} name={firstName(r, allow)} email={r.email} owner={owner} pageId={id} signOutUrl={signOutUrl(id)} />
         </BrandGround>
@@ -269,7 +228,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     }
     void store.bumpViews(id)
     return (
-      <BrandGround pack={brand}>
+      <BrandGround pack={pack} mode={a.theme}>
         <style dangerouslySetInnerHTML={{ __html: NO_PRINT_CSS }} />
         <Watermark email={r.email} />
         {/* Padding, never a margin: a top margin here collapses through the ground and leaves a
@@ -295,8 +254,10 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
       }
     }
     const when = new Date(a.updatedAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+    const toc = showToc(a.markdown, a.toc) ? tocOf(a.markdown) : []
     return (
       <>
+        {toc.length ? <TocRail items={toc} /> : null}
         <div id="artifact-narration-root">
           <div className={`mx-auto max-w-2xl px-6 ${top ? 'pt-24 sm:pt-28' : 'pt-12'} pb-8 text-center`}>
             <p data-nospeak className="mb-4 text-[11px] font-medium uppercase tracking-[0.3em]" style={{ color: brand.accent }}>
@@ -318,10 +279,11 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
           {a.cover ? (
             <div className="mx-auto max-w-2xl px-6 pb-8">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={a.cover} alt="" className="w-full rounded-xl border border-white/10" />
+              <img src={a.cover} alt="" className="w-full rounded-xl border border-[color:var(--a-line)]" />
             </div>
           ) : null}
           <article className="mx-auto max-w-2xl px-6 pb-24">
+            {toc.length ? <TocInline items={toc} /> : null}
             <ArtifactMarkdown markdown={a.markdown} notes={config.state && a.state ? { artifactId: a.id, accent: brand.accent } : undefined} />
           </article>
         </div>
@@ -525,7 +487,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     if (!brand.share) return new NextResponse('no share card for this host', { status: 404 })
     const a = ARTIFACT_ID.test(id) ? await store.get(id) : null
     if (!a) return new NextResponse(`no artifact with id ${id}`, { status: 404 })
-    return renderShareCard(brand, a.title)
+    return renderShareCard(pack, a.title)
   }
 
   async function DELETE(request: NextRequest, { params }: Params) {

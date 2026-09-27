@@ -114,7 +114,7 @@ export function ReaderWatch({ artifactId, endpoint, accent }: { artifactId: stri
       role="status"
       data-nospeak
       className="fixed inset-x-0 bottom-6 z-50 mx-auto w-fit max-w-[90vw] rounded-lg px-4 py-3 text-sm shadow-lg"
-      style={{ background: '#111', color: '#fff', border: `1px solid ${accent}` }}
+      style={{ background: 'var(--a-ground, #111)', color: 'var(--a-ink, #fff)', border: `1px solid ${accent}` }}
     >
       {notice}
     </div>

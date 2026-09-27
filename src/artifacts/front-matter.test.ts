@@ -91,3 +91,18 @@ describe('widgets in the body', () => {
     expect(r.ok && r.meta.state).toBeUndefined()
   })
 })
+
+describe('theme and toc', () => {
+  it('a page may pick its mode and turn the contents on or off', () => {
+    const r = parseArtifactSource('---\ntitle: T\nsummary: S\ntheme: system\ntoc: false\n---\nx')
+    expect(r.ok && r.meta.theme).toBe('system')
+    expect(r.ok && r.meta.toc).toBe(false)
+    const d = parseArtifactSource('---\ntitle: T\nsummary: S\n---\nx')
+    expect(d.ok && d.meta.theme).toBeUndefined()
+    expect(d.ok && d.meta.toc).toBeUndefined()
+  })
+  it('refuses a mode it does not know and a toc that is not true or false', () => {
+    expect(parseArtifactSource('---\ntitle: T\nsummary: S\ntheme: sepia\n---\nx')).toEqual({ ok: false, error: 'theme must be one of: light, dark, system' })
+    expect(parseArtifactSource('---\ntitle: T\nsummary: S\ntoc: yes please\n---\nx')).toEqual({ ok: false, error: 'toc must be true or false' })
+  })
+})

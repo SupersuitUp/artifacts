@@ -31,4 +31,29 @@ describe('brand packs', () => {
     expect(out).toContain('data-custom-mark')
     expect(out).not.toContain('🕊')
   })
+  it('the ground carries the mode and the stylesheet that defines it', () => {
+    const out = renderToStaticMarkup(<BrandGround pack={{ ...freedomDefault, mode: 'light' }}><p>hi</p></BrandGround>)
+    expect(out).toContain('data-artifact-theme="light"')
+    expect(out).toContain('--a-ground:#f6f1e7')
+    expect(out).toContain('background:var(--a-ground)')
+    const sys = renderToStaticMarkup(<BrandGround pack={freedomDefault} mode="system"><p>hi</p></BrandGround>)
+    expect(sys).toContain('data-artifact-theme="system"')
+  })
+  it('a wrapper pack still gets the variables, without a second ground', () => {
+    const pack: BrandPack = { ...freedomDefault, id: 'w', Wrapper: ({ children }) => <section data-w>{children}</section> }
+    const out = renderToStaticMarkup(<BrandGround pack={pack}><p>hi</p></BrandGround>)
+    expect(out).toContain('data-artifact-theme="dark"')
+    expect(out).toContain('display:contents')
+    expect(out).toContain('data-w')
+  })
+  it('bubbles draw behind the page, and hold still for readers who ask for less motion', () => {
+    const out = renderToStaticMarkup(
+      <BrandGround pack={{ ...freedomDefault, backdrop: { kind: 'bubbles', colors: ['1,2,3', '4,5,6'] } }}><p>hi</p></BrandGround>,
+    )
+    expect(out).toContain('data-artifact-backdrop="bubbles"')
+    expect(out).toContain('rgba(1,2,3,')
+    expect(out).toContain('prefers-reduced-motion')
+    expect(out.indexOf('data-artifact-backdrop')).toBeLessThan(out.indexOf('hi'))
+    expect(renderToStaticMarkup(<BrandGround pack={freedomDefault}><p /></BrandGround>)).not.toContain('data-artifact-backdrop')
+  })
 })

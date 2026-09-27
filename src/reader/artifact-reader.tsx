@@ -169,8 +169,8 @@ export function ArtifactReader({
     <>
       <style>{`
         .artifact-word { border-radius: 3px; transition: background-color 120ms; }
-        .artifact-word:hover { background: rgba(255,255,255,0.08); cursor: pointer; }
-        .artifact-word-lit { background: ${accent}59; color: #fff; }
+        .artifact-word:hover { background: var(--a-surface-strong, rgba(255,255,255,0.08)); cursor: pointer; }
+        .artifact-word-lit { background: color-mix(in srgb, ${accent} 35%, transparent); color: var(--a-strong, #fff); }
       `}</style>
       <audio
         ref={audioRef}
@@ -181,7 +181,7 @@ export function ArtifactReader({
         onLoadedMetadata={(e) => setDur((e.target as HTMLAudioElement).duration)}
         onRateChange={(e) => setRate((e.target as HTMLAudioElement).playbackRate)}
       />
-      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-white/10 backdrop-blur" style={{ background: `${ground}e6` }}>
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-[color:var(--a-line)] backdrop-blur" style={{ background: `color-mix(in srgb, ${ground} 90%, transparent)` }}>
         <div className="mx-auto flex max-w-2xl items-center gap-4 px-6 py-3">
           <button
             type="button"
@@ -214,7 +214,7 @@ export function ArtifactReader({
               style={{ accentColor: accent }}
             />
           </div>
-          <div className="w-16 shrink-0 text-right text-xs tabular-nums text-zinc-400">
+          <div className="w-16 shrink-0 text-right text-xs tabular-nums text-[color:var(--a-muted)]">
             {fmt(t)} / {fmt(dur)}
           </div>
           <button
@@ -223,7 +223,7 @@ export function ArtifactReader({
               const next = rate >= 1.5 ? 1 : rate + 0.25
               if (audioRef.current) audioRef.current.playbackRate = next
             }}
-            className="shrink-0 rounded border border-white/15 px-2 py-1 text-xs text-zinc-300"
+            className="shrink-0 rounded border border-[color:var(--a-line-strong)] px-2 py-1 text-xs text-[color:var(--a-body)]"
             aria-label="Playback speed"
           >
             {rate}x

@@ -10,7 +10,8 @@ import remarkGfm from 'remark-gfm'
 import { hasNotesWidget, headingsOf, type Heading } from './widgets.js'
 import { HeadingNotes, NoteToggle, NotesEarlier, NotesProvider } from '../widgets/notes.js'
 
-const GOLD = '#C2A15C'
+// Every colour is a theme variable (brand/theme.ts), so a page follows its light, dark or system mode.
+const GOLD = 'var(--a-accent)'
 
 function hostOf(url: string) {
   try {
@@ -47,12 +48,12 @@ function LinkCards({ source }: { source: string }) {
             href={r.url}
             target="_blank"
             rel="noopener noreferrer"
-            className="block rounded-lg border border-white/10 bg-white/[0.03] px-4 py-3 no-underline transition-colors hover:border-white/25"
+            className="block rounded-lg border border-[color:var(--a-line)] bg-[color:var(--a-surface)] px-4 py-3 no-underline transition-colors hover:border-[color:var(--a-line-strong)]"
           >
             <span className="block text-[11px] uppercase tracking-[0.2em]" style={{ color: GOLD }}>
               {hostOf(r.url)}
             </span>
-            <span className="block text-zinc-100">{r.note || r.url}</span>
+            <span className="block text-[color:var(--a-strong)]">{r.note || r.url}</span>
           </a>
         </li>
       ))}
@@ -72,25 +73,22 @@ export function isReachableHref(href: unknown): href is string {
 }
 
 const components: Components = {
-  h1: ({ children }) => <h1 className="mt-10 mb-4 font-serif text-3xl text-zinc-50">{children}</h1>,
-  h2: ({ children }) => <h2 className="mt-10 mb-3 font-serif text-2xl text-zinc-50">{children}</h2>,
-  h3: ({ children }) => <h3 className="mt-8 mb-2 text-lg font-semibold text-zinc-100">{children}</h3>,
   p: ({ children }) => <p className="my-4 leading-relaxed">{children}</p>,
   ul: ({ children }) => <ul className="my-4 list-disc space-y-1 pl-6">{children}</ul>,
   ol: ({ children }) => <ol className="my-4 list-decimal space-y-1 pl-6">{children}</ol>,
-  hr: () => <hr className="my-10 border-white/10" />,
+  hr: () => <hr className="my-10 border-[color:var(--a-line)]" />,
   table: ({ children }) => (
     <div className="my-6 overflow-x-auto">
       <table className="w-full border-collapse text-sm">{children}</table>
     </div>
   ),
   th: ({ children }) => (
-    <th className="border-b border-white/20 px-3 py-2 text-left font-semibold text-zinc-100">{children}</th>
+    <th className="border-b border-[color:var(--a-line-strong)] px-3 py-2 text-left font-semibold text-[color:var(--a-strong)]">{children}</th>
   ),
-  td: ({ children }) => <td className="border-b border-white/10 px-3 py-2 align-top">{children}</td>,
+  td: ({ children }) => <td className="border-b border-[color:var(--a-line)] px-3 py-2 align-top">{children}</td>,
   img: ({ src, alt }) => (
     // eslint-disable-next-line @next/next/no-img-element
-    <img src={typeof src === 'string' ? src : undefined} alt={alt ?? ''} className="my-6 w-full rounded-lg border border-white/10" />
+    <img src={typeof src === 'string' ? src : undefined} alt={alt ?? ''} className="my-6 w-full rounded-lg border border-[color:var(--a-line)]" />
   ),
   a: ({ href, children }) =>
     !isReachableHref(href) ? (
@@ -100,11 +98,11 @@ const components: Components = {
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="text-zinc-50 underline decoration-white/30 underline-offset-4 hover:decoration-white"
+      className="text-[color:var(--a-strong)] underline decoration-[color:var(--a-line-strong)] underline-offset-4 hover:decoration-[color:var(--a-strong)]"
     >
       {children}
       {href && hostOf(href) ? (
-        <span data-nospeak className="ml-1 text-xs text-zinc-500">
+        <span data-nospeak className="ml-1 text-xs text-[color:var(--a-muted)]">
           ({hostOf(href)})
         </span>
       ) : null}
@@ -117,7 +115,7 @@ const components: Components = {
     // answers) it draws nothing: its settings are not prose and never shown as code.
     if (lang === 'notes') return null
     if (!className) {
-      return <code className="rounded bg-white/10 px-1.5 py-0.5 text-[0.9em] text-zinc-100">{children}</code>
+      return <code className="rounded bg-[color:var(--a-surface-strong)] px-1.5 py-0.5 text-[0.9em] text-[color:var(--a-strong)]">{children}</code>
     }
     return <code className={className}>{children}</code>
   },
@@ -129,7 +127,7 @@ const components: Components = {
     return (
       <pre
         data-artifact-code
-        className="my-6 overflow-x-auto rounded-lg border border-white/10 bg-black/40 p-4 text-sm text-zinc-100"
+        className="my-6 overflow-x-auto rounded-lg border border-[color:var(--a-line)] bg-[color:var(--a-code)] p-4 text-sm text-[color:var(--a-strong)]"
       >
         {children}
       </pre>
@@ -140,7 +138,7 @@ const components: Components = {
     const m = CALLOUT.exec(t)
     if (!m) {
       return (
-        <blockquote className="my-6 border-l-2 pl-4 italic text-zinc-300" style={{ borderColor: GOLD }}>
+        <blockquote className="my-6 border-l-2 pl-4 italic text-[color:var(--a-body)]" style={{ borderColor: GOLD }}>
           {children}
         </blockquote>
       )
@@ -151,24 +149,38 @@ const components: Components = {
       <aside
         data-callout={kind}
         className="my-6 rounded-lg border px-4 py-3"
-        style={{ borderColor: kind === 'warning' ? '#d97706' : GOLD, background: 'rgba(255,255,255,0.03)' }}
+        style={{ borderColor: kind === 'warning' ? '#d97706' : GOLD, background: 'var(--a-surface)' }}
       >
         <span data-nospeak className="block text-[11px] uppercase tracking-[0.2em]" style={{ color: GOLD }}>
           {kind}
         </span>
-        <p className="mt-1 text-zinc-100">{body}</p>
+        <p className="mt-1 text-[color:var(--a-strong)]">{body}</p>
       </aside>
     )
   },
 }
 
+// scroll-mt keeps a heading clear of the top of the screen when a contents link jumps to it.
 const HEADING_CLASS: Record<number, string> = {
-  1: 'mt-10 mb-4 font-serif text-3xl text-zinc-50',
-  2: 'mt-10 mb-3 font-serif text-2xl text-zinc-50',
-  3: 'mt-8 mb-2 text-lg font-semibold text-zinc-100',
-  4: 'mt-6 mb-2 font-semibold text-zinc-100',
-  5: 'mt-6 mb-2 font-semibold text-zinc-100',
-  6: 'mt-6 mb-2 font-semibold text-zinc-100',
+  1: 'mt-10 mb-4 scroll-mt-24 font-serif text-3xl text-[color:var(--a-strong)]',
+  2: 'mt-10 mb-3 scroll-mt-24 font-serif text-2xl text-[color:var(--a-strong)]',
+  3: 'mt-8 mb-2 scroll-mt-24 text-lg font-semibold text-[color:var(--a-strong)]',
+  4: 'mt-6 mb-2 scroll-mt-24 font-semibold text-[color:var(--a-strong)]',
+  5: 'mt-6 mb-2 scroll-mt-24 font-semibold text-[color:var(--a-strong)]',
+  6: 'mt-6 mb-2 scroll-mt-24 font-semibold text-[color:var(--a-strong)]',
+}
+
+/** Components for any page: every heading gets its slug as an id, the one headingsOf derived,
+ *  so a contents link and a note both land on it. */
+function pageComponents(headings: Heading[]): Components {
+  const byLine = new Map(headings.map((h) => [h.line, h]))
+  const heading = (depth: 1 | 2 | 3 | 4 | 5 | 6): Components['h1'] =>
+    function Heading({ node, children }) {
+      const Tag = `h${depth}` as const
+      const h = byLine.get(node?.position?.start.line ?? -1)
+      return <Tag id={h?.slug} className={HEADING_CLASS[depth]}>{children}</Tag>
+    }
+  return { ...components, h1: heading(1), h2: heading(2), h3: heading(3), h4: heading(4), h5: heading(5), h6: heading(6) }
 }
 
 /** Components for a page with a notes block: every heading gets its slug as an id, a note
@@ -203,14 +215,15 @@ function notesComponents(headings: Heading[]): Components {
  *  page carries a ```notes block. */
 export function ArtifactMarkdown({ markdown, notes }: { markdown: string; notes?: { artifactId: string; accent?: string } }) {
   const on = !!notes && hasNotesWidget(markdown)
-  const headings = on ? headingsOf(markdown) : []
+  const headings = headingsOf(markdown)
   const body = (
-    <ReactMarkdown remarkPlugins={[remarkGfm]} components={on ? notesComponents(headings) : components}>
+    <ReactMarkdown remarkPlugins={[remarkGfm]} components={on ? notesComponents(headings) : pageComponents(headings)}>
       {markdown}
     </ReactMarkdown>
   )
   return (
-    <div className="text-[17px] text-zinc-200">
+    // break-words: a bare URL in prose is one unbreakable word and pushed phones 7px sideways (2026-09-26).
+    <div className="break-words text-[17px] text-[color:var(--a-body)]">
       {on ? (
         <NotesProvider artifactId={notes!.artifactId} headings={headings.map(({ slug, text }) => ({ slug, text }))} accent={notes!.accent}>
           {body}

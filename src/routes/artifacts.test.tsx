@@ -93,6 +93,25 @@ describe('createArtifactRoutes', () => {
     expect(out).toContain('hi')
     expect(out).toContain('data-brand-ground="freedom-default"')
   })
+  it('the page opens in the pack mode unless the page picks its own, and paints with variables', async () => {
+    const light = createArtifactRoutes({ store, brand: { ...freedomDefault, mode: 'light' }, siteUrl: 'https://example.com', publishKey: () => 'k' })
+    const out = renderToStaticMarkup(await light.Page(params('abc23456')))
+    expect(out).toContain('data-artifact-theme="light"')
+    expect(out).toContain('color:var(--a-ink)')
+    expect(out).not.toContain('color:' + freedomDefault.ink)
+    store.get = vi.fn(async () => ({ ...rec, theme: 'system' as const }))
+    expect(renderToStaticMarkup(await light.Page(params('abc23456')))).toContain('data-artifact-theme="system"')
+  })
+  it('a page with four sections gets its contents twice, a rail and an inline list; toc: false removes both', async () => {
+    const md = '## One\n\n## Two\n\n## Three\n\n## Four\n'
+    store.get = vi.fn(async () => ({ ...rec, markdown: md }))
+    const out = renderToStaticMarkup(await routes.Page(params('abc23456')))
+    expect(out).toContain('data-artifact-toc="rail"')
+    expect(out).toContain('data-artifact-toc="inline"')
+    expect(out).toContain('id="four"')
+    store.get = vi.fn(async () => ({ ...rec, markdown: md, toc: false }))
+    expect(renderToStaticMarkup(await routes.Page(params('abc23456')))).not.toContain('data-artifact-toc')
+  })
   it('the page carries NO brand mark above the kicker', async () => {
     // An artifact is somebody's writing to somebody, so the header opens on the kicker and the
     // title. An emblem above the kicker was tried and removed (2026-09-13): artifacts do not

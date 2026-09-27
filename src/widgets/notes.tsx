@@ -130,7 +130,7 @@ export function NoteToggle({ slug }: { slug: string }) {
 function NoteItem({ n, c, under }: { n: PlacedNote; c: Ctx; under?: boolean }) {
   return (
     <li className="m-0 border-l-2 py-1 pl-3" style={{ borderColor: c.accent }}>
-      <span className="block whitespace-pre-wrap text-[15px] text-zinc-100">{n.note}</span>
+      <span className="block whitespace-pre-wrap text-[15px] text-[color:var(--a-strong)]">{n.note}</span>
       <span className="block text-xs opacity-60">
         {n.name}
         {under ? <> · under “{n.heading}”</> : null}
@@ -168,11 +168,11 @@ function NoteForm({ slug, heading, c }: { slug: string; heading: string; c: Ctx 
         rows={3}
         aria-label={`A note on ${heading}`}
         placeholder={`A note on “${heading}”`}
-        className="w-full rounded-lg border border-white/15 bg-white/[0.04] p-3 text-[15px] text-zinc-100"
+        className="w-full rounded-lg border border-[color:var(--a-line-strong)] bg-[color:var(--a-surface)] p-3 text-[15px] text-[color:var(--a-strong)]"
       />
       {c.error ? <p className="mt-1 text-xs text-amber-500">{c.error}</p> : null}
       <div className="mt-2 flex gap-3">
-        <button type="submit" disabled={c.busy || !text.trim()} className="rounded-full px-4 py-1 text-sm font-medium disabled:opacity-40" style={{ background: c.accent, color: '#111' }}>
+        <button type="submit" disabled={c.busy || !text.trim()} className="rounded-full px-4 py-1 text-sm font-medium disabled:opacity-40" style={{ background: c.accent, color: 'var(--a-on-accent, #111)' }}>
           Save note
         </button>
         <button type="button" onClick={() => c.setOpen(null)} className="text-sm opacity-70 hover:opacity-100">Cancel</button>

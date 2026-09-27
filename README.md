@@ -130,6 +130,8 @@ summary: Three bets, what each costs, and what we stop doing to afford them.
 | `voice`, `narration`, `timings`, `narrationHash` | Read-aloud: the audio and word timings a publisher generated. Absent, no player |
 | `password` | Shuts the body behind a door (below) |
 | `access` | `freedom`, `invite` or `public`: a confidential page (below) |
+| `theme` | `light`, `dark` or `system` (follow the reader's device). Overrides the brand pack's mode for this page |
+| `toc` | The table of contents. Absent, it appears once the page has four `##` sections; `false` never; `true` from one |
 | `template` | `document`, the only one so far |
 
 An unknown key is refused, so a typo fails loudly instead of being ignored.
@@ -341,6 +343,20 @@ A `BrandPack` is data plus at most two components: colours, type, the kicker lin
 the narrator label, an optional full-page `Wrapper` and `Mark`, and an optional `share` block
 (a font loader and a backdrop) that draws the unfurl card. `freedomDefault` is the default look.
 Keep a pack carrying your own trademark in your own app, not in a pull request here.
+
+**Light, dark or system.** A pack's `ground`, `ink` and `accent` are its dark palette; `light` is
+the other one (absent, warm paper with the pack's accent), and `mode` is the one a page opens in
+(`dark` by default; a page's `theme:` overrides it). Pages paint with CSS variables
+(`--a-ground`, `--a-ink`, `--a-accent` and tones derived from them), which is what lets `system`
+follow the device.
+
+**An animated ground.** `backdrop: { kind: 'bubbles', colors?, veil? }` draws soft colour drifting
+behind the page under a veil of the ground, in plain CSS, still for readers who ask for reduced
+motion. `colors` are `r,g,b` triplets (default `GLOW_PASTELS`); `veil` is 0 to 1 (default 0.4).
+
+```ts
+const pack: BrandPack = { ...freedomDefault, mode: 'light', backdrop: { kind: 'bubbles' } }
+```
 
 ## Environment
 
