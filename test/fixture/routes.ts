@@ -3,7 +3,8 @@ import { createArtifactRoutes, createMemoryStateStore, freedomDefault, type Arti
 const store: ArtifactStore = {
   get: async (id): Promise<ArtifactRecord | null> => (id === 'abc23456'
     ? {
-        id, title: 'Fixture', summary: 'S', template: 'document', markdown: '# hi',
+        id, title: 'Fixture', summary: 'S', template: 'document', markdown: '# hi\n\nThe harness runs, and the harness reads.',
+        definitions: [{ term: 'harness', text: 'The agent loop.' }],
         createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z', versions: [], views: 0,
         state: { writers: 'anyone', visibility: 'tally', slots: { vote: { shape: 'one' } } },
       }

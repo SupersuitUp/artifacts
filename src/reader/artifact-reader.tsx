@@ -9,14 +9,16 @@ import { useEffect, useRef, useState } from 'react'
 
 export type WordTiming = { w: string; s: number; e: number }
 
-const SKIP = '[data-nospeak], [data-artifact-links], pre, [data-footnotes], sup, img'
+const SKIP = '[data-nospeak], [data-artifact-links], pre, [data-footnotes], sup, img, style, script'
+
+const BLOCK = 'p, li, td, th, h1, h2, h3, h4, h5, h6, blockquote, aside, dt, dd, figcaption, div'
 
 function normalize(w: string) {
   return w.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '')
 }
 
 /** Wrap every word inside `root` (except skipped subtrees) in a span; return them in order. */
-function wrapWords(root: HTMLElement): HTMLSpanElement[] {
+export function wrapWords(root: HTMLElement): HTMLSpanElement[] {
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
     acceptNode: (n) => {
       const el = n.parentElement
@@ -27,11 +29,28 @@ function wrapWords(root: HTMLElement): HTMLSpanElement[] {
   const nodes: Text[] = []
   for (let n = walker.nextNode(); n; n = walker.nextNode()) nodes.push(n as Text)
   const spans: HTMLSpanElement[] = []
+  let prev: { text: string; block: Element | null } | null = null
   for (const node of nodes) {
     const parts = node.nodeValue!.split(/(\s+)/)
     const frag = document.createDocumentFragment()
+    const block = node.parentElement!.closest(BLOCK)
+    // Punctuation that continues the previous word across an element edge ("Edge" in a defined
+    // term, then ", which"; "**bold**,") is one spoken token with it. It is wrapped as a tail,
+    // not a word, so the word sequence matches the narration's whitespace tokens.
+    const glued = !!prev && prev.block === block && /\S$/.test(prev.text) && /^\S/.test(node.nodeValue!)
+    prev = { text: node.nodeValue!, block }
+    let first = true
     for (const part of parts) {
       if (!part) continue
+      const lead = first
+      first = false
+      if (lead && glued && !normalize(part)) {
+        const tail = document.createElement('span')
+        tail.textContent = part
+        tail.className = 'artifact-word-tail'
+        frag.appendChild(tail)
+        continue
+      }
       if (/^\s+$/.test(part)) {
         frag.appendChild(document.createTextNode(part))
         continue
@@ -45,6 +64,13 @@ function wrapWords(root: HTMLElement): HTMLSpanElement[] {
     node.parentNode!.replaceChild(frag, node)
   }
   return spans
+}
+
+/** The karaoke word a click lands on, or null. A defined term is a control that opens its
+ *  definition, so a tap on it must never seek or start the narration. */
+export function seekableWord(target: Element | null): HTMLSpanElement | null {
+  if (!target || target.closest('[data-defined-term]')) return null
+  return target.closest('.artifact-word') as HTMLSpanElement | null
 }
 
 /** Map each timing index to a DOM span index, tolerating small mismatches. */
@@ -130,7 +156,7 @@ export function ArtifactReader({
     const spans = wrapWords(root)
     mapRef.current = align(spans, words)
     const onClick = (e: MouseEvent) => {
-      const el = (e.target as HTMLElement).closest('.artifact-word') as HTMLSpanElement | null
+      const el = seekableWord(e.target as Element)
       if (!el) return
       const idx = mapRef.current.indexOf(el)
       if (idx === -1 || !audioRef.current) return
@@ -196,7 +222,7 @@ export function ArtifactReader({
         onLoadedMetadata={(e) => setDur((e.target as HTMLAudioElement).duration)}
         onRateChange={(e) => setRate((e.target as HTMLAudioElement).playbackRate)}
       />
-      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-[color:var(--a-line)] backdrop-blur" style={{ background: `color-mix(in srgb, ${ground} 90%, transparent)` }}>
+      <div data-artifact-player className="fixed inset-x-0 bottom-0 z-40 border-t border-[color:var(--a-line)] backdrop-blur" style={{ background: `color-mix(in srgb, ${ground} 90%, transparent)` }}>
         <div className="mx-auto flex max-w-2xl items-center gap-4 px-6 py-3">
           <button
             type="button"

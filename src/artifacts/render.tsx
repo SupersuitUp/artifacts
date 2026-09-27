@@ -10,6 +10,8 @@ import remarkGfm from 'remark-gfm'
 import { hasNotesWidget, headingsOf, type Heading } from './widgets.js'
 import { HeadingNotes, NoteToggle, NotesEarlier, NotesProvider } from '../widgets/notes.js'
 import { VideoAutoplay } from '../reader/video-autoplay.js'
+import { DefinitionLayer } from '../reader/definition-layer.js'
+import { remarkDefinitions, type Definition } from './definitions.js'
 
 // Every colour is a theme variable (brand/theme.ts), so a page follows its light, dark or system mode.
 const GOLD = 'var(--a-accent)'
@@ -231,13 +233,40 @@ function notesComponents(headings: Heading[]): Components {
   }
 }
 
+// The term is text with a dotted underline; the description copy is visually hidden and out of
+// flow (absolute), so it takes no room in the line. Neither ever changes size: the definition
+// that opens is drawn by DefinitionLayer on document.body.
+const DEFINED_TERM_CSS =
+  '.artifact-defined-term{text-decoration-line:underline;text-decoration-style:dotted;' +
+  'text-decoration-color:color-mix(in srgb,currentColor 55%,transparent);text-decoration-thickness:0.08em;' +
+  'text-underline-offset:0.2em;text-decoration-skip-ink:none;cursor:help;-webkit-tap-highlight-color:transparent}' +
+  '.artifact-defined-term:hover,.artifact-defined-term[aria-expanded="true"]{text-decoration-color:currentColor}' +
+  '.artifact-defined-term:focus-visible{outline:2px solid var(--a-accent);outline-offset:2px;border-radius:2px}' +
+  '.artifact-defined-term .artifact-word{cursor:inherit}' +
+  '@media (hover:none){.artifact-defined-term{cursor:pointer}}' +
+  '.artifact-defined-note{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;' +
+  'clip:rect(0,0,0,0);white-space:nowrap;border:0}'
+
 /** `notes` turns on the notes widget, for a host that keeps answers; it draws only when the
  *  page carries a ```notes block. */
-export function ArtifactMarkdown({ markdown, notes }: { markdown: string; notes?: { artifactId: string; accent?: string } }) {
+export function ArtifactMarkdown({
+  markdown,
+  notes,
+  definitions,
+}: {
+  markdown: string
+  notes?: { artifactId: string; accent?: string }
+  /** Terms to define inline (front matter `definitions:`): the first occurrence of each is underlined. */
+  definitions?: Definition[]
+}) {
   const on = !!notes && hasNotesWidget(markdown)
   const headings = headingsOf(markdown)
+  const defined = definitions?.length ? definitions : null
   const body = (
-    <ReactMarkdown remarkPlugins={[remarkGfm]} components={on ? notesComponents(headings) : pageComponents(headings)}>
+    <ReactMarkdown
+      remarkPlugins={defined ? [remarkGfm, remarkDefinitions(defined)] : [remarkGfm]}
+      components={on ? notesComponents(headings) : pageComponents(headings)}
+    >
       {markdown}
     </ReactMarkdown>
   )
@@ -250,6 +279,12 @@ export function ArtifactMarkdown({ markdown, notes }: { markdown: string; notes?
         </NotesProvider>
       ) : body}
       {VIDEO_IN_MD.test(markdown) ? <VideoAutoplay /> : null}
+      {defined ? (
+        <>
+          <style>{DEFINED_TERM_CSS}</style>
+          <DefinitionLayer />
+        </>
+      ) : null}
     </div>
   )
 }

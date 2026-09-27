@@ -112,4 +112,12 @@ describe('artifact store', () => {
     expect(after?.theme).toBeUndefined()
     expect(after?.toc).toBeUndefined()
   })
+  it('definitions ride through, and a re-publish without them clears them', async () => {
+    const definitions = [{ term: 'Toil', text: 'Work a machine could do.', href: 'https://example.com/toil' }]
+    const r = await saveArtifact({ meta: { ...meta, definitions }, markdown: 'b' })
+    if ('notFound' in r) throw new Error('unexpected')
+    expect((await getArtifact(r.id))?.definitions).toEqual(definitions)
+    await saveArtifact({ id: r.id, meta, markdown: 'b2' })
+    expect((await getArtifact(r.id))?.definitions).toBeUndefined()
+  })
 })
