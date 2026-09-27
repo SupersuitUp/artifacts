@@ -74,6 +74,23 @@ function align(spans: HTMLSpanElement[], words: WordTiming[]): (HTMLSpanElement 
   return out
 }
 
+/** The word to light at `now`, or -1. Nothing lights until narration has started: the first
+ *  word begins at 0, so an untouched page would otherwise sit with its first word highlighted. */
+export function litWordIndex(words: WordTiming[], now: number, started: boolean): number {
+  if (!started) return -1
+  let lo = 0
+  let hi = words.length - 1
+  let idx = -1
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1
+    if (words[mid].s <= now) {
+      idx = mid
+      lo = mid + 1
+    } else hi = mid - 1
+  }
+  return idx >= 0 && now <= words[idx].e + 0.25 ? idx : -1
+}
+
 function fmt(t: number) {
   const m = Math.floor(t / 60)
   const s = Math.floor(t % 60)
@@ -100,6 +117,8 @@ export function ArtifactReader({
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const mapRef = useRef<(HTMLSpanElement | null)[]>([])
   const litRef = useRef<HTMLSpanElement | null>(null)
+  // Set on the first play or seek; the highlight stays off until then.
+  const startedRef = useRef(false)
   const [playing, setPlaying] = useState(false)
   const [t, setT] = useState(0)
   const [dur, setDur] = useState(0)
@@ -129,18 +148,8 @@ export function ArtifactReader({
     const tick = () => {
       const now = a.currentTime
       setT(now)
-      // Binary search the word at `now`.
-      let lo = 0
-      let hi = words.length - 1
-      let idx = -1
-      while (lo <= hi) {
-        const mid = (lo + hi) >> 1
-        if (words[mid].s <= now) {
-          idx = mid
-          lo = mid + 1
-        } else hi = mid - 1
-      }
-      const el = idx >= 0 && now <= words[idx].e + 0.25 ? mapRef.current[idx] : null
+      const idx = litWordIndex(words, now, startedRef.current)
+      const el = idx >= 0 ? mapRef.current[idx] : null
       if (el !== litRef.current) {
         litRef.current?.classList.remove('artifact-word-lit')
         el?.classList.add('artifact-word-lit')
@@ -176,7 +185,13 @@ export function ArtifactReader({
         ref={audioRef}
         src={src}
         preload="metadata"
-        onPlay={() => setPlaying(true)}
+        onPlay={() => {
+          startedRef.current = true
+          setPlaying(true)
+        }}
+        onSeeking={() => {
+          startedRef.current = true
+        }}
         onPause={() => setPlaying(false)}
         onLoadedMetadata={(e) => setDur((e.target as HTMLAudioElement).duration)}
         onRateChange={(e) => setRate((e.target as HTMLAudioElement).playbackRate)}
