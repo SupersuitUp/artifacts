@@ -3,6 +3,21 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.6.0 (2026-09-27)
+
+**"Updated" names the exact minute, in the reader's own time zone.**
+
+- The line under an artifact's summary read "Updated September 27, 2026", so a page republished
+  three times in one evening looked the same each time. It now reads "Updated September 27, 2026
+  at 8:07 AM CDT": the server renders UTC, and a small client component, `UpdatedTime`, swaps in
+  the viewer's zone once the page runs. The value is a `<time dateTime>` carrying the ISO stamp.
+- New `formatUpdated(iso, timeZone?)` in `src/artifacts/updated-at.ts`; a bad value renders
+  nothing rather than an invented time.
+- DETECTOR: an artifact page whose "Updated" line has no clock time.
+- REMEDY: take 0.6.0; nothing to configure.
+- Tests: `updated-at.test.ts` (exact minute and zone, UTC default, bad input), verified red with
+  the minute removed.
+
 ## 0.5.0 (2026-09-27)
 
 **Inline definitions: a page can define its jargon, and a reader sees it in line.**
