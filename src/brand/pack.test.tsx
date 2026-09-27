@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { freedomDefault, type BrandPack } from './pack.js'
 import { BrandGround, BrandMark } from './wrapper.js'
+import { GLOW_PASTELS } from './backdrop.js'
 
 describe('brand packs', () => {
   it('the default pack renders a flat ground and a dove', () => {
@@ -55,5 +56,16 @@ describe('brand packs', () => {
     expect(out).toContain('prefers-reduced-motion')
     expect(out.indexOf('data-artifact-backdrop')).toBeLessThan(out.indexOf('hi'))
     expect(renderToStaticMarkup(<BrandGround pack={freedomDefault}><p /></BrandGround>)).not.toContain('data-artifact-backdrop')
+  })
+  it('bubbles animate on the compositor only: no full-screen blur or blend to repaint every frame', () => {
+    const out = renderToStaticMarkup(<BrandGround pack={{ ...freedomDefault, backdrop: { kind: 'bubbles' } }}><p /></BrandGround>)
+    expect(out).not.toMatch(/filter:\s*blur/)
+    expect(out).not.toContain('mix-blend-mode')
+    expect(out).toContain('will-change:transform')
+  })
+  it('the default glow runs the whole spectrum, one bubble per colour', () => {
+    expect(GLOW_PASTELS.length).toBeGreaterThanOrEqual(9)
+    const out = renderToStaticMarkup(<BrandGround pack={{ ...freedomDefault, backdrop: { kind: 'bubbles' } }}><p /></BrandGround>)
+    expect(out.match(/class="a-bubble"/g)?.length).toBe(GLOW_PASTELS.length)
   })
 })

@@ -3,6 +3,23 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.4.3 (2026-09-26)
+
+**The bubble ground runs smooth on a phone, and the glow runs the whole spectrum.**
+
+- The backdrop blurred the whole viewport (`filter: blur(40px)`) and hard-light blended every
+  bubble, so each frame re-rasterised the full screen and stuttered on a phone. Both are gone:
+  only `transform` animates, on its own layer (`will-change`, `translate3d`). The softness now
+  comes from the gradient itself (`closest-side`, fading to zero inside the bubble), which also
+  stops the gradients showing hard edges without the blur.
+- `GLOW_PASTELS` grows from six washed pastels to nine saturated hues (blue, violet, magenta,
+  rose, coral, amber, lime, mint, cyan), one bubble each, spread over the page so neighbours
+  overlap at their edges instead of averaging to grey in the middle.
+- **DETECTOR:** the animated ground stutters on a phone, or reads as grey-beige rather than colour.
+- **REMEDY:** update the dependency. A pack that passes its own `backdrop.colors` keeps them.
+- **Tests:** no full-screen blur or blend in the backdrop and `will-change:transform` present; the
+  default palette has at least nine colours and renders one bubble per colour.
+
 ## 0.4.2 (2026-09-26)
 
 **The read-along highlight waits for play.**
