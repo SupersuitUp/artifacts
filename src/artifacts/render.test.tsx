@@ -5,6 +5,15 @@ import { ArtifactMarkdown } from './render.js'
 const html = (md: string) => renderToStaticMarkup(<ArtifactMarkdown markdown={md} />)
 
 describe('ArtifactMarkdown', () => {
+  it('an .mp4 in image syntax plays as a silent looping inline video, which a phone decodes in hardware', () => {
+    const out = html('![The stack, animated](https://cdn.example.com/02-the-stack.abc12345.mp4)')
+    expect(out).toContain('<video')
+    expect(out).toContain('src="https://cdn.example.com/02-the-stack.abc12345.mp4"')
+    for (const a of ['autoPlay', 'muted', 'loop', 'playsInline']) expect(out.toLowerCase()).toContain(a.toLowerCase())
+    expect(out).toContain('aria-label="The stack, animated"')
+    expect(out).not.toContain('<img')
+    expect(html('![still](https://cdn.example.com/a.png)')).toContain('<img')
+  })
   it('renders gfm tables and links with the host shown', () => {
     const out = html('| a | b |\n|---|---|\n| 1 | 2 |\n\n[Anthropic](https://www.anthropic.com/news)')
     expect(out).toContain('<table')

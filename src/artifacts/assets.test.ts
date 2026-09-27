@@ -12,6 +12,7 @@ describe('artifact assets', () => {
   it('maps extensions to content types and refuses unknown ones', () => {
     expect(contentTypeFor('a.webp')).toBe('image/webp')
     expect(contentTypeFor('n.mp3')).toBe('audio/mpeg')
+    expect(contentTypeFor('d.mp4')).toBe('video/mp4')
     expect(contentTypeFor('x.exe')).toBeUndefined()
   })
   // `immutable` with a stable filename is the defect this replaces: a reader who loaded a page

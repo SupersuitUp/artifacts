@@ -3,6 +3,21 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.4.6 (2026-09-27)
+
+**Pages play video: `![alt](x.mp4)` is a silent, looping, autoplaying inline video.**
+
+- Animated WebP is decoded frame by frame on the CPU and stuttered on an iPhone at 24fps; video
+  is decoded in hardware. Image syntax pointing at an `.mp4` now renders
+  `<video autoplay muted loop playsinline>` with the alt text as its `aria-label`, in the same
+  rounded frame an image gets. It is written as markup because React leaves `muted` out of
+  server HTML, and iOS will not autoplay a video whose markup is not muted.
+- `mp4` (`video/mp4`) joins the allowed asset types for `PUT_ASSET` and `UPLOAD`.
+- **DETECTOR:** a published `.mp4` renders as a broken image, or its upload answers 415.
+- **REMEDY:** update the dependency; no host change.
+- **Tests:** an `.mp4` renders a muted, looping, inline, autoplaying video labelled by its alt
+  text and a `.png` still renders an image; `d.mp4` maps to `video/mp4`.
+
 ## 0.4.5 (2026-09-27)
 
 **The bubble ground looks as it did in 0.4.2, and stays smooth.**

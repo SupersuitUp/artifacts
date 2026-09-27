@@ -72,6 +72,20 @@ export function isReachableHref(href: unknown): href is string {
   return typeof href === 'string' && REACHABLE.test(href)
 }
 
+/** `![alt](x.mp4)` plays as video: an animation that must stay smooth on a phone. Animated WebP
+ *  is decoded frame by frame on the CPU and stuttered on an iPhone at 24fps (2026-09-27); video
+ *  is decoded in hardware. */
+const VIDEO = /\.mp4(?:[?#].*)?$/i
+const escapeAttr = (s: string) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+
+// Written as markup, not JSX: React renders `muted` as a property and leaves it out of server
+// HTML, and iOS refuses to autoplay a video whose markup is not muted. `playsinline` keeps
+// iPhone from going full screen.
+function InlineVideo({ src, label }: { src: string; label: string }) {
+  const html = `<video src="${escapeAttr(src)}" aria-label="${escapeAttr(label)}" autoplay muted loop playsinline preload="auto" disablepictureinpicture class="block w-full"></video>`
+  return <span className="my-6 block overflow-hidden rounded-lg border border-[color:var(--a-line)]" dangerouslySetInnerHTML={{ __html: html }} />
+}
+
 const components: Components = {
   p: ({ children }) => <p className="my-4 leading-relaxed">{children}</p>,
   ul: ({ children }) => <ul className="my-4 list-disc space-y-1 pl-6">{children}</ul>,
@@ -86,10 +100,13 @@ const components: Components = {
     <th className="border-b border-[color:var(--a-line-strong)] px-3 py-2 text-left font-semibold text-[color:var(--a-strong)]">{children}</th>
   ),
   td: ({ children }) => <td className="border-b border-[color:var(--a-line)] px-3 py-2 align-top">{children}</td>,
-  img: ({ src, alt }) => (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img src={typeof src === 'string' ? src : undefined} alt={alt ?? ''} className="my-6 w-full rounded-lg border border-[color:var(--a-line)]" />
-  ),
+  img: ({ src, alt }) =>
+    typeof src === 'string' && VIDEO.test(src) ? (
+      <InlineVideo src={src} label={alt ?? ''} />
+    ) : (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img src={typeof src === 'string' ? src : undefined} alt={alt ?? ''} className="my-6 w-full rounded-lg border border-[color:var(--a-line)]" />
+    ),
   a: ({ href, children }) =>
     !isReachableHref(href) ? (
       <span>{children}</span>

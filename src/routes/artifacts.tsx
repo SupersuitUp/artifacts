@@ -472,7 +472,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     if (!(await store.get(id))) return NextResponse.json({ error: `no artifact with id ${id}` }, { status: 404 })
     if (!ASSET_NAME.test(name)) return NextResponse.json({ error: 'asset name must be one path segment: letters, digits, dot, dash, underscore' }, { status: 400 })
     const type = contentTypeFor(name)
-    if (!type) return NextResponse.json({ error: 'asset type not allowed; use webp, png, jpg, gif, mp3 or json' }, { status: 415 })
+    if (!type) return NextResponse.json({ error: 'asset type not allowed; use webp, png, jpg, gif, mp3, mp4 or json' }, { status: 415 })
     const bytes = Buffer.from(await request.arrayBuffer())
     if (bytes.length === 0) return NextResponse.json({ error: 'empty body' }, { status: 400 })
     if (bytes.length > 16 * 1024 * 1024) return NextResponse.json({ error: 'asset over 16 MiB' }, { status: 413 })
@@ -495,7 +495,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     if (!(await store.get(id))) return NextResponse.json({ error: `no artifact with id ${id}` }, { status: 404 })
     if (!ASSET_NAME.test(name)) return NextResponse.json({ error: 'asset name must be one path segment: letters, digits, dot, dash, underscore' }, { status: 400 })
     const type = contentTypeFor(name)
-    if (!type) return NextResponse.json({ error: 'asset type not allowed; use webp, png, jpg, gif, mp3 or json' }, { status: 415 })
+    if (!type) return NextResponse.json({ error: 'asset type not allowed; use webp, png, jpg, gif, mp3, mp4 or json' }, { status: 415 })
     const body = (await request.json().catch(() => ({}))) as { digest?: unknown; done?: unknown }
     const digest = typeof body.digest === 'string' ? body.digest : ''
     if (!ASSET_DIGEST.test(digest)) return NextResponse.json({ error: 'digest must be the first 8 hex of the sha256 of the bytes' }, { status: 400 })
