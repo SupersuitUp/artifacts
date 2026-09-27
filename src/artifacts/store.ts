@@ -13,6 +13,7 @@ import type { ArtifactMeta } from './front-matter.js'
 import type { Access } from './reader.js'
 import type { StateConfig } from './state.js'
 import type { ThemeMode } from '../brand/theme.js'
+import type { Definition } from './definitions.js'
 
 export type ArtifactRecord = {
   id: string
@@ -31,6 +32,7 @@ export type ArtifactRecord = {
   state?: StateConfig
   theme?: ThemeMode
   toc?: boolean
+  definitions?: Definition[]
   markdown: string
   createdAt: string
   updatedAt: string
@@ -108,6 +110,7 @@ async function saveArtifact(col: Col, input: {
     ...(input.meta.state ? { state: input.meta.state } : {}),
     ...(input.meta.theme ? { theme: input.meta.theme } : {}),
     ...(input.meta.toc !== undefined ? { toc: input.meta.toc } : {}),
+    ...(input.meta.definitions?.length ? { definitions: input.meta.definitions } : {}),
   }
   if (input.id) {
     const existing = await getArtifact(col, input.id)
@@ -135,6 +138,7 @@ async function saveArtifact(col: Col, input: {
     const look = {
       ...(input.meta.theme ? {} : { theme: FieldValue.delete() }),
       ...(input.meta.toc !== undefined ? {} : { toc: FieldValue.delete() }),
+      ...(input.meta.definitions?.length ? {} : { definitions: FieldValue.delete() }),
     }
     await ref.update({
       ...fields, ...password, ...subtitle, ...access, ...state, ...look, markdown: input.markdown, updatedAt: now, version: next,

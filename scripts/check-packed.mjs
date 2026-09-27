@@ -62,6 +62,7 @@ try {
   const page = await fetch(`${base}/abc23456`)
   const html = await page.text()
   if (page.status !== 200 || !html.includes('Fixture')) fail(`page answered ${page.status}`)
+  if ((html.match(/data-defined-term="harness"/g) ?? []).length !== 1) fail('the defined term is not underlined exactly once')
 
   const png = await fetch(`${base}/abc23456/share.png?v=1`)
   const bytes = Buffer.from(await png.arrayBuffer())

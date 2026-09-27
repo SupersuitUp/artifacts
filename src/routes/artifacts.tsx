@@ -284,7 +284,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
           ) : null}
           <article className="mx-auto max-w-2xl px-6 pb-24">
             {toc.length ? <TocInline items={toc} /> : null}
-            <ArtifactMarkdown markdown={a.markdown} notes={config.state && a.state ? { artifactId: a.id, accent: brand.accent } : undefined} />
+            <ArtifactMarkdown markdown={a.markdown} definitions={a.definitions} notes={config.state && a.state ? { artifactId: a.id, accent: brand.accent } : undefined} />
           </article>
         </div>
         {a.narration && words.length > 0 ? (

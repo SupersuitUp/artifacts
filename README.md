@@ -132,9 +132,31 @@ summary: Three bets, what each costs, and what we stop doing to afford them.
 | `access` | `freedom`, `invite` or `public`: a confidential page (below) |
 | `theme` | `light`, `dark` or `system` (follow the reader's device). Overrides the brand pack's mode for this page |
 | `toc` | The table of contents. Absent, it appears once the page has four `##` sections; `false` never; `true` from one |
+| `definitions` | Terms defined inline (below). A republish without it removes them |
 | `template` | `document`, the only one so far |
 
 An unknown key is refused, so a typo fails loudly instead of being ignored.
+
+## Inline definitions (`definitions:`)
+
+```yaml
+definitions:
+  - "Agentic Edge | The compounded context only you could have produced. | https://example.com/edge"
+  - "harness | The agent loop that reads, writes and runs on your behalf."
+```
+
+Each entry is `Term | definition | optional https link`; a map (`Term: definition`, or
+`Term: { text, href }`) is accepted too. The FIRST time each term appears in the prose it gets a
+dotted underline: hovering on a desk or tapping on a phone opens the definition, Escape or a tap
+elsewhere closes it. Matching is conservative: whole words, a capitalised term only as written, an
+all-lowercase term also at a sentence start, longest term first, and never inside a heading, a
+link, code, an image or a callout.
+
+The definition is drawn on `document.body`, outside the text, so opening it never reflows the
+page: a sheet at the bottom of a phone (above the narration bar), a box under the word on a desk.
+Screen readers get it as the term's accessible description. Read-aloud is unaffected: the spoken
+text comes from the markdown, the term's words stay ordinary words to the highlighter, and a tap
+on a defined word opens its definition instead of seeking.
 
 ## A page with a password
 

@@ -3,6 +3,31 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.5.0 (2026-09-27)
+
+**Inline definitions: a page can define its jargon, and a reader sees it in line.**
+
+- New front matter key `definitions:`, a list of `Term | definition | optional link` (or a map).
+  The first occurrence of each term in the prose renders with a dotted underline; hover (desk) or
+  tap (phone) opens the definition, drawn by a new client component, `DefinitionLayer`, through a
+  portal on `document.body`, so nothing in the paragraph opens or closes and nothing reflows. The
+  store keeps the terms and a republish without the key removes them.
+- The read-along reader skips `<style>` and `<script>` text (it used to wrap any text node, which
+  would have turned an inline stylesheet into word spans) and a click on a defined term no longer
+  seeks. Its bar carries `data-artifact-player` so an overlay can sit above it.
+- Punctuation that continues a word across an element edge (`Edge` in a term, then `, which`;
+  `**bold**,`) is wrapped as a tail of that word rather than a word of its own, so the
+  highlighter's word sequence matches the narration's tokens. Found in WebKit, where a comma after
+  a defined term had become an extra, clickable word.
+- **DETECTOR:** a page with `definitions:` is refused as an unknown key before 0.5.0.
+- **REMEDY:** update the dependency; no host change. A publisher that filters keys must pass
+  `definitions` through.
+- **Tests:** parsing both shapes and refusals; first occurrence only, whole words, case rules and
+  every skipped context; the karaoke word spans are identical in number and order with and without
+  definitions and equal the narrated words; a tap on a defined word is not a seek; the definition
+  opens on `document.body` with the paragraph's markup unchanged, and closes on a second tap,
+  Escape or a tap elsewhere; the store round-trips and clears the key.
+
 ## 0.4.7 (2026-09-27)
 
 **A page of videos opens as fast as a page of text.**

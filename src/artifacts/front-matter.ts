@@ -5,6 +5,7 @@ import { ACCESS_LEVELS, type Access } from './reader.js'
 import { parseStateConfig, type StateConfig } from './state.js'
 import { mergeWidgetState, scanWidgets } from './widgets.js'
 import { THEME_MODES, type ThemeMode } from '../brand/theme.js'
+import { parseDefinitions, type Definition } from './definitions.js'
 
 export type ArtifactMeta = {
   title: string
@@ -37,9 +38,12 @@ export type ArtifactMeta = {
   theme?: ThemeMode
   /** The table of contents: absent draws it once the page has four sections, false never. */
   toc?: boolean
+  /** Terms this page defines inline: the first occurrence of each is underlined and opens its
+   *  definition. Content, like the body: a republish without it removes them. */
+  definitions?: Definition[]
 }
 
-const KNOWN = new Set(['title', 'summary', 'subtitle', 'template', 'audience', 'cover', 'id', 'voice', 'narration', 'timings', 'narrationHash', 'password', 'access', 'state', 'theme', 'toc'])
+const KNOWN = new Set(['title', 'summary', 'subtitle', 'template', 'audience', 'cover', 'id', 'voice', 'narration', 'timings', 'narrationHash', 'password', 'access', 'state', 'theme', 'toc', 'definitions'])
 
 export function parseArtifactSource(
   text: string,
@@ -76,6 +80,11 @@ export function parseArtifactSource(
   if (d.toc !== undefined) {
     if (typeof d.toc !== 'boolean') return { ok: false, error: 'toc must be true or false' }
     meta.toc = d.toc
+  }
+  if (d.definitions !== undefined) {
+    const r = parseDefinitions(d.definitions)
+    if (!r.ok) return { ok: false, error: r.error }
+    if (r.definitions.length) meta.definitions = r.definitions
   }
   if (d.state !== undefined) {
     const s = parseStateConfig(d.state)
