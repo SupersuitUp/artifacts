@@ -23,6 +23,7 @@ import { renderShareCard } from '../brand/share-card.js'
 import type { BrandPack } from '../brand/pack.js'
 import { ArtifactReader, type WordTiming } from '../reader/artifact-reader.js'
 import { ReaderWatch } from '../reader/reader-watch.js'
+import { UpdatedTime } from '../reader/updated-time.js'
 import {
   ACCESS_LEVELS, GRANT_COOKIE, GRANT_TTL_SECONDS, decide, firstName, mintGrant, safeReturnPath, signInUrl, verifyGrant, verifyPass,
   type Access, type Reader,
@@ -253,7 +254,6 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
         words = []
       }
     }
-    const when = new Date(a.updatedAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
     const toc = showToc(a.markdown, a.toc) ? tocOf(a.markdown) : []
     return (
       <>
@@ -273,7 +273,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
             ) : null}
             <p className="mx-auto mt-6 max-w-xl text-lg italic opacity-80">{a.summary}</p>
             <p data-nospeak className="mt-4 text-xs opacity-50">
-              Updated {when}
+              Updated <UpdatedTime iso={a.updatedAt} />
             </p>
           </div>
           {a.cover ? (
