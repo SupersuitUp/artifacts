@@ -3,6 +3,19 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.8.0 (2026-09-27)
+
+**Pages play audio clips.** `![caption](clip.mp3)` renders a captioned player with native
+controls, the way `![alt](x.mp4)` already renders a video. An annotated conversation, a voice
+note, or a quote meant to be heard can now sit in the prose it belongs to, instead of on a
+second page or a download link. mp3 was already an accepted asset type; nothing rendered it.
+
+- `preload="none"`, never `autoplay`: a page of twenty clips fetches nothing until one is pressed.
+- The alt is the clip's caption, shown above the player and escaped as text.
+- DETECTOR: a page with an `.mp3` in image syntax that renders a broken image.
+- REMEDY: bump; republishing is not needed, the markdown is rendered on request.
+- Tests: `render.test.tsx` pins the audio element, its attributes, the caption and the escaping.
+
 ## 0.7.1 (2026-09-27)
 
 **The narrator reads the subtitle.** `narrationText` built the spoken text from the title, the

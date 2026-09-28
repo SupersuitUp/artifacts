@@ -79,6 +79,10 @@ export function isReachableHref(href: unknown): href is string {
  *  is decoded frame by frame on the CPU and stuttered on an iPhone at 24fps (2026-09-27); video
  *  is decoded in hardware. */
 const VIDEO = /\.mp4(?:[?#].*)?$/i
+/** `![caption](x.mp3)` is a clip the reader plays: an annotated conversation, a voice note, a
+ *  quote heard rather than read. Native controls, and `preload="none"` so a page of clips fetches
+ *  nothing until one is pressed. The alt is its caption, shown above the player. */
+const AUDIO = /\.mp3(?:[?#].*)?$/i
 const VIDEO_IN_MD = /\]\([^)\s]+\.mp4(?:[?#][^)]*)?\)/i
 const escapeAttr = (s: string) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
@@ -89,6 +93,16 @@ const escapeAttr = (s: string) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;
 function InlineVideo({ src, label }: { src: string; label: string }) {
   const html = `<video src="${escapeAttr(src)}" aria-label="${escapeAttr(label)}" data-artifact-video muted loop playsinline preload="metadata" disablepictureinpicture class="block w-full"></video>`
   return <span className="my-6 block overflow-hidden rounded-lg border border-[color:var(--a-line)]" dangerouslySetInnerHTML={{ __html: html }} />
+}
+
+function InlineAudio({ src, label }: { src: string; label: string }) {
+  const html = `<audio src="${escapeAttr(src)}" aria-label="${escapeAttr(label)}" data-artifact-audio controls preload="none" class="block w-full"></audio>`
+  return (
+    <span className="my-6 block rounded-lg border border-[color:var(--a-line)] bg-[color:var(--a-surface)] px-4 py-3">
+      {label ? <span className="mb-2 block text-sm text-[color:var(--a-strong)]">{label}</span> : null}
+      <span className="block" dangerouslySetInnerHTML={{ __html: html }} />
+    </span>
+  )
 }
 
 const components: Components = {
@@ -108,6 +122,8 @@ const components: Components = {
   img: ({ src, alt }) =>
     typeof src === 'string' && VIDEO.test(src) ? (
       <InlineVideo src={src} label={alt ?? ''} />
+    ) : typeof src === 'string' && AUDIO.test(src) ? (
+      <InlineAudio src={src} label={alt ?? ''} />
     ) : (
       // eslint-disable-next-line @next/next/no-img-element
       <img src={typeof src === 'string' ? src : undefined} alt={alt ?? ''} className="my-6 w-full rounded-lg border border-[color:var(--a-line)]" />

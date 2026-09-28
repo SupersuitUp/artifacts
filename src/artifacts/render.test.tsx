@@ -18,6 +18,21 @@ describe('ArtifactMarkdown', () => {
     expect(out).not.toContain('<img')
     expect(html('![still](https://cdn.example.com/a.png)')).toContain('<img')
   })
+  it('an .mp3 in image syntax is a clip the reader plays: controls, a caption, nothing downloaded on open', () => {
+    const out = html('![Gary on skill files, 42:10](https://cdn.example.com/clip-03.abc12345.mp3)')
+    expect(out).toContain('<audio')
+    expect(out).toContain('src="https://cdn.example.com/clip-03.abc12345.mp3"')
+    expect(out).toContain('controls')
+    expect(out).toContain('data-artifact-audio')
+    // A page of twenty clips must not fetch twenty files before anyone presses play.
+    expect(out).toContain('preload="none"')
+    expect(out).not.toContain('autoplay')
+    // The alt is the clip's caption, shown and read, so a list of clips is not a list of bare players.
+    expect(out).toContain('Gary on skill files, 42:10')
+    expect(out).not.toContain('<img')
+    // A caption with markup in it is text, never markup.
+    expect(html('![a <b>x</b> "y"](https://cdn.example.com/c.mp3)')).not.toContain('<b>x</b>')
+  })
   it('renders gfm tables and links with the host shown', () => {
     const out = html('| a | b |\n|---|---|\n| 1 | 2 |\n\n[Anthropic](https://www.anthropic.com/news)')
     expect(out).toContain('<table')
