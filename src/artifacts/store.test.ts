@@ -214,4 +214,17 @@ describe('version history', () => {
     expect(await store.setNote!(id, 9, 'x')).toBe(false)
     expect(await store.setNote!('nosuchid', 1, 'x')).toBe(false)
   })
+
+  it('comments and their visibility ride through, and a re-publish without them goes back to off and owner', async () => {
+    const r = await saveArtifact({ meta: { ...meta, comments: 'anyone', commentsVisible: 'readers' }, markdown: 'b' })
+    if ('notFound' in r) throw new Error('unexpected')
+    const got = await getArtifact(r.id)
+    expect(got?.comments).toBe('anyone')
+    expect(got?.commentsVisible).toBe('readers')
+    await saveArtifact({ id: r.id, meta, markdown: 'b2' })
+    const after = await getArtifact(r.id)
+    expect(after?.comments).toBeUndefined()
+    expect(after?.commentsVisible).toBeUndefined()
+  })
 })
+

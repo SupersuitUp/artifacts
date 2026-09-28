@@ -4,6 +4,7 @@ import matter from 'gray-matter'
 import { ACCESS_LEVELS, type Access } from './reader.js'
 import { parseStateConfig, type StateConfig } from './state.js'
 import { mergeWidgetState, scanWidgets } from './widgets.js'
+import { COMMENTS_MODES, mergeCommentsState, type CommentsMode, type CommentsVisible } from './comments.js'
 import { THEME_MODES, type ThemeMode } from '../brand/theme.js'
 import { parseDefinitions, type Definition } from './definitions.js'
 
@@ -44,9 +45,15 @@ export type ArtifactMeta = {
   /** One line saying what changed in this version. Stored with the version it arrives on; a line
    *  left in the file from the previous publish is recognised and not repeated. */
   change?: string
+  /** Who may leave SHARED comments: `off` (the default; readers still keep personal notes),
+   *  `anyone`, or `signed-in`. Forced to signed-in on a gated page. Not an access control, so a
+   *  republish without the line goes back to off. */
+  comments?: CommentsMode
+  /** Who sees shared comments: `owner` (the default) or every reader (`readers`). */
+  commentsVisible?: CommentsVisible
 }
 
-const KNOWN = new Set(['title', 'summary', 'subtitle', 'template', 'audience', 'cover', 'id', 'voice', 'narration', 'timings', 'narrationHash', 'password', 'access', 'state', 'theme', 'toc', 'definitions', 'change'])
+const KNOWN = new Set(['title', 'summary', 'subtitle', 'template', 'audience', 'cover', 'id', 'voice', 'narration', 'timings', 'narrationHash', 'password', 'access', 'state', 'theme', 'toc', 'definitions', 'change', 'comments', 'comments_visible'])
 
 export function parseArtifactSource(
   text: string,
@@ -98,6 +105,16 @@ export function parseArtifactSource(
     if (!s.ok) return { ok: false, error: s.error }
     meta.state = s.state
   }
+  if (d.comments !== undefined && d.comments !== null) {
+    // A bare `off` is a string in YAML 1.2, but `false` is a boolean and means the same thing.
+    const c = d.comments === false ? 'off' : d.comments
+    if (!COMMENTS_MODES.includes(c as CommentsMode)) return { ok: false, error: `comments must be one of: ${COMMENTS_MODES.join(', ')}` }
+    meta.comments = c as CommentsMode
+  }
+  if (d.comments_visible !== undefined && d.comments_visible !== null) {
+    if (d.comments_visible !== 'owner' && d.comments_visible !== 'readers') return { ok: false, error: 'comments_visible must be owner or readers' }
+    meta.commentsVisible = d.comments_visible
+  }
   // Widgets declare their own slots, so a notes block is merged into state: here, before the
   // page is stored, and the state API and the republish shape checks see it like any slot.
   // Errors name the line in the FILE: the body's lines are counted after the front matter's.
@@ -106,6 +123,8 @@ export function parseArtifactSource(
   if (!w.ok) return { ok: false, error: w.error }
   const merged = mergeWidgetState(meta.state, w.notes)
   if (!merged.ok) return { ok: false, error: merged.error }
-  if (merged.state) meta.state = merged.state
+  const withComments = mergeCommentsState(merged.state, meta.comments, meta.commentsVisible)
+  if (!withComments.ok) return { ok: false, error: withComments.error }
+  if (withComments.state) meta.state = withComments.state
   return { ok: true, meta, body: content }
 }

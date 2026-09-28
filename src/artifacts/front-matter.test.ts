@@ -112,4 +112,31 @@ describe('theme and toc', () => {
     expect(none.ok && none.meta.change).toBeUndefined()
     expect(parseArtifactSource('---\ntitle: T\nsummary: S\nchange: [a, b]\n---\nx')).toEqual({ ok: false, error: 'change must be one line of text' })
   })
+
+  it('comments: and comments_visible: parse, and a page with comments on gets the comments slot', () => {
+    const r = parseArtifactSource('---\ntitle: T\nsummary: S\ncomments: anyone\ncomments_visible: readers\n---\nb')
+    if (!r.ok) throw new Error(r.error)
+    expect(r.meta.comments).toBe('anyone')
+    expect(r.meta.commentsVisible).toBe('readers')
+    expect(r.meta.state?.slots.comments).toEqual({ shape: 'many', visibility: 'shared', writers: 'anyone' })
+  })
+  it('comments: off stores off and declares no slot', () => {
+    const r = parseArtifactSource('---\ntitle: T\nsummary: S\ncomments: off\n---\nb')
+    if (!r.ok) throw new Error(r.error)
+    expect(r.meta.comments).toBe('off')
+    expect(r.meta.state).toBeUndefined()
+  })
+  it('refuses a comments value or a visibility it does not know, by name', () => {
+    const bad = parseArtifactSource('---\ntitle: T\nsummary: S\ncomments: everyone\n---\nb')
+    expect(bad.ok).toBe(false)
+    expect(!bad.ok && bad.error).toContain('comments must be one of: off, anyone, signed-in')
+    const vis = parseArtifactSource('---\ntitle: T\nsummary: S\ncomments: anyone\ncomments_visible: public\n---\nb')
+    expect(!vis.ok && vis.error).toContain('comments_visible must be owner or readers')
+  })
+  it('a YAML false for comments reads as off', () => {
+    const r = parseArtifactSource('---\ntitle: T\nsummary: S\ncomments: false\n---\nb')
+    if (!r.ok) throw new Error(r.error)
+    expect(r.meta.comments).toBe('off')
+  })
 })
+

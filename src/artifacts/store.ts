@@ -14,6 +14,7 @@ import type { Access } from './reader.js'
 import type { StateConfig } from './state.js'
 import type { ThemeMode } from '../brand/theme.js'
 import type { Definition } from './definitions.js'
+import type { CommentsMode, CommentsVisible } from './comments.js'
 
 export type ArtifactRecord = {
   id: string
@@ -33,6 +34,9 @@ export type ArtifactRecord = {
   theme?: ThemeMode
   toc?: boolean
   definitions?: Definition[]
+  /** Who may leave shared comments; absent is off. Personal notes need nothing. */
+  comments?: CommentsMode
+  commentsVisible?: CommentsVisible
   markdown: string
   createdAt: string
   updatedAt: string
@@ -203,6 +207,8 @@ async function saveArtifact(col: Col, input: SaveInput): Promise<SaveResult> {
     ...(input.meta.theme ? { theme: input.meta.theme } : {}),
     ...(input.meta.toc !== undefined ? { toc: input.meta.toc } : {}),
     ...(input.meta.definitions?.length ? { definitions: input.meta.definitions } : {}),
+    ...(input.meta.comments ? { comments: input.meta.comments } : {}),
+    ...(input.meta.commentsVisible ? { commentsVisible: input.meta.commentsVisible } : {}),
   }
   if (input.id) {
     const existing = await getArtifact(col, input.id)
@@ -244,6 +250,10 @@ async function saveArtifact(col: Col, input: SaveInput): Promise<SaveResult> {
       ...(input.meta.theme ? {} : { theme: FieldValue.delete() }),
       ...(input.meta.toc !== undefined ? {} : { toc: FieldValue.delete() }),
       ...(input.meta.definitions?.length ? {} : { definitions: FieldValue.delete() }),
+      // Comments are not an access control, so a line the file no longer carries goes back to
+      // off / owner. The comments already left are kept, like every answer.
+      ...(input.meta.comments ? {} : { comments: FieldValue.delete() }),
+      ...(input.meta.commentsVisible ? {} : { commentsVisible: FieldValue.delete() }),
     }
     await ref.update({
       ...fields, ...password, ...subtitle, ...access, ...state, ...look, markdown: input.markdown, version: next,

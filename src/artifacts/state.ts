@@ -7,7 +7,10 @@
 export type Shape = 'one' | 'many'
 export type Visibility = 'private' | 'tally' | 'shared'
 export type Writers = 'signed-in' | 'anyone'
-export type SlotDef = { shape: Shape; visibility?: Visibility }
+/** `writers` on a slot is never written by an author (parseStateConfig refuses it); a widget that
+ *  declares its own slot sets it, as `comments:` does, so one page can take comments from anyone
+ *  and votes only from signed-in readers. Absent means the page's `writers`. */
+export type SlotDef = { shape: Shape; visibility?: Visibility; writers?: Writers }
 export type StateConfig = { writers: Writers; visibility: Visibility; slots: Record<string, SlotDef> }
 
 export const SLOT_NAME = /^[a-z][a-z0-9-]{0,39}$/
@@ -46,9 +49,12 @@ export function parseStateConfig(raw: unknown): { ok: true; state: StateConfig }
   return { ok: true, state: { writers, visibility: visibility as Visibility, slots } }
 }
 
-/** A gated page's readers are always signed in, so its state is too, whatever the file says. */
-export function effectiveWriters(state: StateConfig, access?: string): Writers {
-  return access ? 'signed-in' : state.writers
+/** A gated page's readers are always signed in, so its state is too, whatever the file says.
+ *  With a slot named, that slot's own writers (when it declares any) stand in for the page's. */
+export function effectiveWriters(state: StateConfig, access?: string, slot?: string): Writers {
+  if (access) return 'signed-in'
+  const def = slot !== undefined && Object.hasOwn(state.slots, slot) ? state.slots[slot] : undefined
+  return def?.writers ?? state.writers
 }
 
 export function slotVisibility(state: StateConfig, slot: string): Visibility {

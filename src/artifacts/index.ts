@@ -12,3 +12,4 @@ export { createStateStore, createMemoryStateStore, readerKeyFor, type StateStore
 export { stateView, responsesOf, responsesCsv, type SlotView, type Tally, type SharedEntry, type Response as StateResponse } from './state-view.js'
 export { slugify, headingsOf, blocksOf, scanWidgets, mergeWidgetState, hasNotesWidget, checkNoteValue, placeNotes, NOTES_SLOT, MAX_NOTE_CHARS, type Heading, type NotesWidget, type NoteValue, type PlacedNote } from './widgets.js'
 export { textAnchorFrom, findText, blockId, parseAnchor, CONTEXT_CHARS, MAX_QUOTE_CHARS, BLOCK_ID, type Anchor, type TextAnchor, type RegionAnchor } from './anchor.js'
+export { COMMENTS_SLOT, COMMENTS_MODES, mergeCommentsState, type CommentsMode, type CommentsVisible } from './comments.js'
