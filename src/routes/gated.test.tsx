@@ -49,6 +49,17 @@ describe('a gated page', () => {
     expect(html).toContain('/artifact/sign-in?to=https%3A%2F%2Fartifacts.example.com%2Fabc23456')
     expect(html).not.toContain('the secret body')
   })
+  it('signed out: the door says the Freedom account by default, and a host can say its own line', async () => {
+    expect(await page()).toContain('Google account your Freedom account uses')
+    const r = createArtifactRoutes({
+      store, brand: freedomDefault, siteUrl: 'https://artifacts.example.com', publishKey: () => 'k',
+      readers, readerSecret: () => SECRET, readCookie: async () => undefined,
+      signInOrigin: 'https://artifacts.example.com', signInNote: 'Sign in with the Google account this was shared with.',
+    })
+    const html = renderToStaticMarkup(await r.Page({ params: Promise.resolve({ id: 'abc23456' }) }))
+    expect(html).toContain('Sign in with the Google account this was shared with.')
+    expect(html).not.toContain('Freedom account')
+  })
   it('no sign-in authority configured: the door stays shut and offers no way through', async () => {
     // The package names no sign-in service of its own, so a host that forgot signInOrigin must
     // fail closed rather than send readers to somebody else's sign-in.

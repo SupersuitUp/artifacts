@@ -60,6 +60,9 @@ export type ArtifactRoutesConfig = {
   /** The sign-in authority's origin; readers go to `<signInOrigin>/artifact/sign-in?to=<page>`.
    *  No default: without it a gated page shows its door with no way through (fails closed). */
   signInOrigin?: string
+  /** The line on the sign-in door, for a host whose readers do not sign in with a Freedom
+   *  account. Default names the Freedom account. */
+  signInNote?: string
   /** Who the banner says grants access, e.g. "Example Co". Default the brand name. */
   owner?: string
   /** The address the state routes' rate limit counts by. Default reads the first hop of
@@ -243,7 +246,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
           {header}
           {d.why === 'not-allowed'
             ? <NotAllowedDoor brand={brand} reader={d.reader} signOutUrl={signOutUrl(id)} />
-            : <SignInDoor brand={brand} href={signInOrigin ? signInUrl(signInOrigin, here) : undefined} />}
+            : <SignInDoor brand={brand} href={signInOrigin ? signInUrl(signInOrigin, here) : undefined} note={config.signInNote} />}
         </BrandGround>
       )
     }

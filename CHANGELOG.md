@@ -3,6 +3,19 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.9.0 (2026-09-27)
+
+**A host can word its own sign-in door.** `signInNote` on `createArtifactRoutes` replaces the
+door's line on a gated page. The default still names the Freedom account, so every host that
+passes nothing reads exactly as before. A host that signs readers in itself, rather than through
+a Freedom account, needs the door to say so, or readers are told to use an account they do not
+have.
+
+- DETECTOR: a host whose `signInOrigin` is not a Freedom account service, and whose door still
+  says "your Freedom account".
+- REMEDY: bump and pass `signInNote`.
+- Tests: `gated.test.tsx` pins the default line and a host's own line replacing it.
+
 ## 0.8.0 (2026-09-27)
 
 **Pages play audio clips.** `![caption](clip.mp3)` renders a captioned player with native

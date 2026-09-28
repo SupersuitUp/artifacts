@@ -49,7 +49,11 @@ export function Watermark({ email }: { email: string }) {
 /** Printing shows this and nothing else, whichever way the print dialog was reached. */
 export const NO_PRINT_CSS = `@media print { body * { visibility: hidden !important; } body::after { content: "This page is confidential and cannot be printed."; visibility: visible; position: fixed; top: 40%; left: 0; right: 0; text-align: center; font: 16px sans-serif; color: #000; } }`
 
-export function SignInDoor({ brand, href }: { brand: BrandPack; href?: string }) {
+/** The door's default line, for a host whose readers sign in with a Freedom account. A host
+ *  that signs readers in some other way passes `signInNote` to say so in its own words. */
+export const DEFAULT_SIGN_IN_NOTE = 'This page is confidential. Sign in with the Google account your Freedom account uses, or the address it was shared with.'
+
+export function SignInDoor({ brand, href, note = DEFAULT_SIGN_IN_NOTE }: { brand: BrandPack; href?: string; note?: string }) {
   // No href means the host configured no sign-in authority: the door stays, with no way through.
   if (!href) {
     return (
@@ -60,7 +64,7 @@ export function SignInDoor({ brand, href }: { brand: BrandPack; href?: string })
   }
   return (
     <div data-nospeak className="mx-auto max-w-sm px-6 pb-24 text-center">
-      <p className="text-sm opacity-70">This page is confidential. Sign in with the Google account your Freedom account uses, or the address it was shared with.</p>
+      <p className="text-sm opacity-70">{note}</p>
       <a
         href={href}
         className="mt-5 inline-block rounded-lg px-5 py-2 text-sm font-medium"
