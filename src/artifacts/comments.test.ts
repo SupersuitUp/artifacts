@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { COMMENTS_SLOT, mergeCommentsState } from './comments.js'
+import { COMMENTS_SLOT, MAX_COMMENT_CHARS, mergeCommentsState, validateComment, type CommentValue } from './comments.js'
 import { effectiveWriters } from './state.js'
 
 describe('mergeCommentsState', () => {
@@ -37,5 +37,38 @@ describe('effectiveWriters for the comments slot', () => {
   })
   it('a gated page forces signed-in, whatever comments: says', () => {
     expect(effectiveWriters(state, 'invite', 'comments')).toBe('signed-in')
+  })
+})
+
+describe('validateComment', () => {
+  const anchor = { kind: 'text', quote: 'the river', prefix: 'Every spring ', suffix: ' floods' }
+  const top: CommentValue = { anchor: { kind: 'text', quote: 'the river', prefix: '', suffix: '' }, body: 'Which river?', version: 2 }
+  const reply: CommentValue = { ...top, body: 'The north one.', parent: 'top1' }
+  const existing = (id: string) => (id === 'top1' ? top : id === 'reply1' ? reply : null)
+
+  it('takes an anchor, a body and the version it was left on', () => {
+    expect(validateComment({ anchor, body: 'Nice.', version: 3 }, existing)).toEqual({ ok: true, value: { anchor, body: 'Nice.', version: 3 } })
+  })
+  it('keeps the voice fields a later version fills in', () => {
+    const r = validateComment({ anchor, body: 'said aloud', version: 1, audio: 'comments/abc.webm', transcript: 'browser' }, existing)
+    expect(r.ok && r.value.transcript).toBe('browser')
+    expect(validateComment({ anchor, body: 'x', version: 1, transcript: 'guessed' }, existing).ok).toBe(false)
+    expect(validateComment({ anchor, body: 'x', version: 1, audio: '../../secret' }, existing).ok).toBe(false)
+  })
+  it('refuses an empty body, one over the cap, a bad version, a bad anchor, and unknown keys', () => {
+    expect(validateComment({ anchor, body: '  ', version: 1 }, existing).ok).toBe(false)
+    expect(validateComment({ anchor, body: 'x'.repeat(MAX_COMMENT_CHARS + 1), version: 1 }, existing).ok).toBe(false)
+    expect(validateComment({ anchor, body: 'x', version: 0 }, existing).ok).toBe(false)
+    expect(validateComment({ anchor, body: 'x', version: 1.5 }, existing).ok).toBe(false)
+    expect(validateComment({ anchor: { kind: 'text', quote: '' }, body: 'x', version: 1 }, existing).ok).toBe(false)
+    expect(validateComment({ anchor, body: 'x', version: 1, name: 'spoof' }, existing).ok).toBe(false)
+    expect(validateComment('x', existing).ok).toBe(false)
+  })
+  it('a reply names a top-level comment the writer can see; a reply to a reply is refused', () => {
+    expect(validateComment({ anchor, body: 'agreed', version: 2, parent: 'top1' }, existing).ok).toBe(true)
+    const deep = validateComment({ anchor, body: 'agreed', version: 2, parent: 'reply1' }, existing)
+    expect(!deep.ok && deep.error).toMatch(/one level/)
+    const missing = validateComment({ anchor, body: 'agreed', version: 2, parent: 'nope' }, existing)
+    expect(!missing.ok && missing.error).toMatch(/no comment/)
   })
 })

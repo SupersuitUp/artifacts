@@ -70,6 +70,10 @@ export type ArtifactRoutesConfig = {
    *  `x-forwarded-for`, which is correct on Vercel (it overwrites XFF with the real client IP)
    *  and wrong behind any other proxy that appends rather than replaces; pass this there. */
   clientIp?: (req: NextRequest) => string
+  /** The page owner's sign-in email. Signed in as them, a page shows every shared comment with
+   *  its writer's name, whatever `comments_visible:` says. Without it nobody is the owner, and
+   *  the publisher reads comments through /responses. */
+  ownerEmail?: string
 }
 
 /** Ids are 8 chars from the safe alphabet; anything else is not a page and never reaches the store. */
@@ -106,7 +110,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
   const shareCardUrl = (id: string, updatedAt: string) => `${pageUrl(id)}/share.png?v=${encodeURIComponent(updatedAt)}`
   const stateRoutes = createStateRoutes({
     store, state: config.state, readers: config.readers, readerSecret, publishKey: config.publishKey, pageUrl, signInOrigin, siteUrl,
-    clientIp: config.clientIp,
+    clientIp: config.clientIp, ownerEmail: config.ownerEmail,
   })
 
   async function generateMetadata({ params }: Params): Promise<Metadata> {

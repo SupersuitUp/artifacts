@@ -36,6 +36,10 @@ export interface StateStore {
   /** Does this reader already hold a `one` answer in this slot? One document read. Optional so a
    *  host's own store keeps working; without it the route falls back to loading the page. */
   hasOne?(artifactId: string, slot: string, readerKey: string): Promise<boolean>
+  /** Replace the value of one of THIS reader's own `many` entries (editing a comment), keeping its
+   *  id and time. Null when no such entry is theirs. Optional so a host's own store keeps working;
+   *  without it an edit answers 501. */
+  replace?(input: { artifactId: string; slot: string; readerKey: string; entryId: string; value: unknown }): Promise<StateEntry | null>
 }
 
 export const readerKeyFor = {
@@ -116,6 +120,15 @@ export function createStateStore(db: Firestore, base: string): StateStore {
       return (await col().where('artifactId', '==', artifactId).where('slot', '==', slot).count().get()).data().count
     },
     hasOne: async (artifactId, slot, readerKey) => (await col().doc(oneId(artifactId, slot, readerKey)).get()).exists,
+    async replace({ artifactId, slot, readerKey, entryId, value }) {
+      const ref = col().doc(entryId)
+      const snap = await ref.get()
+      if (!snap.exists) return null
+      const e = toEntry(snap.id, snap.data() as Stored)
+      if (e.artifactId !== artifactId || e.slot !== slot || e.readerKey !== readerKey || e.shape !== 'many') return null
+      await ref.update({ json: JSON.stringify(value) })
+      return { ...e, value }
+    },
   }
   return store
 }
@@ -172,5 +185,12 @@ export function createMemoryStateStore(): StateStore {
     },
     countSlot: async (artifactId, slot) => of(artifactId).filter((e) => e.slot === slot).length,
     hasOne: async (artifactId, slot, readerKey) => docs.has(oneId(artifactId, slot, readerKey)),
+    async replace({ artifactId, slot, readerKey, entryId, value }) {
+      const e = docs.get(entryId)
+      if (!e || e.artifactId !== artifactId || e.slot !== slot || e.readerKey !== readerKey || e.shape !== 'many') return null
+      const next = { ...e, value: structuredClone(value) }
+      docs.set(entryId, next)
+      return structuredClone(next)
+    },
   }
 }

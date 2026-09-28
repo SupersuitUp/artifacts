@@ -1,7 +1,7 @@
 // The state routes: what readers put into a page, and what the publisher gets back.
 //
 //   GET  /api/artifacts/<id>/state      the reader's own answers + what the page lets them see
-//   POST /api/artifacts/<id>/state      { slot, op: set|append|remove, value?, entry? }
+//   POST /api/artifacts/<id>/state      { slot, op: set|append|remove|replace, value?, entry? }
 //   GET  /api/artifacts/<id>/responses  publish key; every answer with who (?format=csv)
 //   DELETE /api/artifacts/<id>/responses?reader=<key>  publish key; one reader's answers
 //
@@ -14,7 +14,8 @@ import { isPublishAuthed } from '../artifacts/auth.js'
 import { ARTIFACT_ID_RE } from './ids.js'
 import { GRANT_COOKIE, decide, firstName, signInUrl, verifyGrant, type Reader } from '../artifacts/reader.js'
 import { isUnlocked, unlockCookieName } from '../artifacts/unlock.js'
-import { ANON_WRITES_PER_MINUTE, MAX_ENTRIES_PER_SLOT, checkValue, effectiveWriters } from '../artifacts/state.js'
+import { ANON_WRITES_PER_MINUTE, MAX_ENTRIES_PER_SLOT, checkValue, effectiveWriters, slotVisibility } from '../artifacts/state.js'
+import { COMMENTS_SLOT, validateComment, type CommentValue } from '../artifacts/comments.js'
 import { readerKeyFor, type StateStore, type Writer } from '../artifacts/state-store.js'
 import { NOTES_SLOT, checkNoteValue, hasNotesWidget } from '../artifacts/widgets.js'
 import { responsesCsv, responsesOf, stateView } from '../artifacts/state-view.js'
@@ -46,6 +47,9 @@ export type StateRoutesContext = {
    *  which is correct on Vercel (it overwrites XFF with the real client IP) and wrong behind any
    *  other proxy that appends rather than replaces; a host behind one of those passes its own. */
   clientIp?: (req: NextRequest) => string
+  /** The page owner's sign-in email. Signed in as them, a page's comments show every entry with
+   *  full names, whatever `comments_visible:` says. */
+  ownerEmail?: string
 }
 type Params = { params: Promise<{ id: string }> }
 
@@ -79,15 +83,40 @@ export function createStateRoutes(ctx: StateRoutesContext) {
     return { a, reader, anonId, signIn }
   }
 
+  const ownerEmail = ctx.ownerEmail?.trim().toLowerCase()
+  const isOwner = (r: Reader | null) => !!r && !!ownerEmail && r.email === ownerEmail
+  /** Comments are on for this page: the slot exists because `comments:` put it there. */
+  const commentsOn = (a: ArtifactRecord) => !!a.comments && a.comments !== 'off' && Object.hasOwn(a.state!.slots, COMMENTS_SLOT)
+
   const writerFor = (r: Reader): Writer => ({ key: readerKeyFor.signedIn(r.uid), uid: r.uid, email: r.email, name: r.name, anonymous: false })
 
   async function viewBody(a: ArtifactRecord, reader: Reader | null, readerKey: string | null) {
     const allow = reader && ctx.readers && a.access ? await ctx.readers.allowList(a.id) : []
+    const entries = await ctx.state!.entries(a.id)
+    const slots = stateView(a.state!, entries, readerKey)
+    const owner = isOwner(reader)
+    // The owner reads every comment with its writer's full name, whatever the page shows readers.
+    if (owner && commentsOn(a)) {
+      slots[COMMENTS_SLOT].shared = entries.filter((e) => e.slot === COMMENTS_SLOT)
+        .sort((x, y) => x.at.localeCompare(y.at) || x.id.localeCompare(y.id))
+        .map((e) => ({ id: e.id, name: e.writer.name?.trim() || 'a reader', value: e.value, at: e.at, mine: e.readerKey === readerKey }))
+    }
     return {
       reader: reader ? { firstName: firstName(reader, allow) } : null,
       canWrite: !!reader || effectiveWriters(a.state!, a.access) === 'anyone',
-      slots: stateView(a.state!, await ctx.state!.entries(a.id), readerKey),
+      ...(owner ? { owner: true } : {}),
+      slots,
     }
+  }
+
+  /** The comments a writer can see, by id: every one on a readers-visible page, else their own,
+   *  and every one for the owner. A reply may name only a comment its writer was shown. */
+  async function visibleComments(a: ArtifactRecord, writerKey: string, reader: Reader | null) {
+    const all = slotVisibility(a.state!, COMMENTS_SLOT) === 'shared' || isOwner(reader)
+    const byId = new Map<string, CommentValue>()
+    for (const e of await ctx.state!.entries(a.id))
+      if (e.slot === COMMENTS_SLOT && (all || e.readerKey === writerKey)) byId.set(e.id, e.value as CommentValue)
+    return byId
   }
 
   // A GET that writes, on purpose: when a signed-in reader still carries an anonymous cookie, the
@@ -143,32 +172,58 @@ export function createStateRoutes(ctx: StateRoutesContext) {
     const def = Object.hasOwn(a.state!.slots, slot) ? a.state!.slots[slot] : undefined
     if (!def) return json({ error: `no slot named ${slot} on this page` }, 400)
     const op = b.op
-    if (op !== 'set' && op !== 'append' && op !== 'remove') return json({ error: 'op must be set, append or remove' }, 400)
+    if (op !== 'set' && op !== 'append' && op !== 'remove' && op !== 'replace') return json({ error: 'op must be set, append, remove or replace' }, 400)
     if (op === 'set' && def.shape !== 'one') return json({ error: `slot ${slot} takes append` }, 400)
-    if (op === 'append' && def.shape !== 'many') return json({ error: `slot ${slot} takes set` }, 400)
+    if ((op === 'append' || op === 'replace') && def.shape !== 'many') return json({ error: `slot ${slot} takes set` }, 400)
+    const entryId = typeof b.entry === 'string' ? b.entry : undefined
+    if (op === 'replace' && !entryId) return json({ error: 'replace names the entry it edits' }, 400)
+    if (op === 'replace' && !ctx.state!.replace) return json({ error: 'this host cannot edit an answer' }, 501)
+    const isComments = slot === COMMENTS_SLOT && commentsOn(a)
     let setCookie: string | null = null
     let writer: Writer
     if (reader) writer = writerFor(reader)
     else {
-      if (effectiveWriters(a.state!, a.access) !== 'anyone') return json({ error: 'sign in to answer', signIn }, 401)
+      if (effectiveWriters(a.state!, a.access, slot) !== 'anyone') return json({ error: 'sign in to answer', signIn }, 401)
       // A remove adds nothing, so it is never counted and never mints a cookie: with no cookie
       // there is nothing of theirs to remove, and the answer is simply the page as it stands.
+      // Comments say so instead: deleting a comment that is not yours is a refusal, not a no-op.
       if (op === 'remove') {
-        if (!anonId) return json(await viewBody(a, null, null))
+        if (!anonId) return isComments && entryId ? json({ error: 'no comment of yours with that id' }, 404) : json(await viewBody(a, null, null))
         const key = readerKeyFor.anonymous(anonId)
-        await ctx.state!.remove({ artifactId: id, slot, readerKey: key, entryId: typeof b.entry === 'string' ? b.entry : undefined })
+        const n = await ctx.state!.remove({ artifactId: id, slot, readerKey: key, entryId })
+        if (isComments && entryId && !n) return json({ error: 'no comment of yours with that id' }, 404)
         return json(await viewBody(a, null, key))
       }
+      // An edit with no cookie has nothing of theirs to edit.
+      if (op === 'replace' && !anonId) return json({ error: 'no answer of yours with that id' }, 404)
       const n = await ctx.state!.countAnonWrite(id, ipHash(req), Math.floor(Date.now() / 60000))
       if (n > ANON_WRITES_PER_MINUTE) return json({ error: 'too many answers from here; try again in a minute' }, 429)
       if (!anonId) { anonId = newAnonId(); setCookie = anonCookie(anonId, 31536000) }
       writer = { key: readerKeyFor.anonymous(anonId), name: null, anonymous: true }
     }
     if (op === 'remove') {
-      await ctx.state!.remove({ artifactId: id, slot, readerKey: writer.key, entryId: typeof b.entry === 'string' ? b.entry : undefined })
+      const n = await ctx.state!.remove({ artifactId: id, slot, readerKey: writer.key, entryId })
+      if (isComments && entryId && !n) return json({ error: 'no comment of yours with that id' }, 404)
     } else {
       const bad = checkValue(b.value) ?? (slot === NOTES_SLOT && hasNotesWidget(a.markdown) ? checkNoteValue(b.value) : null)
       if (bad) return json({ error: bad }, 400)
+      let value: unknown = b.value
+      if (isComments) {
+        const seen = await visibleComments(a, writer.key, reader)
+        const c = validateComment(b.value, (cid) => seen.get(cid) ?? null)
+        if (!c.ok) return json({ error: c.error }, 400)
+        // An edit keeps the comment where it is in its thread: a reply stays a reply to the same one.
+        if (op === 'replace' && seen.has(entryId!) && (seen.get(entryId!)!.parent ?? null) !== (c.value.parent ?? null))
+          return json({ error: 'an edit cannot move a comment into or out of a thread' }, 400)
+        value = c.value
+      }
+      if (op === 'replace') {
+        const r = await ctx.state!.replace!({ artifactId: id, slot, readerKey: writer.key, entryId: entryId!, value })
+        if (!r) return json({ error: 'no answer of yours with that id' }, 404)
+        const res = json(await viewBody(a, reader, writer.key))
+        if (setCookie) res.headers.append('set-cookie', setCookie)
+        return res
+      }
       // The page-wide cap per slot. Counted before the write and not atomically with it, so a
       // burst can overshoot by the writes in flight; it bounds the slot, it is not a quota.
       if ((await ctx.state!.countSlot(id, slot)) >= MAX_ENTRIES_PER_SLOT) {
@@ -178,8 +233,8 @@ export function createStateRoutes(ctx: StateRoutesContext) {
         if (!replacing) return json({ error: 'this page is not taking more answers here' }, 409)
       }
       const r = op === 'set'
-        ? await ctx.state!.set({ artifactId: id, slot, writer, value: b.value })
-        : await ctx.state!.append({ artifactId: id, slot, writer, value: b.value })
+        ? await ctx.state!.set({ artifactId: id, slot, writer, value })
+        : await ctx.state!.append({ artifactId: id, slot, writer, value })
       if ('full' in r) return json({ error: 'you have left the most answers this page takes here' }, 409)
     }
     const res = json(await viewBody(a, reader, writer.key))
