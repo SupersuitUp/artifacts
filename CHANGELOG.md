@@ -3,6 +3,25 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.10.0 (2026-09-28)
+
+**Every page can be read aloud.** A page with no recorded narration, or whose timings will not
+load, now shows the same player bar and reads itself with the browser's own voice
+(`speechSynthesis`), lighting each word from the engine's word-boundary events. It speaks one
+sentence at a time, so a drifting engine (Safari on long passages) re-syncs at every sentence.
+Clicking a word starts reading there. Browsers without speech synthesis show no bar, as before.
+Pages with recorded narration are unchanged.
+
+- New exports from `./reader`: `BrowserReader`, `PlayerBar`, `planSentences`, `wordAt`,
+  `sentenceOf`, `fromWord`. `./reader` is now a barrel (`src/reader/index.ts`); everything
+  importable before still is.
+- `wrapWords` is idempotent, so two readers can never wrap a page twice.
+- DETECTOR: an un-narrated page with no player bar.
+- REMEDY: bump; nothing to republish.
+- Tests: `speech-plan.test.ts` (sentence plan, 60-word cap, block starts, boundary mapping),
+  `browser-reader.test.tsx` against a stubbed `speechSynthesis`, route tests for which reader
+  mounts, and the packed fixture's un-narrated page mounting the browser reader.
+
 ## 0.9.0 (2026-09-27)
 
 **A host can word its own sign-in door.** `signInNote` on `createArtifactRoutes` replaces the
