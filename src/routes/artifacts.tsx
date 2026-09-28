@@ -34,11 +34,16 @@ import { FLAG_KINDS, summarize, type FlagKind, type ReadersStore } from '../arti
 import { AckDoor, ConfidentialBanner, NO_PRINT_CSS, NotAllowedDoor, SignInDoor, Watermark, ackText } from '../artifacts/confidential.js'
 import { ARTIFACT_ID_RE } from './ids.js'
 import { createStateRoutes } from './state-routes.js'
+import { createPersonalRoutes } from './personal-routes.js'
+import type { PersonalStore } from '../artifacts/personal-store.js'
 
 export type ArtifactRoutesConfig = {
   store: ArtifactStore
   /** Where readers' answers live. Without it every state route answers 501. */
   state?: StateStore
+  /** Where signed-in readers' personal notes live. Read ONLY by the reader's own /personal
+   *  handlers, never by any publisher route. Without it every reader's notes stay on their device. */
+  personal?: PersonalStore
   /** Where uploaded files go. Optional; without it PUT_ASSET answers 501. */
   assets?: ArtifactAssets
   brand: BrandPack
@@ -112,6 +117,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     store, state: config.state, readers: config.readers, readerSecret, publishKey: config.publishKey, pageUrl, signInOrigin, siteUrl,
     clientIp: config.clientIp, ownerEmail: config.ownerEmail,
   })
+  const personalRoutes = createPersonalRoutes({ store, personal: config.personal, readers: config.readers, readerSecret, pageUrl, signInOrigin, siteUrl })
 
   async function generateMetadata({ params }: Params): Promise<Metadata> {
     const { id } = await params
@@ -180,13 +186,14 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     // The same cookie again on the page's state API: a cookie scoped to the page path is never
     // sent to /api/artifacts/<id>/state, so without it a password page could not take answers.
     const unlockLine = (path: string) => `${unlockCookieName(id)}=${keyHash(id, a.password!)}; Path=${path}; Max-Age=31536000; SameSite=Lax; Secure`
-    // The API copy is set on EVERY open of a page with state:, because the page cannot see it (a
+    // The API copy is set on EVERY open of a page with state: (or on a host keeping personal notes,
+    // which every page takes), because the page cannot see it (a
     // cookie scoped to /api/... never reaches the page path): a reader who unlocked the page
     // before its API cookie existed would otherwise be refused every answer until they reopened
     // the ?key= link.
     const paths = !open || !a.password ? [] : [
       ...(key !== undefined && cookie !== keyHash(id, a.password) ? [pagePath(id)] : []),
-      ...(a.state ? [`/api/artifacts/${id}`] : key !== undefined && cookie !== keyHash(id, a.password) ? [`/api/artifacts/${id}`] : []),
+      ...(a.state || config.personal ? [`/api/artifacts/${id}`] : key !== undefined && cookie !== keyHash(id, a.password) ? [`/api/artifacts/${id}`] : []),
     ]
     const remember = paths.length ? paths.map((p) => `document.cookie=${JSON.stringify(unlockLine(p))}`).join(';') : null
     if (!open) {
@@ -652,5 +659,5 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     return NextResponse.json({ deleted: true })
   }
 
-  return { Page, generateMetadata, VersionPage, generateVersionMetadata, VERSIONS, POST, GET, DELETE, PUT_ASSET, UPLOAD, SHARE_IMAGE, ENTER, LEAVE, TRACK, ACK, ACCESS, READS, ...stateRoutes, dynamic: 'force-dynamic' as const, maxDuration: 30 }
+  return { Page, generateMetadata, VersionPage, generateVersionMetadata, VERSIONS, POST, GET, DELETE, PUT_ASSET, UPLOAD, SHARE_IMAGE, ENTER, LEAVE, TRACK, ACK, ACCESS, READS, ...stateRoutes, ...personalRoutes, dynamic: 'force-dynamic' as const, maxDuration: 30 }
 }

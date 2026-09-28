@@ -13,3 +13,4 @@ export { stateView, responsesOf, responsesCsv, type SlotView, type Tally, type S
 export { slugify, headingsOf, blocksOf, scanWidgets, mergeWidgetState, hasNotesWidget, checkNoteValue, placeNotes, NOTES_SLOT, MAX_NOTE_CHARS, type Heading, type NotesWidget, type NoteValue, type PlacedNote } from './widgets.js'
 export { textAnchorFrom, findText, blockId, parseAnchor, CONTEXT_CHARS, MAX_QUOTE_CHARS, BLOCK_ID, type Anchor, type TextAnchor, type RegionAnchor } from './anchor.js'
 export { COMMENTS_SLOT, COMMENTS_MODES, COMMENT_TRANSCRIPTS, MAX_COMMENT_CHARS, mergeCommentsState, validateComment, type CommentsMode, type CommentsVisible, type CommentValue } from './comments.js'
+export { createPersonalStore, createMemoryPersonalStore, validatePersonal, MAX_PERSONAL_PER_READER, type PersonalStore, type PersonalNote, type PersonalNoteValue } from './personal-store.js'
