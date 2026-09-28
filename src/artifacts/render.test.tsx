@@ -117,3 +117,37 @@ describe('ArtifactMarkdown', () => {
     })
   })
 })
+
+describe('block ids (data-block), what a region comment is pinned to', () => {
+  const ids = (md: string) => [...html(md).matchAll(/data-block="([^"]+)"/g)].map((m) => m[1])
+  const PAGE = '# Title\n\nFirst paragraph.\n\nSecond paragraph.\n\nThird paragraph.\n\n- one\n- two\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n> quoted\n\n```js\nx()\n```\n\n![A chart](https://cdn.example.com/chart.0a1b2c3d.png)\n'
+
+  it('every top-level block carries one: heading, paragraph, list, table, blockquote, code, image', () => {
+    const out = ids(PAGE)
+    expect(out).toHaveLength(9)
+    for (const kind of ['h', 'p', 'ul', 'table', 'quote', 'code', 'img']) expect(out.some((id) => id.startsWith(`b-${kind}-`))).toBe(true)
+    expect(new Set(out).size).toBe(out.length)
+    // Nested blocks do not: the list's items and the quote's paragraph have none of their own.
+    expect(out.filter((id) => id.startsWith('b-p-'))).toHaveLength(3)
+  })
+
+  it('an edit to paragraph 3 leaves paragraph 1 and the image where they were', () => {
+    const before = ids(PAGE)
+    const after = ids(PAGE.replace('Third paragraph.', 'Third paragraph, rewritten.'))
+    expect(after[1]).toBe(before[1])
+    expect(after[3]).not.toBe(before[3])
+    expect(after.at(-1)).toBe(before.at(-1))
+  })
+
+  it('an image is keyed by its asset name, so a re-upload of the same file name keeps its comments', () => {
+    const a = ids('![A chart](https://cdn.example.com/chart.0a1b2c3d.png)')
+    const b = ids('![A new caption](https://cdn.example.com/chart.ffffeeee.png?v=2)')
+    expect(a).toEqual(b)
+  })
+
+  it('identical blocks get distinct ids, and inserting a block above does not move either', () => {
+    const two = ids('Same.\n\nSame.')
+    expect(two[1]).toBe(`${two[0]}-1`)
+    expect(ids('New.\n\nSame.\n\nSame.').slice(1)).toEqual(two)
+  })
+})

@@ -12,8 +12,9 @@
 import { unified } from 'unified'
 import remarkParse from 'remark-parse'
 import remarkGfm from 'remark-gfm'
-import type { Root, RootContent, PhrasingContent, Code } from 'mdast'
+import type { Root, RootContent, PhrasingContent, Code, Nodes } from 'mdast'
 import type { StateConfig, Visibility } from './state.js'
+import { blockId } from './anchor.js'
 import { MAX_NOTE_CHARS, NOTES_SLOT, type Heading } from './notes-place.js'
 
 export { MAX_NOTE_CHARS, NOTES_SLOT, placeNotes, type Heading, type NoteValue, type PlacedNote } from './notes-place.js'
@@ -133,4 +134,49 @@ export function checkNoteValue(v: unknown): string | null {
   if (typeof v.note !== 'string' || !v.note.trim()) return 'a note needs some text'
   if (v.note.length > MAX_NOTE_CHARS) return `a note is at most ${MAX_NOTE_CHARS} characters`
   return null
+}
+
+function plain(n: Nodes): string {
+  if ('value' in n && typeof n.value === 'string') return n.value
+  if (n.type === 'image') return n.alt ?? ''
+  if ('children' in n) return (n.children as Nodes[]).map(plain).join(n.type === 'list' || n.type === 'table' || n.type === 'tableRow' ? '\n' : '')
+  return ''
+}
+
+/** An image's asset name without the host's content digest (`chart.0a1b2c3d.png` is `chart.png`),
+ *  so replacing the file under the same name keeps the comments drawn on it. */
+function assetName(url: string): string {
+  const base = url.split(/[?#]/)[0].split('/').pop() ?? url
+  return base.replace(/\.[0-9a-f]{8}(\.[^.]+)$/, '$1')
+}
+
+/** The stable id of every top-level block, by the offset it starts at in the markdown. The
+ *  renderer puts it on the block as `data-block`, and a region comment is pinned to it. Blocks
+ *  that draw no prose (a notes or links fence, a rule, raw html) get none. */
+export function blocksOf(markdown: string): Map<number, string> {
+  const out = new Map<number, string>()
+  const seen = new Map<string, number>()
+  for (const n of parse(markdown).children) {
+    const at = n.position?.start.offset
+    if (at === undefined) continue
+    let kind: string
+    let content: string
+    if (n.type === 'paragraph') {
+      const only = n.children.filter((c) => !(c.type === 'text' && !c.value.trim()))
+      if (only.length === 1 && only[0].type === 'image') { kind = 'img'; content = assetName(only[0].url) }
+      else { kind = 'p'; content = plain(n) }
+    } else if (n.type === 'heading') { kind = 'h'; content = plain(n) }
+    else if (n.type === 'list') { kind = n.ordered ? 'ol' : 'ul'; content = plain(n) }
+    else if (n.type === 'table') { kind = 'table'; content = plain(n) }
+    else if (n.type === 'blockquote') { kind = 'quote'; content = plain(n) }
+    else if (n.type === 'code') {
+      if (n.lang === 'links' || n.lang === NOTES_SLOT) continue
+      kind = 'code'; content = n.value
+    } else continue
+    const k = `${kind}\n${content}`
+    const i = seen.get(k) ?? 0
+    seen.set(k, i + 1)
+    out.set(at, blockId(kind, i, content))
+  }
+  return out
 }

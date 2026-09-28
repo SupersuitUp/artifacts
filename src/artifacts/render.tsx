@@ -7,7 +7,7 @@
 import type { ReactNode } from 'react'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { hasNotesWidget, headingsOf, type Heading } from './widgets.js'
+import { blocksOf, hasNotesWidget, headingsOf, type Heading } from './widgets.js'
 import { HeadingNotes, NoteToggle, NotesEarlier, NotesProvider } from '../widgets/notes.js'
 import { VideoAutoplay } from '../reader/video-autoplay.js'
 import { DefinitionLayer } from '../reader/definition-layer.js'
@@ -105,13 +105,18 @@ function InlineAudio({ src, label }: { src: string; label: string }) {
   )
 }
 
-const components: Components = {
-  p: ({ children }) => <p className="my-4 leading-relaxed">{children}</p>,
-  ul: ({ children }) => <ul className="my-4 list-disc space-y-1 pl-6">{children}</ul>,
-  ol: ({ children }) => <ol className="my-4 list-decimal space-y-1 pl-6">{children}</ol>,
+type Positioned = { position?: { start: { offset?: number } } } | undefined
+/** `data-block` for a top-level block: the id a region comment is pinned to (widgets.blocksOf). */
+type BlockAttr = (node: Positioned) => { 'data-block'?: string }
+
+function baseComponents(block: BlockAttr): Components {
+  return {
+  p: ({ node, children }) => <p {...block(node)} className="my-4 leading-relaxed">{children}</p>,
+  ul: ({ node, children }) => <ul {...block(node)} className="my-4 list-disc space-y-1 pl-6">{children}</ul>,
+  ol: ({ node, children }) => <ol {...block(node)} className="my-4 list-decimal space-y-1 pl-6">{children}</ol>,
   hr: () => <hr className="my-10 border-[color:var(--a-line)]" />,
-  table: ({ children }) => (
-    <div className="my-6 overflow-x-auto">
+  table: ({ node, children }) => (
+    <div {...block(node)} className="my-6 overflow-x-auto">
       <table className="w-full border-collapse text-sm">{children}</table>
     </div>
   ),
@@ -157,13 +162,14 @@ const components: Components = {
     }
     return <code className={className}>{children}</code>
   },
-  pre: ({ children }) => {
+  pre: ({ node, children }) => {
     // A links fence renders its own block; do not wrap it in <pre>.
     const inner = Array.isArray(children) ? children[0] : children
     const cls = (inner as { props?: { className?: string } })?.props?.className ?? ''
     if (/language-(links|notes)/.test(cls)) return <>{children}</>
     return (
       <pre
+        {...block(node)}
         data-artifact-code
         className="my-6 overflow-x-auto rounded-lg border border-[color:var(--a-line)] bg-[color:var(--a-code)] p-4 text-sm text-[color:var(--a-strong)]"
       >
@@ -171,12 +177,12 @@ const components: Components = {
       </pre>
     )
   },
-  blockquote: ({ children }) => {
+  blockquote: ({ node, children }) => {
     const t = textOf(children).trim()
     const m = CALLOUT.exec(t)
     if (!m) {
       return (
-        <blockquote className="my-6 border-l-2 pl-4 italic text-[color:var(--a-body)]" style={{ borderColor: GOLD }}>
+        <blockquote {...block(node)} className="my-6 border-l-2 pl-4 italic text-[color:var(--a-body)]" style={{ borderColor: GOLD }}>
           {children}
         </blockquote>
       )
@@ -185,6 +191,7 @@ const components: Components = {
     const body = t.replace(CALLOUT, '')
     return (
       <aside
+        {...block(node)}
         data-callout={kind}
         className="my-6 rounded-lg border px-4 py-3"
         style={{ borderColor: kind === 'warning' ? '#d97706' : GOLD, background: 'var(--a-surface)' }}
@@ -196,6 +203,7 @@ const components: Components = {
       </aside>
     )
   },
+  }
 }
 
 // scroll-mt keeps a heading clear of the top of the screen when a contents link jumps to it.
@@ -210,30 +218,31 @@ const HEADING_CLASS: Record<number, string> = {
 
 /** Components for any page: every heading gets its slug as an id, the one headingsOf derived,
  *  so a contents link and a note both land on it. */
-function pageComponents(headings: Heading[]): Components {
+function pageComponents(headings: Heading[], block: BlockAttr): Components {
   const byLine = new Map(headings.map((h) => [h.line, h]))
   const heading = (depth: 1 | 2 | 3 | 4 | 5 | 6): Components['h1'] =>
     function Heading({ node, children }) {
       const Tag = `h${depth}` as const
       const h = byLine.get(node?.position?.start.line ?? -1)
-      return <Tag id={h?.slug} className={HEADING_CLASS[depth]}>{children}</Tag>
+      return <Tag id={h?.slug} {...block(node)} className={HEADING_CLASS[depth]}>{children}</Tag>
     }
-  return { ...components, h1: heading(1), h2: heading(2), h3: heading(3), h4: heading(4), h5: heading(5), h6: heading(6) }
+  return { ...baseComponents(block), h1: heading(1), h2: heading(2), h3: heading(3), h4: heading(4), h5: heading(5), h6: heading(6) }
 }
 
 /** Components for a page with a notes block: every heading gets its slug as an id, a note
  *  control, and its notes after it. The heading is found by its source line, so the slug is the
  *  one headingsOf derived, the same one a note stores. */
-function notesComponents(headings: Heading[]): Components {
+function notesComponents(headings: Heading[], block: BlockAttr): Components {
+  const components = baseComponents(block)
   const byLine = new Map(headings.map((h) => [h.line, h]))
   const heading = (depth: 1 | 2 | 3 | 4 | 5 | 6): Components['h1'] =>
     function NotedHeading({ node, children }) {
       const Tag = `h${depth}` as const
       const h = byLine.get(node?.position?.start.line ?? -1)
-      if (!h) return <Tag className={HEADING_CLASS[depth]}>{children}</Tag>
+      if (!h) return <Tag {...block(node)} className={HEADING_CLASS[depth]}>{children}</Tag>
       return (
         <>
-          <Tag id={h.slug} className={HEADING_CLASS[depth]}>
+          <Tag id={h.slug} {...block(node)} className={HEADING_CLASS[depth]}>
             {children}
             <NoteToggle slug={h.slug} />
           </Tag>
@@ -277,11 +286,16 @@ export function ArtifactMarkdown({
 }) {
   const on = !!notes && hasNotesWidget(markdown)
   const headings = headingsOf(markdown)
+  const blocks = blocksOf(markdown)
+  const block: BlockAttr = (node) => {
+    const id = blocks.get(node?.position?.start.offset ?? -1)
+    return id ? { 'data-block': id } : {}
+  }
   const defined = definitions?.length ? definitions : null
   const body = (
     <ReactMarkdown
       remarkPlugins={defined ? [remarkGfm, remarkDefinitions(defined)] : [remarkGfm]}
-      components={on ? notesComponents(headings) : pageComponents(headings)}
+      components={on ? notesComponents(headings, block) : pageComponents(headings, block)}
     >
       {markdown}
     </ReactMarkdown>
