@@ -36,6 +36,9 @@ for (const bad of paths.filter((p) => /\.test\.|^src\/|^test\//.test(p))) fail(`
 if (!paths.includes('fonts/Newsreader-600.ttf')) fail('tarball has no fonts/Newsreader-600.ttf')
 const reader = readFileSync(join(dest, 'lib/reader/artifact-reader.js'), 'utf8')
 if (!/^['"]use client['"]/.test(reader)) fail("compiled reader lost its 'use client' directive")
+for (const f of ['browser-reader.js', 'player-bar.js']) {
+  if (!/^['"]use client['"]/.test(readFileSync(join(dest, 'lib/reader', f), 'utf8'))) fail(`compiled ${f} lost its 'use client' directive`)
+}
 const notesJs = readFileSync(join(dest, 'lib/widgets/notes.js'), 'utf8')
 if (!/^['"]use client['"]/.test(notesJs)) fail("compiled notes widget lost its 'use client' directive")
 console.log(`check-packed: ${filename}, ${paths.length} files`)
@@ -63,6 +66,9 @@ try {
   const html = await page.text()
   if (page.status !== 200 || !html.includes('Fixture')) fail(`page answered ${page.status}`)
   if ((html.match(/data-defined-term="harness"/g) ?? []).length !== 1) fail('the defined term is not underlined exactly once')
+  // The fixture page has no narration, so the browser read-aloud mounts (hidden until the client
+  // finds speechSynthesis), and the recorded player does not.
+  if (!html.includes('data-artifact-reader="browser"') || html.includes('<audio')) fail('the un-narrated page does not mount the browser read-aloud')
 
   // Version history: the page names its version and carries the History control; a past version
   // renders under its banner at its own URL; a version that does not exist is a 404.

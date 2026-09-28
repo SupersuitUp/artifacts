@@ -93,6 +93,38 @@ describe('createArtifactRoutes', () => {
     expect(out).toContain('hi')
     expect(out).toContain('data-brand-ground="freedom-default"')
   })
+  it('a page with no narration mounts the browser read-aloud, and no audio player', async () => {
+    const out = renderToStaticMarkup(await routes.Page(params('abc23456')))
+    expect(out).toContain('data-artifact-reader="browser"')
+    expect(out).not.toContain('<audio')
+  })
+  it('a page with narration and timings mounts the recorded reader, and not the browser one', async () => {
+    const narrated = { ...rec, narration: 'https://cdn.example.com/n.mp3', timings: 'https://cdn.example.com/n.json' }
+    const r = createArtifactRoutes({ store: fakeStore({ get: vi.fn(async () => narrated) }), brand: freedomDefault, siteUrl: 'https://example.com', publishKey: () => 'k' })
+    const real = globalThis.fetch
+    globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({ words: [{ w: 'hi', s: 0, e: 1 }] }))) as typeof fetch
+    try {
+      const out = renderToStaticMarkup(await r.Page(params('abc23456')))
+      expect(out).toContain('<audio')
+      expect(out).toContain('data-artifact-player')
+      expect(out).not.toContain('data-artifact-reader="browser"')
+    } finally {
+      globalThis.fetch = real
+    }
+  })
+  it('a page whose narration timings will not load falls back to the browser read-aloud', async () => {
+    const narrated = { ...rec, narration: 'https://cdn.example.com/n.mp3', timings: 'https://cdn.example.com/n.json' }
+    const r = createArtifactRoutes({ store: fakeStore({ get: vi.fn(async () => narrated) }), brand: freedomDefault, siteUrl: 'https://example.com', publishKey: () => 'k' })
+    const real = globalThis.fetch
+    globalThis.fetch = vi.fn(async () => new Response('gone', { status: 404 })) as typeof fetch
+    try {
+      const out = renderToStaticMarkup(await r.Page(params('abc23456')))
+      expect(out).toContain('data-artifact-reader="browser"')
+      expect(out).not.toContain('<audio')
+    } finally {
+      globalThis.fetch = real
+    }
+  })
   it('the page opens in the pack mode unless the page picks its own, and paints with variables', async () => {
     const light = createArtifactRoutes({ store, brand: { ...freedomDefault, mode: 'light' }, siteUrl: 'https://example.com', publishKey: () => 'k' })
     const out = renderToStaticMarkup(await light.Page(params('abc23456')))

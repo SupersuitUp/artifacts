@@ -38,8 +38,8 @@
       "default": "./lib/brand/index.js"
     },
     "./reader": {
-      "types": "./lib/reader/artifact-reader.d.ts",
-      "default": "./lib/reader/artifact-reader.js"
+      "types": "./lib/reader/index.d.ts",
+      "default": "./lib/reader/index.js"
     },
     "./gate": {
       "types": "./lib/gate.d.ts",

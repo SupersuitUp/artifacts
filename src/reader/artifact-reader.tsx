@@ -6,23 +6,34 @@
 // sequence to the word timings by normalized token, resyncing within a short window
 // when the two disagree. Click a word to seek; the bar at the bottom plays and paces.
 import { useEffect, useRef, useState } from 'react'
+import { nextRate, PlayerBar } from './player-bar.js'
 
 export type WordTiming = { w: string; s: number; e: number }
 
 const SKIP = '[data-nospeak], [data-artifact-links], pre, [data-footnotes], sup, img, style, script'
 
-const BLOCK = 'p, li, td, th, h1, h2, h3, h4, h5, h6, blockquote, aside, dt, dd, figcaption, div'
+/** The elements that hold a run of text; a word whose block differs from the previous word's
+ *  starts a new sentence in the browser read-aloud. */
+export const BLOCK = 'p, li, td, th, h1, h2, h3, h4, h5, h6, blockquote, aside, dt, dd, figcaption, div'
 
 function normalize(w: string) {
   return w.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '')
 }
 
-/** Wrap every word inside `root` (except skipped subtrees) in a span; return them in order. */
+// Set on a root once its words are wrapped. Wrapping twice would nest a span inside every span
+// (React's development double-mount, or a host that mounts both readers), and the second set of
+// spans would never be the ones the first reader lights.
+const WRAPPED = 'data-artifact-words'
+
+/** Wrap every word inside `root` (except skipped subtrees) in a span; return them in order.
+ *  Idempotent: a root already wrapped returns the spans it already has. */
 export function wrapWords(root: HTMLElement): HTMLSpanElement[] {
+  if (root.hasAttribute(WRAPPED)) return Array.from(root.querySelectorAll<HTMLSpanElement>('.artifact-word'))
+  root.setAttribute(WRAPPED, '')
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
     acceptNode: (n) => {
       const el = n.parentElement
-      if (!el || el.closest(SKIP)) return NodeFilter.FILTER_REJECT
+      if (!el || el.closest(SKIP) || el.closest('.artifact-word, .artifact-word-tail')) return NodeFilter.FILTER_REJECT
       return n.nodeValue && n.nodeValue.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT
     },
   })
@@ -202,11 +213,6 @@ export function ArtifactReader({
 
   return (
     <>
-      <style>{`
-        .artifact-word { border-radius: 3px; transition: background-color 120ms; }
-        .artifact-word:hover { background: var(--a-surface-strong, rgba(255,255,255,0.08)); cursor: pointer; }
-        .artifact-word-lit { background: color-mix(in srgb, ${accent} 35%, transparent); color: var(--a-strong, #fff); }
-      `}</style>
       <audio
         ref={audioRef}
         src={src}
@@ -222,56 +228,24 @@ export function ArtifactReader({
         onLoadedMetadata={(e) => setDur((e.target as HTMLAudioElement).duration)}
         onRateChange={(e) => setRate((e.target as HTMLAudioElement).playbackRate)}
       />
-      <div data-artifact-player className="fixed inset-x-0 bottom-0 z-40 border-t border-[color:var(--a-line)] backdrop-blur" style={{ background: `color-mix(in srgb, ${ground} 90%, transparent)` }}>
-        <div className="mx-auto flex max-w-2xl items-center gap-4 px-6 py-3">
-          <button
-            type="button"
-            onClick={toggle}
-            aria-label={playing ? 'Pause narration' : 'Play narration'}
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full"
-            style={{ background: accent, color: ground }}
-          >
-            {playing ? (
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" /><rect x="14" y="5" width="4" height="14" /></svg>
-            ) : (
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
-            )}
-          </button>
-          <div className="min-w-0 flex-1">
-            <div className="text-[11px] uppercase tracking-[0.2em]" style={{ color: accent }}>
-              {narrator}
-            </div>
-            <input
-              type="range"
-              min={0}
-              max={dur || 0}
-              step={0.1}
-              value={Math.min(t, dur || 0)}
-              onChange={(e) => {
-                if (audioRef.current) audioRef.current.currentTime = Number(e.target.value)
-              }}
-              aria-label="Seek"
-              className="mt-1 w-full"
-              style={{ accentColor: accent }}
-            />
-          </div>
-          <div className="w-16 shrink-0 text-right text-xs tabular-nums text-[color:var(--a-muted)]">
-            {fmt(t)} / {fmt(dur)}
-          </div>
-          <button
-            type="button"
-            onClick={() => {
-              const next = rate >= 1.5 ? 1 : rate + 0.25
-              if (audioRef.current) audioRef.current.playbackRate = next
-            }}
-            className="shrink-0 rounded border border-[color:var(--a-line-strong)] px-2 py-1 text-xs text-[color:var(--a-body)]"
-            aria-label="Playback speed"
-          >
-            {rate}x
-          </button>
-        </div>
-      </div>
-      <div className="h-20" aria-hidden />
+      <PlayerBar
+        playing={playing}
+        onToggle={toggle}
+        label={narrator}
+        accent={accent}
+        ground={ground}
+        value={t}
+        max={dur}
+        step={0.1}
+        onSeek={(v) => {
+          if (audioRef.current) audioRef.current.currentTime = v
+        }}
+        progress={`${fmt(t)} / ${fmt(dur)}`}
+        rate={rate}
+        onRate={() => {
+          if (audioRef.current) audioRef.current.playbackRate = nextRate(rate)
+        }}
+      />
     </>
   )
 }

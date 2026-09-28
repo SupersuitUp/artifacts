@@ -99,6 +99,7 @@ describe('a past version at /<id>/v/<n>', () => {
     globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({ words: [{ word: 'x', start: 0, end: 1 }] }))) as typeof fetch
     const html = await version('2')
     expect(html).not.toContain('data-artifact-player')
+    expect(html).not.toContain('data-artifact-reader')
     expect(store.bumpViews).not.toHaveBeenCalled()
   })
   it('the current number sends the reader to the page itself', async () => {

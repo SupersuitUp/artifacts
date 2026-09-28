@@ -22,6 +22,7 @@ import { showToc, tocOf, TocInline, TocRail } from '../artifacts/toc.js'
 import { renderShareCard } from '../brand/share-card.js'
 import type { BrandPack } from '../brand/pack.js'
 import { ArtifactReader, type WordTiming } from '../reader/artifact-reader.js'
+import { BrowserReader } from '../reader/browser-reader.js'
 import { ReaderWatch } from '../reader/reader-watch.js'
 import { UpdatedTime } from '../reader/updated-time.js'
 import { VersionHistory } from '../reader/version-history.js'
@@ -392,7 +393,10 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
             accent={brand.accent}
             ground={brand.ground}
           />
-        ) : null}
+        ) : (
+          // No recorded narration, or its timings would not load: the browser reads the page.
+          <BrowserReader rootId="artifact-narration-root" accent={brand.accent} ground={brand.ground} />
+        )}
       </>
     )
   }

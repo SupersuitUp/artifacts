@@ -151,7 +151,7 @@ summary: Three bets, what each costs, and what we stop doing to afford them.
 | `id` | Republish in place instead of minting a new page |
 | `cover` | An image URL (absolute or site-relative) used as the unfurl image instead of the share card |
 | `audience` | Free text stored with the page |
-| `voice`, `narration`, `timings`, `narrationHash` | Read-aloud: the audio and word timings a publisher generated. Absent, no player |
+| `voice`, `narration`, `timings`, `narrationHash` | Read-aloud: the audio and word timings a publisher generated. Absent (or the timings will not load), the page is read by the browser's own voice instead, lighting the same words; a browser with no `speechSynthesis` shows no player |
 | `password` | Shuts the body behind a door (below) |
 | `access` | `freedom`, `invite` or `public`: a confidential page (below) |
 | `theme` | `light`, `dark` or `system` (follow the reader's device). Overrides the brand pack's mode for this page |
