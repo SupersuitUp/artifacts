@@ -3,6 +3,28 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.15.0 (2026-09-29)
+
+**A reader signed in with the wrong Google account can change it.** Before, "Sign out" only
+cleared this host's grant; the sign-in authority still held the Google session and vouched for
+the same account again, so the reader looped back as the wrong person. Now:
+
+- `GET /api/reader/leave?to=/<id>&switch=1` clears the grant and redirects to
+  `<signInOrigin>/artifact/sign-in?to=<page>&switch=1`. Without `switch` it still lands on the page.
+- `signInUrl(origin, page, { switchAccount: true })` builds that URL.
+- The refusal door, the agreement and the confidential banner say "Use a different account" and
+  link to the switch.
+- An open page now shows a signed-in reader "Signed in as <email> · Use a different account ·
+  Sign out" under the version line (not spoken). Before, it showed nothing at all.
+
+- DETECTOR: a reader on a page of yours reports they cannot switch Google accounts.
+- REMEDY: bump, AND make the host's `/artifact/sign-in` honor `switch=1` by signing its Firebase
+  user out before vouching (and ask Google with `prompt: 'select_account'`). A host whose sign-in
+  ignores `switch` still loops.
+- Tests: the switch URL, LEAVE with and without switch (grant cleared, redirect, off-host `to`
+  refused), the three gated surfaces linking the switch, the open-page reader line present when
+  signed in and absent when not.
+
 ## 0.14.0 (2026-09-28)
 
 **A page can say who it is for.** `to: Isaiah` in front matter reads "For Isaiah" in three

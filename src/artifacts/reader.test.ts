@@ -67,4 +67,8 @@ describe('redirects stay on this host', () => {
     expect(signInUrl('https://accounts.example.com', 'https://artifacts.example.com/j75wybat'))
       .toBe('https://accounts.example.com/artifact/sign-in?to=https%3A%2F%2Fartifacts.example.com%2Fj75wybat')
   })
+  it('a switch asks the authority to forget the account it holds', () => {
+    expect(signInUrl('https://accounts.example.com', 'https://artifacts.example.com/j75wybat', { switchAccount: true }))
+      .toBe('https://accounts.example.com/artifact/sign-in?to=https%3A%2F%2Fartifacts.example.com%2Fj75wybat&switch=1')
+  })
 })

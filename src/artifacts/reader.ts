@@ -110,9 +110,11 @@ export function firstName(reader: Reader, allow: AllowEntry[]): string | null {
   return full ? full.split(/\s+/)[0] : null
 }
 
-/** Where a reader goes to sign in, carrying the page they asked for. */
-export function signInUrl(signInOrigin: string, pageUrl: string): string {
-  return `${signInOrigin}/artifact/sign-in?to=${encodeURIComponent(pageUrl)}`
+/** Where a reader goes to sign in, carrying the page they asked for. `switchAccount` tells the
+ *  authority to forget the Google account it already holds and ask which one, because otherwise
+ *  it vouches for the same account again and the reader can never change it. */
+export function signInUrl(signInOrigin: string, pageUrl: string, opts: { switchAccount?: boolean } = {}): string {
+  return `${signInOrigin}/artifact/sign-in?to=${encodeURIComponent(pageUrl)}${opts.switchAccount ? '&switch=1' : ''}`
 }
 
 /** A path on this host that `enter` may send a reader to after it sets the grant: one page id,

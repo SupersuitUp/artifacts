@@ -26,7 +26,7 @@ export function ConfidentialBanner(props: { name: string | null; email: string; 
       <p className="font-semibold" style={{ color: props.brand.accent }}>{l.lead}</p>
       <p className="mt-1">{l.why} {l.rule}</p>
       <p className="mt-2 text-xs opacity-60">
-        {l.record} Not you? <a href={props.signOutUrl} className="underline">Sign out</a>.
+        {l.record} Not you? <a href={props.signOutUrl} className="underline">Use a different account</a>.
       </p>
     </aside>
   )
@@ -81,11 +81,11 @@ export function NotAllowedDoor({ brand, reader, signOutUrl }: { brand: BrandPack
     <div data-nospeak className="mx-auto max-w-sm px-6 pb-24 text-center text-sm">
       <p className="opacity-80">
         You are signed in as {reader.email}, and this page has not been shared with that address.
-        If it was sent to a different address of yours, sign out and use that one.
+        If it was sent to a different address of yours, switch to that account.
       </p>
       <p className="mt-3 opacity-60">This attempt was recorded.</p>
       <a href={signOutUrl} className="mt-5 inline-block underline" style={{ color: brand.accent }}>
-        Sign out
+        Use a different account
       </a>
     </div>
   )
@@ -112,7 +112,7 @@ export function AckDoor({ brand, name, email, owner, pageId, signOutUrl }: { bra
           Agree and open
         </button>
         <p className="mt-3 text-xs opacity-60">
-          Signed in as {email}. Your agreement is recorded with the time. Not you? <a href={signOutUrl} className="underline">Sign out</a>.
+          Signed in as {email}. Your agreement is recorded with the time. Not you? <a href={signOutUrl} className="underline">Use a different account</a>.
         </p>
       </div>
     </form>

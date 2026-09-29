@@ -122,6 +122,9 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
   const ownerEmail = config.ownerEmail?.trim().toLowerCase()
   const readerSecret = () => config.readerSecret?.()
   const signOutUrl = (id: string) => `/api/reader/leave?to=${encodeURIComponent(pagePath(id))}`
+  // Signing out alone cannot change the account: the authority still holds the Google session
+  // and vouches for it again on the next sign-in. This leaves AND sends them to choose one.
+  const switchUrl = (id: string) => (signInOrigin ? `${signOutUrl(id)}&switch=1` : signOutUrl(id))
   const shareCardUrl = (id: string, updatedAt: string) => `${pageUrl(id)}/share.png?v=${encodeURIComponent(updatedAt)}`
   // Readers' recordings are played through short-lived signed URLs, issued only beside the comment
   // or note they belong to; a host whose assets cannot sign them shows no play control.
@@ -287,7 +290,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
         <BrandGround pack={pack} mode={a.theme}>
           {header}
           {d.why === 'not-allowed'
-            ? <NotAllowedDoor brand={brand} reader={d.reader} signOutUrl={signOutUrl(id)} />
+            ? <NotAllowedDoor brand={brand} reader={d.reader} signOutUrl={switchUrl(id)} />
             : <SignInDoor brand={brand} href={signInOrigin ? signInUrl(signInOrigin, here) : undefined} note={config.signInNote} />}
         </BrandGround>
       )
@@ -298,7 +301,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
       return (
         <BrandGround pack={pack} mode={a.theme}>
           {header}
-          <AckDoor brand={brand} name={firstName(r, allow)} email={r.email} owner={owner} pageId={id} signOutUrl={signOutUrl(id)} />
+          <AckDoor brand={brand} name={firstName(r, allow)} email={r.email} owner={owner} pageId={id} signOutUrl={switchUrl(id)} />
         </BrandGround>
       )
     }
@@ -311,7 +314,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
         {/* Padding, never a margin: a top margin here collapses through the ground and leaves a
             white strip above the page (seen live 2026-09-24). */}
         <div className="px-6 pt-20 sm:pt-24">
-          <ConfidentialBanner name={firstName(r, allow)} email={r.email} reason={d.reason} owner={owner} brand={brand} signOutUrl={signOutUrl(id)} />
+          <ConfidentialBanner name={firstName(r, allow)} email={r.email} reason={d.reason} owner={owner} brand={brand} signOutUrl={switchUrl(id)} />
         </div>
         {page}
         <ReaderWatch artifactId={id} endpoint="/api/reader/track" accent={brand.accent} />
@@ -411,6 +414,16 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
             ) : null}
             <p className="mx-auto mt-6 max-w-xl text-lg italic opacity-80">{a.summary}</p>
             <VersionLine a={a} n={a.version ?? (a.versions?.length ?? 0) + 1} at={a.updatedAt} history={await historyOf(a.id)} />
+            {/* An open page has no banner, so this is the only place a signed-in reader learns
+                which account they are in and how to get out of it. A gated page's banner says it. */}
+            {top && reader ? (
+              <p data-nospeak data-reader-line className="mt-2 text-xs opacity-60">
+                {`Signed in as ${reader.email} · `}
+                <a href={switchUrl(a.id)} className="underline">Use a different account</a>
+                {' · '}
+                <a href={signOutUrl(a.id)} className="underline">Sign out</a>
+              </p>
+            ) : null}
           </div>
           {a.cover ? (
             <div className="mx-auto max-w-2xl px-6 pb-8">
@@ -470,10 +483,13 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     return res
   }
 
-  /** GET /api/reader/leave?to=/<id>: sign out of this host's gated pages. */
+  /** GET /api/reader/leave?to=/<id>[&switch=1]: sign out of this host's pages. With switch=1 it
+   *  goes on to the authority's account chooser, which is the only way the account changes. */
   async function LEAVE(request: NextRequest) {
     const to = safeReturnPath(request.nextUrl.searchParams.get('to'), prefix) ?? '/'
-    const res = NextResponse.redirect(`${siteUrl}${to}`, 303)
+    const switching = request.nextUrl.searchParams.get('switch') === '1' && !!signInOrigin && to !== '/'
+    const res = NextResponse.redirect(switching ? signInUrl(signInOrigin!, `${siteUrl}${to}`, { switchAccount: true }) : `${siteUrl}${to}`, 303)
+    res.headers.set('cache-control', 'no-store')
     res.headers.append('set-cookie', cookieLine('', 0))
     return res
   }

@@ -195,3 +195,42 @@ describe('the reader routes', () => {
     expect((await call('everyone')).status).toBe(400)
   })
 })
+
+describe('changing the account', () => {
+  // Signed in with the wrong Google account, a reader must be able to get to the right one. Signing
+  // out of this host alone never did it: the authority vouched for the same account again.
+  const leave = (q: string, cookie?: string) =>
+    routesWith().LEAVE(new NextRequest(`https://artifacts.example.com/api/reader/leave?${q}`, cookie ? { headers: { cookie } } : undefined))
+  it('the refusal, the agreement and the banner each offer a different account, never a bare sign-out', async () => {
+    const switchHref = '/api/reader/leave?to=%2Fabc23456&amp;switch=1'
+    expect(await page(mintGrant(SECRET, outsider))).toContain(switchHref)
+    expect(await page(mintGrant(SECRET, member))).toContain(switchHref)
+    readers.acknowledged = vi.fn(async () => false)
+    expect(await page(mintGrant(SECRET, member))).toContain(switchHref)
+  })
+  it('switch clears the grant and sends the reader to the account chooser for this page', async () => {
+    const res = await leave('to=%2Fabc23456&switch=1', `${GRANT_COOKIE}=${mintGrant(SECRET, outsider)}`)
+    expect(res.status).toBe(303)
+    expect(res.headers.get('location')).toBe('https://accounts.example.com/artifact/sign-in?to=https%3A%2F%2Fartifacts.example.com%2Fabc23456&switch=1')
+    expect(res.headers.get('set-cookie')).toContain(`${GRANT_COOKIE}=;`)
+    expect(res.headers.get('set-cookie')).toContain('Max-Age=0')
+  })
+  it('a plain sign-out lands back on the page, and a switch with no page to return to goes nowhere else', async () => {
+    expect((await leave('to=%2Fabc23456')).headers.get('location')).toBe('https://artifacts.example.com/abc23456')
+    expect((await leave('to=https%3A%2F%2Fevil.example.com&switch=1')).headers.get('location')).toBe('https://artifacts.example.com/')
+  })
+  it('an open page tells a signed-in reader who they are and how to change it', async () => {
+    const open = { ...rec, access: undefined }
+    const s = { ...store, get: vi.fn(async () => open) } as unknown as ArtifactStore
+    const r = (cookie?: string) => createArtifactRoutes({
+      store: s, brand: freedomDefault, siteUrl: 'https://artifacts.example.com', publishKey: () => 'k',
+      readers, readerSecret: () => SECRET, readCookie: async () => cookie, signInOrigin: 'https://accounts.example.com',
+    })
+    const html = (c?: string) => r(c).Page({ params: Promise.resolve({ id: 'abc23456' }) }).then(renderToStaticMarkup)
+    const signedIn = await html(mintGrant(SECRET, outsider))
+    expect(signedIn).toContain('Signed in as friend@example.com')
+    expect(signedIn).toContain('/api/reader/leave?to=%2Fabc23456&amp;switch=1')
+    expect(signedIn).toContain('>Sign out</a>')
+    expect(await html()).not.toContain('Signed in as')
+  })
+})
