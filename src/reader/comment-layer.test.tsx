@@ -112,6 +112,23 @@ describe('CommentLayer', () => {
     expect(earlier.textContent).toContain('On a removed block')
   })
 
+  it('GUARD: on a phone the Comment button sits at the top of the screen, clear of the iOS selection menu', async () => {
+    stubFetch()
+    const real = window.matchMedia
+    window.matchMedia = ((q: string) => ({ matches: q === '(pointer: coarse)', media: q, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} })) as unknown as typeof window.matchMedia
+    try {
+      await mount()
+      selectWord('river', 1)
+      await act(async () => { document.getElementById('root')!.dispatchEvent(new MouseEvent('mouseup', { bubbles: true })) })
+      const chip = document.querySelector<HTMLButtonElement>('[data-comment-chip]')!
+      expect(chip.getAttribute('data-comment-chip-at')).toBe('top')
+      expect(chip.className).toContain('fixed')
+      expect(chip.style.top).toContain('safe-area-inset-top')
+    } finally {
+      window.matchMedia = real
+    }
+  })
+
   it('a reader without comment access selects text, sees the warning before typing, and the note stays on the device', async () => {
     stubFetch()
     await mount()
@@ -119,6 +136,7 @@ describe('CommentLayer', () => {
     await act(async () => { document.getElementById('root')!.dispatchEvent(new MouseEvent('mouseup', { bubbles: true })) })
     const chip = document.querySelector<HTMLButtonElement>('[data-comment-chip]')!
     expect(chip.textContent).toBe('Comment')
+    expect(chip.getAttribute('data-comment-chip-at')).toBe('selection')
     await act(async () => { chip.click() })
     expect(document.querySelector('[data-comment-warning]')!.textContent).toContain('Robin Vale has not opened this page to comments')
     const box = document.querySelector('textarea')!

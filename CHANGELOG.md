@@ -3,6 +3,19 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.18.1 (2026-09-29)
+
+**On a phone, the Comment button sits at the top of the screen.** It used to appear just under
+the selection, which is exactly where iOS draws its own Copy / Look Up menu, so the two fought for
+the same tap (the operator, on an iPhone: *"I keep trying to fight with the Apple pop-up"*). With a
+coarse pointer the button is fixed at the top, below the safe area; a mouse keeps it by the text.
+
+- New export `onTouch()` from the comment layer (the `(pointer: coarse)` test it uses).
+- DETECTOR: on a phone, the Comment button appears beside the selection.
+- REMEDY: bump.
+- Tests: a GUARD that a coarse pointer puts the button at the top (`data-comment-chip-at="top"`,
+  fixed, below `safe-area-inset-top`); the mouse test asserts `selection`.
+
 ## 0.18.0 (2026-09-29)
 
 **No page is ever read by the browser's own voice, and a page can turn its audio off.** 0.10.0

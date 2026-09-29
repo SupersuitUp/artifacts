@@ -77,6 +77,11 @@ const personalFrom = (notes: (PersonalNote & { audioUrl?: unknown })[], where: I
     ...(typeof n.audioUrl === 'string' ? { audioUrl: n.audioUrl } : {}),
   }))
 
+/** A finger rather than a mouse: the comment button then goes where the OS menu is not. */
+export function onTouch(): boolean {
+  return typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches
+}
+
 export function CommentLayer({
   artifactId, rootId, ownerName, comments, canShare, signedIn, isOwner, version, accent, ground, signIn, voice, audioStore,
 }: {
@@ -437,8 +442,12 @@ export function CommentLayer({
         </div>
       )) : null}
       {chip && !draft ? (
-        <button type="button" data-comment-chip className="absolute z-50 -translate-x-full rounded-full px-3 py-1 text-xs font-medium shadow-lg"
-          style={{ left: chip.x, top: chip.y, background: accent, color: 'var(--a-on-accent, #111)' }}
+        // On a phone the button sits at the TOP of the screen, never beside the selection: that is
+        // where iOS draws its own Copy / Look Up menu, and the two fought for the same tap (Gary,
+        // 2026-09-29: "I keep trying to fight with the Apple pop-up"). A mouse keeps it by the text.
+        <button type="button" data-comment-chip data-comment-chip-at={onTouch() ? 'top' : 'selection'}
+          className={onTouch() ? 'fixed left-1/2 z-50 -translate-x-1/2 rounded-full px-5 py-2 text-sm font-medium shadow-lg' : 'absolute z-50 -translate-x-full rounded-full px-3 py-1 text-xs font-medium shadow-lg'}
+          style={onTouch() ? { top: 'calc(env(safe-area-inset-top, 0px) + 12px)', background: accent, color: 'var(--a-on-accent, #111)' } : { left: chip.x, top: chip.y, background: accent, color: 'var(--a-on-accent, #111)' }}
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => { setDraft(chip); setChip(null) }}>
           Comment
