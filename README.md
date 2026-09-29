@@ -384,6 +384,68 @@ visibility: shared   # optional: private | shared
   can leave or read notes; the banner, watermark and print refusal are unchanged. On a public
   page with `writers: signed-in`, the control offers sign-in through `signInOrigin`.
 
+## Comments and personal notes
+
+Every page takes comments pinned to any part of it. A reader selects text (a **Comment** chip
+appears) or holds and drags a box over anything that is not text (an image, a table, the gap
+between paragraphs; on a phone, long-press then drag). The card that opens says who will read it
+before anything is typed.
+
+```yaml
+comments: anyone          # anyone reading can leave SHARED comments
+comments: signed-in       # only signed-in readers (forced on a gated page)
+comments: off             # the default: personal notes only
+comments_visible: owner   # the default: shared comments go to the owner only
+comments_visible: readers # every reader who can comment sees the whole thread
+```
+
+- **Shared comments** are the `many` slot `comments` on the state API, declared by the
+  `comments:` line (a page needs no `state:` for it). Caps, rate limits, sign-in migration, CSRF
+  and the agreement gate all apply. `comments: off` declares no slot, so the API refuses a shared
+  comment as it refuses any undeclared slot. A comment is `{ anchor, body, version, parent? }`,
+  checked on the server; a reply names a top-level comment its writer can see (one level only). A
+  writer edits (`op: replace`) or deletes (`op: remove`) only their own. The publisher reads them
+  through `/responses` like every answer.
+- **The owner signed in** (`ownerEmail` in the config) sees every shared comment with its
+  writer's full name, whatever `comments_visible:` says.
+- **Personal notes** are for every reader on every page. Without comment access the card opens
+  with: *"Only you will see this. <owner> has not opened this page to comments, so this is a
+  personal note. They won't see it."* (`<owner>` is the config's `owner`, default the brand name.)
+  Signed in, the note is stored under the reader's id through `/personal`; signed out, it stays in
+  the browser (`localStorage`) and moves to the account on sign-in. **No publisher route reads
+  personal notes**: `src/routes/personal-privacy.test.tsx` calls every handler the factory returns
+  with the publish key and fails if one ever does.
+- **Anchors survive a republish.** A text comment stores its quote with 32 characters either side
+  and the heading it sat under; a region comment stores the block it was drawn on (every top-level
+  block carries a stable `data-block` id from its content) and the box as fractions of it. One
+  whose quote or block is gone is listed under "Comments on earlier versions", with its quote.
+
+Wiring, beside the state routes:
+
+```ts
+// lib/artifacts.ts
+export const artifacts = createArtifactRoutes({
+  store,
+  state: createStateStore(getFirestore(), 'artifacts'),
+  personal: createPersonalStore(getFirestore(), 'artifacts'), // <base>Personal/<page>__<uid>/notes/<id>
+  ownerEmail: 'owner@example.com',
+  // ...the rest of your config
+})
+```
+
+```ts
+// app/api/artifacts/[id]/personal/route.ts
+import type { NextRequest } from 'next/server'
+import { artifacts } from '@/lib/artifacts'
+type Ctx = { params: Promise<{ id: string }> }
+export function GET(request: NextRequest, ctx: Ctx) { return artifacts.PERSONAL_GET(request, ctx) }
+export function POST(request: NextRequest, ctx: Ctx) { return artifacts.PERSONAL_POST(request, ctx) }
+export function DELETE(request: NextRequest, ctx: Ctx) { return artifacts.PERSONAL_DELETE(request, ctx) }
+```
+
+Without `personal`, every reader's notes stay on their device. Without `state`, no page takes
+shared comments.
+
 ## Brand packs
 
 A `BrandPack` is data plus at most two components: colours, type, the kicker line above a title,
