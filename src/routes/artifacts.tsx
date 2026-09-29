@@ -38,6 +38,7 @@ import { ARTIFACT_ID_RE } from './ids.js'
 import { createStateRoutes } from './state-routes.js'
 import { createPersonalRoutes } from './personal-routes.js'
 import type { PersonalStore } from '../artifacts/personal-store.js'
+import type { Transcriber } from '../artifacts/transcribe.js'
 
 export type ArtifactRoutesConfig = {
   store: ArtifactStore
@@ -81,6 +82,11 @@ export type ArtifactRoutesConfig = {
    *  its writer's name, whatever `comments_visible:` says. Without it nobody is the owner, and
    *  the publisher reads comments through /responses. */
   ownerEmail?: string
+  /** Turns a reader's voice memo into text on the server, so the service's key never reaches a
+   *  browser: `deepgramTranscriber(key)` or `openaiTranscriber(key)` from `./artifacts`, or your
+   *  own. Without it the transcribe route answers 404 and readers get the browser's live
+   *  transcript, or an empty box to type into. */
+  transcribe?: Transcriber
 }
 
 /** Ids are 8 chars from the safe alphabet; anything else is not a page and never reaches the store. */

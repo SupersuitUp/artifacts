@@ -14,3 +14,5 @@ export { slugify, headingsOf, blocksOf, scanWidgets, mergeWidgetState, hasNotesW
 export { textAnchorFrom, findText, blockId, parseAnchor, CONTEXT_CHARS, MAX_QUOTE_CHARS, BLOCK_ID, type Anchor, type TextAnchor, type RegionAnchor } from './anchor.js'
 export { COMMENTS_SLOT, COMMENTS_MODES, COMMENT_TRANSCRIPTS, MAX_COMMENT_CHARS, mergeCommentsState, validateComment, type CommentsMode, type CommentsVisible, type CommentValue } from './comments.js'
 export { createPersonalStore, createMemoryPersonalStore, validatePersonal, MAX_PERSONAL_PER_READER, type PersonalStore, type PersonalNote, type PersonalNoteValue } from './personal-store.js'
+export { deepgramTranscriber, openaiTranscriber, type Transcriber } from './transcribe.js'
+export { AUDIO_TYPES, audioExtFor, audioTypeFor, baseMime } from './audio.js'
