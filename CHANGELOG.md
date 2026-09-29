@@ -3,6 +3,35 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.12.0 (2026-09-28)
+
+**Say a comment instead of typing it.** The comment card has a microphone. While you speak, a
+browser with speech recognition (Chrome, Edge, Safari) fills the box live; when you stop, a host
+that configured transcription replaces it with a better transcript unless you already edited it.
+With neither, the recording is kept and the box stays yours to type in. Memos cap at 3 minutes.
+The recording travels with the comment and plays back from the pin, the thread and `/responses`.
+
+- Host config: `transcribe?: Transcriber`, with `deepgramTranscriber(key)` (Nova-3) and
+  `openaiTranscriber(key, model?)` from `./artifacts`. The key never reaches the browser and never
+  appears in an error.
+- New handler `TRANSCRIBE` (`POST /api/artifacts/<id>/transcribe`): 404 when the host passed no
+  transcriber, so the reader falls back to the browser; only readers who may write comments, or
+  signed-in readers on their own notes; 20 per reader per page per hour.
+- Recordings upload through the existing `UPLOAD` route with a signed PUT (`audio` in the body),
+  under `comments/` or `personal/<hashed reader>/`; a comment may only name a `comments/` path and
+  a note only its own reader's. Playback is by signed URL (`audioUrl` on rows). Reader audio has
+  its own allowlist (webm, m4a, mp3, ogg; iPhone `audio/mp4` is stored as `.m4a`).
+- Anonymous personal memos stay in the browser (IndexedDB) and move to the account on sign-in.
+- The privacy test now covers personal audio: no publisher route returns it or its URL.
+- DETECTOR: a comment card with no microphone.
+- REMEDY: bump; add `app/api/artifacts/[id]/transcribe/route.ts` delegating to `TRANSCRIBE`;
+  pass `transcribe` to get server transcripts; the bucket's CORS must allow `PUT` from the site
+  origin with `content-type`, `cache-control` and `x-goog-content-length-range`.
+- Tests: adapters against a stubbed fetch, the transcribe route (404, rate limit, refusal),
+  upload path guards, the recorder (live transcript, host transcript vs an edited box, no-support
+  path, the 3-minute cap, device-only memos), the extended privacy test. All key rules
+  mutation-checked.
+
 ## 0.11.1 (2026-09-28)
 
 **The comment controls draw in the page's colours.** The comment overlay is portalled onto
