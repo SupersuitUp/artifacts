@@ -4,6 +4,7 @@ import { describe, it, expect, vi } from 'vitest'
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 vi.mock('next/navigation', () => ({ notFound: () => { throw new Error('NOT_FOUND') } }))
 import { NextRequest } from 'next/server'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { createArtifactRoutes } from './artifacts.js'
 import { freedomDefault } from '../brand/pack.js'
 import type { ArtifactStore, ArtifactRecord } from '../artifacts/store.js'
@@ -51,10 +52,11 @@ function fakeReaders(): ReadersStore {
     acknowledged: vi.fn(async () => true), acknowledge: vi.fn(async () => {}), acks: vi.fn(async () => []),
   }
 }
-function build() {
+function build(as: Reader | null = null, keepsAnswers = true) {
   const state = createMemoryStateStore()
   const routes = createArtifactRoutes({
-    store: fakeStore(), state, readers: fakeReaders(), brand: freedomDefault, siteUrl: 'https://artifacts.example.com', publishKey: () => 'k',
+    readCookie: async (name) => (name === GRANT_COOKIE && as ? mintGrant(SECRET, as) : undefined),
+    store: fakeStore(), state: keepsAnswers ? state : undefined, readers: fakeReaders(), brand: freedomDefault, siteUrl: 'https://artifacts.example.com', publishKey: () => 'k',
     readerSecret: () => SECRET, signInOrigin: 'https://accounts.example.com', ownerEmail: 'Owner@Example.com',
   })
   return { routes, state }
@@ -225,3 +227,27 @@ describe('the owner', () => {
     expect(r.responses[0]).toMatchObject({ slot: 'comments', email: 'sam@example.com', value: { body: 'For the record' } })
   })
 })
+
+describe('the page tells the comment layer what this reader may do', () => {
+  const layer = async (id: string, as: Reader | null, keepsAnswers = true) => {
+    const { routes } = build(as, keepsAnswers)
+    const html = renderToStaticMarkup(await routes.Page({ params: Promise.resolve({ id }), searchParams: Promise.resolve({}) }))
+    const m = /data-comment-layer="([^"]+)" data-comment-can-share="(yes|no)"/.exec(html)
+    return m ? [m[1], m[2]] : null
+  }
+  it('comments: anyone lets anyone share; comments: off lets nobody', async () => {
+    expect(await layer('cmt23456', null)).toEqual(['anyone', 'yes'])
+    expect(await layer('cxf23456', sam)).toEqual(['off', 'no'])
+  })
+  it('comments: signed-in shares only for a signed-in reader', async () => {
+    expect(await layer('cmr23456', null)).toEqual(['signed-in', 'no'])
+    expect(await layer('cmr23456', sam)).toEqual(['signed-in', 'yes'])
+  })
+  it('a host that keeps no answers takes no shared comments, whatever the page says', async () => {
+    expect(await layer('cmt23456', sam, false)).toEqual(['off', 'no'])
+  })
+  it('a gated page draws the layer for the reader let in, who may share', async () => {
+    expect(await layer('cmg23456', sam)).toEqual(['anyone', 'yes'])
+  })
+})
+

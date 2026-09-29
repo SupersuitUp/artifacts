@@ -13,7 +13,8 @@ import { ArtifactMarkdown } from '../artifacts/render.js'
 import { ArtifactDoor } from '../artifacts/door.js'
 import { isUnlocked, keyHash, unlockCookieName } from '../artifacts/unlock.js'
 import { cleanNote, type ArtifactStore, type VersionEntry } from '../artifacts/store.js'
-import { shapeChanges } from '../artifacts/state.js'
+import { effectiveWriters, shapeChanges } from '../artifacts/state.js'
+import { COMMENTS_SLOT, type CommentsMode } from '../artifacts/comments.js'
 import type { StateStore } from '../artifacts/state-store.js'
 import { ASSET_DIGEST, ASSET_NAME, contentTypeFor, type ArtifactAssets } from '../artifacts/assets.js'
 import { BrandGround } from '../brand/wrapper.js'
@@ -23,6 +24,7 @@ import { renderShareCard } from '../brand/share-card.js'
 import type { BrandPack } from '../brand/pack.js'
 import { ArtifactReader, type WordTiming } from '../reader/artifact-reader.js'
 import { BrowserReader } from '../reader/browser-reader.js'
+import { CommentLayer } from '../reader/comment-layer.js'
 import { ReaderWatch } from '../reader/reader-watch.js'
 import { UpdatedTime } from '../reader/updated-time.js'
 import { VersionHistory } from '../reader/version-history.js'
@@ -110,6 +112,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
   // The version in the URL is what makes a re-publish show up: every unfurler caches by URL.
   const signInOrigin = config.signInOrigin
   const owner = config.owner ?? brand.name
+  const ownerEmail = config.ownerEmail?.trim().toLowerCase()
   const readerSecret = () => config.readerSecret?.()
   const signOutUrl = (id: string) => `/api/reader/leave?to=${encodeURIComponent(pagePath(id))}`
   const shareCardUrl = (id: string, updatedAt: string) => `${pageUrl(id)}/share.png?v=${encodeURIComponent(updatedAt)}`
@@ -172,7 +175,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
   async function serve(id: string, searchParams: PageProps['searchParams'], n: number | null) {
     const a = ARTIFACT_ID.test(id) ? await store.get(id) : null
     if (!a) notFound()
-    const render = (top: boolean) => (n === null ? Body(a, { top }) : VersionBody(a, n, { top }))
+    const render = (top: boolean, reader: Reader | null) => (n === null ? Body(a, { top, reader }) : VersionBody(a, n, { top }))
     if (a.access) return GatedPage(a, id, render, n)
     // A password shuts the body, never the title: the header stays so the reader knows which
     // page they were sent, and the unfurl (generateMetadata) keeps reading as the page.
@@ -217,7 +220,10 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
         </BrandGround>
       )
     }
-    const page = await render(true)
+    // Who is reading an open page, when they happen to be signed in: their comments follow them.
+    // Only a host that signs readers in can know one; the read never fails the page.
+    const reader = readerSecret() ? verifyGrant(readerSecret(), await readCookie(GRANT_COOKIE).catch(() => undefined)) : null
+    const page = await render(true, reader)
     if (n === null) void store.bumpViews(id)
     return (
       <BrandGround pack={pack} mode={a.theme}>
@@ -229,10 +235,11 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
 
   /** A page with `access:`. The body is rendered only after the reader is known and allowed;
    *  everyone else gets the title, the summary, and a door. */
-  async function GatedPage(a: Rec, id: string, render: (top: boolean) => Promise<React.ReactNode>, n: number | null) {
+  async function GatedPage(a: Rec, id: string, render: (top: boolean, reader: Reader | null) => Promise<React.ReactNode>, n: number | null) {
     const here = n === null ? pageUrl(id) : `${pageUrl(id)}/v/${n}`
     const readCookie = config.readCookie ?? defaultReadCookie
-    const reader = verifyGrant(readerSecret(), await readCookie(GRANT_COOKIE))
+    // Only a host that signs readers in can know one; the read never fails the page.
+    const reader = readerSecret() ? verifyGrant(readerSecret(), await readCookie(GRANT_COOKIE).catch(() => undefined)) : null
     const allow = config.readers && reader ? await config.readers.allowList(id) : []
     const d = config.readers ? decide(a.access!, reader, allow) : ({ open: false, why: 'signed-out' } as const)
     const header = (
@@ -272,7 +279,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
         </BrandGround>
       )
     }
-    const page = await render(false)
+    const page = await render(false, r)
     if (n === null) void store.bumpViews(id)
     return (
       <BrandGround pack={pack} mode={a.theme}>
@@ -354,7 +361,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
   }
 
   /** The page itself, shared by open and gated pages. */
-  async function Body(a: Rec, { top }: { top: boolean }) {
+  async function Body(a: Rec, { top, reader }: { top: boolean; reader: Reader | null }) {
     let words: WordTiming[] = []
     if (a.narration && a.timings) {
       try {
@@ -365,6 +372,8 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
       }
     }
     const toc = showToc(a.markdown, a.toc) ? tocOf(a.markdown) : []
+    // Shared comments need the page to take them AND a host that keeps answers; personal notes need neither.
+    const mode: CommentsMode = config.state && a.state && a.comments && a.comments !== 'off' && a.state.slots[COMMENTS_SLOT] ? a.comments : 'off'
     return (
       <>
         {toc.length ? <TocRail items={toc} /> : null}
@@ -395,6 +404,19 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
             <ArtifactMarkdown markdown={a.markdown} definitions={a.definitions} notes={config.state && a.state ? { artifactId: a.id, accent: brand.accent } : undefined} />
           </article>
         </div>
+        <CommentLayer
+          artifactId={a.id}
+          rootId="artifact-narration-root"
+          ownerName={owner}
+          comments={mode}
+          canShare={mode !== 'off' && (reader !== null || effectiveWriters(a.state!, a.access, COMMENTS_SLOT) === 'anyone')}
+          signedIn={reader !== null}
+          isOwner={!!reader && !!ownerEmail && reader.email === ownerEmail}
+          version={a.version ?? (a.versions?.length ?? 0) + 1}
+          accent={brand.accent}
+          ground={brand.ground}
+          signIn={signInOrigin ? signInUrl(signInOrigin, pageUrl(a.id)) : null}
+        />
         {a.narration && words.length > 0 ? (
           <ArtifactReader
             src={a.narration}
