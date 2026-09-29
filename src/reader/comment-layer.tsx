@@ -22,14 +22,17 @@ import { createPortal } from 'react-dom'
 import { MAX_QUOTE_CHARS, textAnchorFrom, type Anchor } from '../artifacts/anchor.js'
 import { COMMENTS_SLOT, type CommentValue, type CommentsMode } from '../artifacts/comments.js'
 import type { PersonalNote } from '../artifacts/personal-store.js'
-import { CommentCard } from './comment-card.js'
+import { CommentCard, type SavedMemo } from './comment-card.js'
+import { AudioPlay, hostVoice, newMemoId, type VoiceHost } from './voice-recorder.js'
+import { deviceAudio as defaultDeviceAudio, isDeviceAudio, type DeviceAudio } from './device-audio.js'
+import { audioExtFor } from '../artifacts/audio.js'
 import { themeVarsAround } from './theme-vars.js'
 import { addDeviceNote, deviceNotes, removeDeviceNote, replaceDeviceNote } from './device-notes.js'
 import { boxOf, headingAt, indexText, offsetAt, placeAnchor, regionFrom } from './comment-place.js'
 
-type Item = { id: string; kind: 'shared' | 'personal'; where: 'server' | 'device'; value: CommentValue; name: string; mine: boolean; at: string }
+type Item = { id: string; kind: 'shared' | 'personal'; where: 'server' | 'device'; value: CommentValue; name: string; mine: boolean; at: string; audioUrl?: string }
 type Draft = { anchor: Anchor; x: number; y: number; quote?: string }
-type RawRow = { id?: unknown; name?: unknown; value?: unknown; at?: unknown; mine?: unknown }
+type RawRow = { id?: unknown; name?: unknown; value?: unknown; at?: unknown; mine?: unknown; audioUrl?: unknown }
 
 const isValue = (v: unknown): v is CommentValue =>
   !!v && typeof v === 'object' && typeof (v as CommentValue).body === 'string' && !!(v as CommentValue).anchor && typeof (v as CommentValue).anchor === 'object'
@@ -53,15 +56,21 @@ function sharedFrom(body: unknown): Item[] {
   const out: Item[] = []
   for (const r of rows.values()) {
     if (!isValue(r.value)) continue
-    out.push({ id: String(r.id), kind: 'shared', where: 'server', value: r.value, name: r.mine === true ? 'You' : typeof r.name === 'string' ? r.name : 'a reader', mine: r.mine === true, at: String(r.at ?? '') })
+    out.push({
+      id: String(r.id), kind: 'shared', where: 'server', value: r.value, name: r.mine === true ? 'You' : typeof r.name === 'string' ? r.name : 'a reader', mine: r.mine === true, at: String(r.at ?? ''),
+      ...(typeof r.audioUrl === 'string' ? { audioUrl: r.audioUrl } : {}),
+    })
   }
   return out.sort((a, b) => a.at.localeCompare(b.at))
 }
-const personalFrom = (notes: PersonalNote[], where: Item['where']): Item[] =>
-  notes.filter((n) => isValue(n.value)).map((n) => ({ id: n.id, kind: 'personal', where, value: n.value as CommentValue, name: 'You', mine: true, at: n.at }))
+const personalFrom = (notes: (PersonalNote & { audioUrl?: unknown })[], where: Item['where']): Item[] =>
+  notes.filter((n) => isValue(n.value)).map((n) => ({
+    id: n.id, kind: 'personal', where, value: n.value as CommentValue, name: 'You', mine: true, at: n.at,
+    ...(typeof n.audioUrl === 'string' ? { audioUrl: n.audioUrl } : {}),
+  }))
 
 export function CommentLayer({
-  artifactId, rootId, ownerName, comments, canShare, signedIn, isOwner, version, accent, ground, signIn,
+  artifactId, rootId, ownerName, comments, canShare, signedIn, isOwner, version, accent, ground, signIn, voice, audioStore,
 }: {
   artifactId: string
   /** The element holding the page's prose, the same root the read-aloud lights. */
@@ -77,7 +86,13 @@ export function CommentLayer({
   accent: string
   ground: string
   signIn?: string | null
+  /** The page's voice routes; defaults to this page's own. Tests pass a stub. */
+  voice?: VoiceHost
+  /** Where an anonymous reader's recordings live; defaults to this browser's IndexedDB. */
+  audioStore?: DeviceAudio
 }) {
+  const host = useMemo(() => voice ?? hostVoice(artifactId), [voice, artifactId])
+  const audioDb = useMemo(() => audioStore ?? defaultDeviceAudio, [audioStore])
   const stateUrl = `/api/artifacts/${artifactId}/state`
   const personalUrl = `/api/artifacts/${artifactId}/personal`
   const [mounted, setMounted] = useState(false)
@@ -127,11 +142,27 @@ export function CommentLayer({
         if (r.status !== 200) { setOnServer(false); return }
         let notes = (r.body.notes as PersonalNote[]) ?? []
         // Notes kept on this device before signing in move to the account, then leave the device.
+        // A recording kept on the device goes up to the account first, then the note names it there.
         for (const n of deviceNotes(artifactId)) {
-          const m = await call(personalUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ value: n.value }) })
+          const value = { ...n.value }
+          const key = isDeviceAudio(value.audio) ? value.audio : null
+          if (key) {
+            const blob = await audioDb.get(key)
+            const path = blob ? await host.upload({ blob, mime: blob.type }, 'personal') : null
+            if (blob && !path) break
+            if (path) value.audio = path
+            else {
+              // The recording is gone from this device: keep the words, or nothing is left to keep.
+              delete value.audio
+              delete value.transcript
+              if (!value.body.trim()) { removeDeviceNote(artifactId, n.id); continue }
+            }
+          }
+          const m = await call(personalUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ value }) })
           if (m.status !== 200) break
           notes = (m.body.notes as PersonalNote[]) ?? notes
           removeDeviceNote(artifactId, n.id)
+          if (key) await audioDb.remove(key)
         }
         if (!live) return
         setServerNotes(personalFrom(notes, 'server'))
@@ -144,7 +175,7 @@ export function CommentLayer({
     const ro = typeof ResizeObserver !== 'undefined' && root ? new ResizeObserver(relayout) : null
     if (ro && root) ro.observe(root)
     return () => { live = false; window.removeEventListener('resize', relayout); ro?.disconnect() }
-  }, [artifactId, comments, signedIn, stateUrl, personalUrl, rootId, call, refreshDevice])
+  }, [artifactId, comments, signedIn, stateUrl, personalUrl, rootId, call, refreshDevice, host, audioDb])
 
   // Text selection inside the page shows the Comment chip.
   useEffect(() => {
@@ -267,8 +298,26 @@ export function CommentLayer({
     // `tick` re-measures after a resize.
   }, [mounted, rootId, tops, tick]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const saveNew = async (body: string, share: boolean, d: Draft): Promise<string | null> => {
-    const value: CommentValue = { anchor: d.anchor, body, version }
+  /** The recording's path for where it is being saved: reused when the card already uploaded it
+   *  there, uploaded now when the reader switched between Share and Just for me after recording. */
+  const memoPath = async (m: SavedMemo, scope: 'comment' | 'personal') =>
+    m.uploaded?.scope === scope ? m.uploaded.path : host.upload(m.memo, scope)
+  const LOST = 'The recording did not upload. Try again, or discard it and save the text.'
+
+  const saveNew = async (body: string, share: boolean, d: Draft, memo?: SavedMemo): Promise<string | null> => {
+    const value: CommentValue = { anchor: d.anchor, body, version, ...(memo?.transcript ? { transcript: memo.transcript } : {}) }
+    const toDevice = !share && !(signedIn && onServer)
+    if (memo && !toDevice) {
+      const path = await memoPath(memo, share ? 'comment' : 'personal')
+      if (!path) return LOST
+      value.audio = path
+    }
+    if (memo && toDevice) {
+      // Not signed in: the recording stays in this browser with the note, and never leaves it.
+      const key = `device/${newMemoId()}.${audioExtFor(memo.memo.mime) ?? 'webm'}`
+      if (!(await audioDb.put(key, memo.memo.blob))) return 'This browser would not keep the recording. Discard it and save the text.'
+      value.audio = key
+    }
     if (share) {
       const r = await call(stateUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ slot: COMMENTS_SLOT, op: 'append', value }) })
       if (r.status !== 200) return typeof r.body.error === 'string' ? r.body.error : 'that did not save; try again'
@@ -288,7 +337,11 @@ export function CommentLayer({
   }
 
   const remove = async (item: Item) => {
-    if (item.where === 'device') { removeDeviceNote(artifactId, item.id); refreshDevice() }
+    if (item.where === 'device') {
+      removeDeviceNote(artifactId, item.id)
+      if (isDeviceAudio(item.value.audio)) await audioDb.remove(item.value.audio)
+      refreshDevice()
+    }
     else if (item.kind === 'personal') {
       const r = await call(`${personalUrl}?entry=${encodeURIComponent(item.id)}`, { method: 'DELETE' })
       if (r.status === 200) setServerNotes(personalFrom((r.body.notes as PersonalNote[]) ?? [], 'server'))
@@ -344,13 +397,13 @@ export function CommentLayer({
       {draft ? (
         <Floating x={draft.x} y={draft.y}>
           <CommentCard ownerName={ownerName} mode={comments} canShare={canShare} signedIn={signedIn && onServer} quote={draft.quote} accent={accent} signIn={signIn}
-            onSave={(body, share) => saveNew(body, share, draft)} onCancel={() => setDraft(null)} />
+            voice={host} onSave={(body, share, memo) => saveNew(body, share, draft, memo)} onCancel={() => setDraft(null)} />
         </Floating>
       ) : null}
       {openItem && open ? (
         <Floating x={open.left + 28} y={open.top}>
           <Thread item={openItem} replies={items.filter((i) => i.value.parent === openItem.id)} canReply={openItem.kind === 'shared' && canShare}
-            accent={accent} onClose={() => setThread(null)} onRemove={remove} onEdit={edit} onReply={reply} />
+            accent={accent} audioDb={audioDb} onClose={() => setThread(null)} onRemove={remove} onEdit={edit} onReply={reply} />
         </Floating>
       ) : null}
       {drag ? (
@@ -421,8 +474,8 @@ function Floating({ x, y, children }: { x: number; y: number; children: ReactNod
   return <div className="absolute z-50" style={{ left, top: y }}>{children}</div>
 }
 
-function Thread({ item, replies, canReply, accent, onClose, onRemove, onEdit, onReply }: {
-  item: Item; replies: Item[]; canReply: boolean; accent: string
+function Thread({ item, replies, canReply, accent, audioDb, onClose, onRemove, onEdit, onReply }: {
+  item: Item; replies: Item[]; canReply: boolean; accent: string; audioDb: DeviceAudio
   onClose: () => void; onRemove: (i: Item) => Promise<void>; onEdit: (i: Item, body: string) => Promise<string | null>; onReply: (i: Item, body: string) => Promise<string | null>
 }) {
   const [replying, setReplying] = useState(false)
@@ -433,8 +486,8 @@ function Thread({ item, replies, canReply, accent, onClose, onRemove, onEdit, on
         <button type="button" onClick={onClose} aria-label="Close" className="opacity-70 hover:opacity-100">×</button>
       </div>
       {item.value.anchor.kind === 'text' ? <p className="mb-2 line-clamp-2 border-l-2 pl-2 text-[13px] italic opacity-70" style={{ borderColor: accent }}>{item.value.anchor.quote}</p> : null}
-      <Entry item={item} onRemove={onRemove} onEdit={onEdit} />
-      {replies.length ? <ul className="m-0 mt-2 grid list-none gap-2 border-l pl-3 p-0">{replies.map((r) => <li key={r.id} className="m-0"><Entry item={r} onRemove={onRemove} onEdit={onEdit} /></li>)}</ul> : null}
+      <Entry item={item} accent={accent} audioDb={audioDb} onRemove={onRemove} onEdit={onEdit} />
+      {replies.length ? <ul className="m-0 mt-2 grid list-none gap-2 border-l pl-3 p-0">{replies.map((r) => <li key={r.id} className="m-0"><Entry item={r} accent={accent} audioDb={audioDb} onRemove={onRemove} onEdit={onEdit} /></li>)}</ul> : null}
       {canReply ? (
         replying
           ? <InlineForm label="Reply" accent={accent} onCancel={() => setReplying(false)} onSubmit={async (b) => { const e = await onReply(item, b); if (!e) setReplying(false); return e }} />
@@ -444,12 +497,28 @@ function Thread({ item, replies, canReply, accent, onClose, onRemove, onEdit, on
   )
 }
 
-function Entry({ item, onRemove, onEdit }: { item: Item; onRemove: (i: Item) => Promise<void>; onEdit: (i: Item, body: string) => Promise<string | null> }) {
+/** Where a comment's recording plays from: its signed URL, or this browser's copy of a device note's. */
+function useAudioSrc(item: Item, audioDb: DeviceAudio): string | null {
+  const [local, setLocal] = useState<string | null>(null)
+  const key = item.where === 'device' && isDeviceAudio(item.value.audio) ? item.value.audio : null
+  useEffect(() => {
+    if (!key || typeof URL.createObjectURL !== 'function') return
+    let url: string | null = null
+    let live = true
+    void audioDb.get(key).then((b) => { if (live && b) { url = URL.createObjectURL(b); setLocal(url) } })
+    return () => { live = false; if (url) URL.revokeObjectURL(url) }
+  }, [key, audioDb])
+  return item.audioUrl ?? local
+}
+
+function Entry({ item, accent, audioDb, onRemove, onEdit }: { item: Item; accent: string; audioDb: DeviceAudio; onRemove: (i: Item) => Promise<void>; onEdit: (i: Item, body: string) => Promise<string | null> }) {
   const [editing, setEditing] = useState(false)
+  const src = useAudioSrc(item, audioDb)
   if (editing) return <InlineForm label="Save" initial={item.value.body} onCancel={() => setEditing(false)} onSubmit={async (b) => { const e = await onEdit(item, b); if (!e) setEditing(false); return e }} />
   return (
     <div>
-      <p className="m-0 whitespace-pre-wrap text-[15px]">{item.value.body}</p>
+      {src ? <AudioPlay src={src} accent={accent} /> : null}
+      {item.value.body ? <p className="m-0 whitespace-pre-wrap text-[15px]">{item.value.body}</p> : null}
       <p className="m-0 text-xs opacity-60">
         {item.kind === 'personal' ? (item.where === 'device' ? 'only you, on this device' : 'only you') : item.name}
         {item.mine ? (

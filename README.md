@@ -446,6 +446,46 @@ export function DELETE(request: NextRequest, ctx: Ctx) { return artifacts.PERSON
 Without `personal`, every reader's notes stay on their device. Without `state`, no page takes
 shared comments.
 
+### Voice memos
+
+Every comment card has a Record button where the browser can record (Chrome records
+`audio/webm`, iPhone Safari `audio/mp4`, stored as `.m4a`). Where the browser has speech
+recognition, the words appear in the box as the reader speaks. A memo stops at three minutes.
+
+Recordings go up through the same `uploads/<name>` route the publisher uses, to
+`<page>/comments/<memo>.<ext>` or, for a signed-in reader's personal note,
+`<page>/personal/<dir>/<memo>.<ext>`. They are never made public: playback is a signed URL
+issued beside the comment or note it belongs to. That needs the four audio methods
+`createArtifactAssets` provides (`signAudioUpload`, `audioSize`, `readAudio`, `audioUrl`); a host
+with its own `ArtifactAssets` and none of them keeps memos on the reader's device. On a bucket
+with bucket-wide public read, a recording is readable by anyone holding its path (the paths are
+unguessable); keep the bucket per-object public to have the signed-URL guarantee.
+
+To transcribe on the server, pass `transcribe` and add the route. The key stays on the server;
+without `transcribe` the route answers 404 and readers keep the browser's live transcript (or an
+empty box). 20 transcriptions per reader per page per hour.
+
+```ts
+import { deepgramTranscriber } from '@supersuit/artifacts/artifacts'
+export const artifacts = createArtifactRoutes({
+  // ...
+  transcribe: process.env.DEEPGRAM_API_KEY ? deepgramTranscriber(process.env.DEEPGRAM_API_KEY) : undefined,
+  // or openaiTranscriber(key, 'gpt-4o-mini-transcribe')
+})
+```
+
+```ts
+// app/api/artifacts/[id]/transcribe/route.ts
+import type { NextRequest } from 'next/server'
+import { artifacts } from '@/lib/artifacts'
+type Ctx = { params: Promise<{ id: string }> }
+export function POST(request: NextRequest, ctx: Ctx) { return artifacts.TRANSCRIBE(request, ctx) }
+```
+
+The bucket also needs CORS allowing `PUT` from the site's origin with the `content-type`,
+`cache-control` and `x-goog-content-length-range` headers, since the reader's browser uploads
+directly.
+
 ## Brand packs
 
 A `BrandPack` is data plus at most two components: colours, type, the kicker line above a title,
