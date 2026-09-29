@@ -28,6 +28,7 @@ Firestore), and optionally `@google-cloud/storage >= 7` for uploaded files.
 | `parseArtifactSource` | The front-matter contract, as a parser you can call before publishing (widget fences included) |
 | `headingsOf`, `scanWidgets`, `placeNotes` | The notes widget's pure parts: heading slugs, fence validation, where each note shows |
 | `mintPass`, `verifyPass` | The reader pass, for the sign-in side (see below) |
+| `mintPublisherPass`, `verifyPublisherPass` | The publisher pass: an hour-long stand-in for the publish key, for one person on one host (see below) |
 | `ARTIFACT_PUBLIC_PREFIXES` (`/gate`) | Paths to leave open if you mount artifacts inside a gated site |
 
 Subpath imports: `@supersuit/artifacts/artifacts`, `/routes`, `/brand`, `/reader`, `/gate`.
@@ -231,6 +232,29 @@ reimplement it. Keep passes short-lived (five minutes is what the tests assume).
 
 Without `signInOrigin`, a confidential page shows its door with no way through. It fails
 closed, never open.
+
+### The publisher pass (publishing without the shared key)
+
+A shared publish key cannot be handed to one person and taken back from one person. A host can
+also accept a **publisher pass** wherever it accepts the key: a signed, hour-long statement that
+a named person may publish on that host, minted by an authority that knows who may.
+
+```ts
+createArtifactRoutes({
+  // ...
+  publisherSecret: () => process.env.ARTIFACT_PASS_SECRET, // shared with the minting side
+  publisherHost: 'artifacts.example.com',                  // the host a pass must name
+})
+```
+
+Both fields are optional; without either, passes are refused and only the key works. The pass is
+`p1.<payload>.<sig>`: `payload` is the base64url of
+`{"u": uid, "e": email, "n": name|null, "h": host, "x": expiry-unix-seconds}`, and `sig` is the
+first 32 hex characters of `HMAC-SHA256(secret, "artifact-publisher:p1.<payload>")`. It is sent as
+`Authorization: Bearer <pass>`. A pass for another host is refused even under the same secret, and
+a reader pass or grant never verifies as a publisher pass (nor the reverse), because the domain
+and version differ. `mintPublisherPass(secret, { uid, email, name, host }, exp)` builds one;
+`PUBLISHER_PASS_TTL_SECONDS` is 3600.
 
 ## Reader answers (`state:`)
 
@@ -576,6 +600,7 @@ the page's pack.
 |---|---|
 | your publish key (named by you, read in `publishKey`) | Authorises publish, delete and access changes |
 | `ARTIFACT_PASS_SECRET` (named by you, read in `readerSecret`) | Verifies reader passes and signs grants; shared with your sign-in side |
+| a publisher-pass secret (named by you, read in `publisherSecret`; may be the same one) | Verifies publisher passes; shared with whatever mints them |
 | Firebase Admin credentials | The store and readers store |
 
 ## Contributing

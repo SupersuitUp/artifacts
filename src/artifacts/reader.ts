@@ -38,26 +38,42 @@ function safeEqual(a: string, b: string): boolean {
   return timingSafeEqual(Buffer.from(a), Buffer.from(b))
 }
 
-function encode(secret: string, domain: string, version: string, reader: Reader, exp: number): string {
-  // Short keys: this rides in a URL and a cookie.
-  const payload = b64url(JSON.stringify({ u: reader.uid, e: reader.email, n: reader.name, m: reader.member, x: exp }))
-  const body = `${version}.${payload}`
+/** Sign a small JSON payload as `<version>.<b64url(json)>.<sig>` under one domain. The domain is
+ *  in the MAC and the version is the token's first segment, so a token minted for one purpose
+ *  (reader pass, grant, publisher pass) never verifies as another. */
+export function signToken(secret: string, domain: string, version: string, data: Record<string, unknown>): string {
+  const body = `${version}.${b64url(JSON.stringify(data))}`
   return `${body}.${sig(secret, domain, body)}`
 }
 
-function decode(secret: string | undefined, domain: string, version: string, token: string | null | undefined, now: number): Reader | null {
+/** The payload of a correctly signed, unexpired token of this domain and version, else null.
+ *  `x` (unix seconds) is required and checked; every other field is the caller's to validate. */
+export function openToken(secret: string | undefined, domain: string, version: string, token: string | null | undefined, now: number): Record<string, unknown> | null {
   if (!secret || typeof token !== 'string') return null
   const parts = token.split('.')
   if (parts.length !== 3 || parts[0] !== version) return null
   const body = `${parts[0]}.${parts[1]}`
   if (!/^[0-9a-f]{32}$/.test(parts[2]) || !safeEqual(parts[2], sig(secret, domain, body))) return null
-  let d: Record<string, unknown>
+  let d: unknown
   try {
     d = JSON.parse(unb64url(parts[1]))
   } catch {
     return null
   }
-  if (typeof d.x !== 'number' || d.x * 1000 < now) return null
+  if (!d || typeof d !== 'object' || Array.isArray(d)) return null
+  const o = d as Record<string, unknown>
+  if (typeof o.x !== 'number' || o.x * 1000 < now) return null
+  return o
+}
+
+function encode(secret: string, domain: string, version: string, reader: Reader, exp: number): string {
+  // Short keys: this rides in a URL and a cookie.
+  return signToken(secret, domain, version, { u: reader.uid, e: reader.email, n: reader.name, m: reader.member, x: exp })
+}
+
+function decode(secret: string | undefined, domain: string, version: string, token: string | null | undefined, now: number): Reader | null {
+  const d = openToken(secret, domain, version, token, now)
+  if (!d) return null
   if (typeof d.u !== 'string' || !d.u || typeof d.e !== 'string' || !d.e.includes('@')) return null
   return {
     uid: d.u,

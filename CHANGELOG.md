@@ -3,6 +3,28 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.17.0 (2026-09-29)
+
+**A host can accept a signed, hour-long publisher pass wherever it accepts the publish key.** A
+shared key cannot be self-served and cannot be revoked for one person without rotating it for
+everyone. New routes config `publisherSecret` and `publisherHost`: when both are set, every
+publish-key route (publish, read, delete, versions, access, reads, assets, upload, responses, the
+comments feed) also accepts `Authorization: Bearer p1.<payload>.<sig>`, a pass naming one person
+and this host, signed with the reader pass's HMAC scheme under its own domain
+(`artifact-publisher`). New exports `mintPublisherPass`, `verifyPublisherPass`,
+`PUBLISHER_PASS_TTL_SECONDS` (3600), `isPublisherAuthed`. `isPublishAuthed` is unchanged.
+
+- DETECTOR: none needed. A host that sets neither field refuses every pass and takes its key
+  exactly as on 0.16.0.
+- REMEDY: nothing, unless you want admins to publish without the key: set both fields, and have
+  your sign-in side mint passes for the people it vouches for.
+- Tests: the pass vector pinned byte for byte; a valid pass for the right host gets exactly what
+  the key gets on every publish-key handler; wrong host, expired, bad signature, a reader pass
+  (`a1`) and a grant (`g1`) are refused on every handler; a `p1` pass never verifies as a reader
+  pass or grant; a host missing either field refuses a pass and still takes its key. Broken on
+  purpose twice and failed: the host check removed (11 failures), and the comments feed left on
+  the bare key check (its pass case failed).
+
 ## 0.16.0 (2026-09-29)
 
 **A brand pack can draw a page's structure, and one page can wear a pack of its own.** Four new

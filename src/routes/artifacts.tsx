@@ -6,7 +6,7 @@ import type { Metadata } from 'next'
 import { revalidatePath } from 'next/cache'
 import { notFound, redirect } from 'next/navigation'
 import { NextRequest, NextResponse } from 'next/server'
-import { isPublishAuthed } from '../artifacts/auth.js'
+import { isPublisherAuthed } from '../artifacts/auth.js'
 import { parseArtifactSource } from '../artifacts/front-matter.js'
 import { narrationText } from '../artifacts/narration.js'
 import { ArtifactMarkdown } from '../artifacts/render.js'
@@ -61,6 +61,13 @@ export type ArtifactRoutesConfig = {
   siteUrl: string
   /** Read at request time, so a rotated key needs no rebuild. */
   publishKey: () => string | undefined
+  /** Verifies publisher passes (`p1`, see artifacts/publisher.ts): a signed, hour-long stand-in
+   *  for the publish key, minted for one person by an authority that knows who may publish here.
+   *  Read at request time. Without it, or without `publisherHost`, passes are refused. */
+  publisherSecret?: () => string | undefined
+  /** The hostname a publisher pass must name, e.g. artifacts.example.com. Set it only on a host
+   *  that opts in to passes. */
+  publisherHost?: string
   /** Share image when an artifact has no cover. Absolute or site-relative. */
   defaultShareImage?: string
   /** Where a page lives under the origin. '/' on a dedicated host (artifacts.<name>/<id>);
@@ -143,8 +150,11 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
   // Readers' recordings are played through short-lived signed URLs, issued only beside the comment
   // or note they belong to; a host whose assets cannot sign them shows no play control.
   const audioUrl = config.assets?.audioUrl ? (id: string, path: string) => config.assets!.audioUrl!(id, path) : undefined
+  const publishAuth = { publishKey: config.publishKey, publisherSecret: config.publisherSecret, publisherHost: config.publisherHost }
+  const authed = (request: Request) => isPublisherAuthed(request, publishAuth)
   const stateRoutes = createStateRoutes({
-    store, state: config.state, readers: config.readers, readerSecret, publishKey: config.publishKey, pageUrl, signInOrigin, siteUrl,
+    store, state: config.state, readers: config.readers, readerSecret, publishKey: config.publishKey,
+    publisherSecret: config.publisherSecret, publisherHost: config.publisherHost, pageUrl, signInOrigin, siteUrl,
     clientIp: config.clientIp, ownerEmail: config.ownerEmail, audioUrl,
   })
   const personalRoutes = createPersonalRoutes({ store, personal: config.personal, readers: config.readers, readerSecret, pageUrl, signInOrigin, siteUrl, audioUrl })
@@ -622,7 +632,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
   /** GET|POST /api/artifacts/<id>/access, publish key: the page's level and its list.
    *  POST body: { access?: 'freedom'|'invite'|'public', add?: [{ email, name?, reason? }], remove?: [email] }. */
   async function ACCESS(request: NextRequest, { params }: Params) {
-    if (!isPublishAuthed(request, config.publishKey())) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    if (!authed(request)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     if (!config.readers) return NextResponse.json({ error: 'this host keeps no reader record' }, { status: 501 })
     const { id } = await params
     const a = ARTIFACT_ID.test(id) ? await store.get(id) : null
@@ -652,7 +662,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
   /** GET /api/artifacts/<id>/reads, publish key: who read it, for how long, how far, and every
    *  attempt to take it away or to open it without being let in. */
   async function READS(request: NextRequest, { params }: Params) {
-    if (!isPublishAuthed(request, config.publishKey())) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    if (!authed(request)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     if (!config.readers) return NextResponse.json({ error: 'this host keeps no reader record' }, { status: 501 })
     const { id } = await params
     const a = ARTIFACT_ID.test(id) ? await store.get(id) : null
@@ -662,7 +672,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
   }
 
   async function POST(request: NextRequest) {
-    if (!isPublishAuthed(request, config.publishKey())) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    if (!authed(request)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     const text = await request.text()
     const parsed = parseArtifactSource(text)
     if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 })
@@ -703,7 +713,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
   }
 
   async function GET(request: NextRequest, { params }: Params) {
-    if (!isPublishAuthed(request, config.publishKey())) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    if (!authed(request)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     const { id } = await params
     const a = await store.get(id)
     if (!a) return NextResponse.json({ error: `no artifact with id ${id}` }, { status: 404 })
@@ -712,7 +722,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
 
   /** PUT /api/artifacts/<id>/assets/<name>: raw bytes in, public URL out. 16 MiB cap. */
   async function PUT_ASSET(request: NextRequest, { params }: { params: Promise<{ id: string; name: string }> }) {
-    if (!isPublishAuthed(request, config.publishKey())) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    if (!authed(request)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     if (!config.assets) return NextResponse.json({ error: 'this host does not store assets' }, { status: 501 })
     const { id, name } = await params
     if (!ARTIFACT_ID.test(id)) return NextResponse.json({ error: `no artifact with id ${id}` }, { status: 404 })
@@ -747,7 +757,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
       const { id, name } = await params
       return voiceRoutes.readerUpload(request, id, name, body)
     }
-    if (!isPublishAuthed(request, config.publishKey())) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    if (!authed(request)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     const assets = config.assets
     if (!assets?.signUpload || !assets.finishUpload) return NextResponse.json({ error: 'this host does not take direct uploads' }, { status: 501 })
     const { id, name } = await params
@@ -780,7 +790,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
   /** GET|POST /api/artifacts/<id>/versions, publish key: the history, and a note written onto one
    *  version after the fact. POST body: { version: number, note: string | null }. */
   async function VERSIONS(request: NextRequest, { params }: Params) {
-    if (!isPublishAuthed(request, config.publishKey())) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    if (!authed(request)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     const { id } = await params
     if (!store.history || !store.setNote) return NextResponse.json({ error: 'this store keeps no history' }, { status: 501 })
     const history = ARTIFACT_ID.test(id) ? await store.history(id) : null
@@ -796,7 +806,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
   }
 
   async function DELETE(request: NextRequest, { params }: Params) {
-    if (!isPublishAuthed(request, config.publishKey())) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    if (!authed(request)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     const { id } = await params
     const ok = await store.delete(id)
     if (!ok) return NextResponse.json({ error: `no artifact with id ${id}` }, { status: 404 })

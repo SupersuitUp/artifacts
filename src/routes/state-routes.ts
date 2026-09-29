@@ -11,7 +11,7 @@
 // signed-in reader, once, and the cookie is cleared.
 import { createHmac, randomBytes } from 'node:crypto'
 import { NextRequest, NextResponse } from 'next/server'
-import { isPublishAuthed } from '../artifacts/auth.js'
+import { isPublisherAuthed } from '../artifacts/auth.js'
 import { ARTIFACT_ID_RE } from './ids.js'
 import { GRANT_COOKIE, decide, firstName, signInUrl, verifyGrant, type Reader } from '../artifacts/reader.js'
 import { isUnlocked, unlockCookieName } from '../artifacts/unlock.js'
@@ -56,6 +56,9 @@ export type StateRoutesContext = {
   readers?: ReadersStore
   readerSecret: () => string | undefined
   publishKey: () => string | undefined
+  /** Publisher passes, as in ArtifactRoutesConfig. Both absent means passes are refused. */
+  publisherSecret?: () => string | undefined
+  publisherHost?: string
   pageUrl: (id: string) => string
   signInOrigin?: string
   siteUrl: string
@@ -281,7 +284,7 @@ export function createStateRoutes(ctx: StateRoutesContext) {
   }
 
   async function RESPONSES(req: NextRequest, { params }: Params) {
-    if (!isPublishAuthed(req, ctx.publishKey())) return json({ error: 'Unauthorized' }, 401)
+    if (!isPublisherAuthed(req, ctx)) return json({ error: 'Unauthorized' }, 401)
     if (!ctx.state) return json({ error: 'this host keeps no answers' }, 501)
     const { id } = await params
     const a = ARTIFACT_ID_RE.test(id) ? await ctx.store.get(id) : null
@@ -304,7 +307,7 @@ export function createStateRoutes(ctx: StateRoutesContext) {
    *  page. It reads the `comments` slot of the state core only; personal notes live in a store no
    *  publisher route reads, so they cannot appear here. The publisher's own notifier polls it. */
   async function COMMENTS_FEED(req: NextRequest) {
-    if (!isPublishAuthed(req, ctx.publishKey())) return json({ error: 'Unauthorized' }, 401)
+    if (!isPublisherAuthed(req, ctx)) return json({ error: 'Unauthorized' }, 401)
     const since = feedSince(req.nextUrl.searchParams.get('since'))
     if (!since) return json({ error: 'since must be an ISO 8601 time with a zone, like 2026-09-28T12:00:00Z' }, 400)
     if (!ctx.state) return json({ error: 'this host keeps no answers' }, 501)
