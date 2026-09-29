@@ -3,6 +3,18 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.11.1 (2026-09-28)
+
+**The comment controls draw in the page's colours.** The comment overlay is portalled onto
+`document.body`, outside the wrapper that sets the `--a-*` theme variables, so on a dark page the
+Comment chip and the Comment button rendered black text on the dark ground. The overlay now
+carries the variables it finds around the page root (`themeVarsAround`), re-read when a `system`
+page changes scheme.
+
+- DETECTOR: on a dark page, the Comment button bottom right is hard to read.
+- REMEDY: bump.
+- Tests: `comment-layer.test.tsx` pins the variables on the portalled overlay (mutation-checked).
+
 ## 0.11.0 (2026-09-28)
 
 **Comment on any part of a page.** Select text, or drag a box over anything that is not text
