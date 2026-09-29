@@ -3,6 +3,17 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.12.1 (2026-09-28)
+
+**Tapping into a comment box no longer zooms the page on iPhone.** iOS Safari zooms the page
+when a text field under 16px takes focus, and leaves it zoomed. The comment card, the thread
+reply box and the notes widget are 16px now (`NO_ZOOM_FONT`). Pinch-zoom is untouched.
+
+- DETECTOR: on an iPhone, tapping the comment box zooms the page in.
+- REMEDY: bump.
+- Tests: `no-zoom.test.ts` scans every text field the reader and widgets draw, so a new field
+  without the size fails the suite (mutation-checked).
+
 ## 0.12.0 (2026-09-28)
 
 **Say a comment instead of typing it.** The comment card has a microphone. While you speak, a
