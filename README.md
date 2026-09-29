@@ -80,6 +80,7 @@ The rest, each exporting the named handler(s) from `artifacts`:
 | `app/api/reader/leave/route.ts` | `GET` = `LEAVE` |
 | `app/api/reader/ack/route.ts` | `POST` = `ACK` |
 | `app/api/reader/track/route.ts` | `POST` = `TRACK` |
+| `app/api/comments/route.ts` | `GET` = `COMMENTS_FEED` (see [the comments feed](#the-comments-feed)) |
 
 Pages live at `/<id>` by default. Mounting inside a larger site, pass `pagePrefix: '/a/'` and put
 the page at `app/a/[id]/`. One deployment can serve many sites: build one set of routes per
@@ -485,6 +486,43 @@ export function POST(request: NextRequest, ctx: Ctx) { return artifacts.TRANSCRI
 The bucket also needs CORS allowing `PUT` from the site's origin with the `content-type`,
 `cache-control` and `x-goog-content-length-range` headers, since the reader's browser uploads
 directly.
+
+### The comments feed
+
+So the publisher hears about a shared comment without opening every page, one route lists every
+shared comment on any of the host's pages after a time. Publish key only; personal notes never
+appear (the privacy test covers this handler like every other).
+
+```
+GET /api/comments?since=2026-09-28T12:00:00Z
+Authorization: Bearer <publish key>
+
+200 { now, comments: [ { artifactId, title, entryId, parent, name, quote, region, body,
+                         transcript, audioUrl, at, link } ] }
+```
+
+Oldest first, at most 200, strictly after `since` (an ISO 8601 time with a zone; anything else is
+a 400). `name` is null for an anonymous reader; `quote` is the text the comment is pinned to, or
+null for a box (`region: true`); `parent` is the comment a reply answers; `audioUrl` is a signed
+URL to the recording, when there is one and the host can sign it. `link` is the page with
+`#comment-<entryId>`: opening it scrolls to the pin and opens its thread (a reply opens its
+parent's; a comment on an earlier version is highlighted in that list). A caller keeps a cursor
+at the last row's `at` and leaves it where it was when nothing came back; `now` is where a first
+run starts, so it does not replay history.
+
+The path sits outside `/api/artifacts/` because `comments` is itself a legal page id there.
+
+```ts
+// app/api/comments/route.ts
+import type { NextRequest } from 'next/server'
+import { artifacts } from '@/lib/artifacts'
+export function GET(request: NextRequest) { return artifacts.COMMENTS_FEED(request) }
+```
+
+On Firestore (`createStateStore`) the query is one range scan over `<base>State` and needs a
+composite index: **`slot` ascending, `at` ascending**, collection scope. Without it Firestore
+refuses the query and the error names a link that creates the index. A host with its own
+`StateStore` implements `slotSince(slot, after, limit)`; without it the feed answers 501.
 
 ## Brand packs
 

@@ -98,6 +98,8 @@ const PATHS = [
   `/api/artifacts/${ID}/personal?entry=x`, `/api/artifacts/${ID}/assets/x.png`, `/api/artifacts/${ID}/uploads/x.png`,
   `/api/reader/enter?to=/${ID}`, `/api/reader/leave?to=/${ID}`, `/api/reader/track`, `/api/reader/ack`,
   `/${ID}`, `/${ID}/v/1`, `/${ID}/share.png`, '/api/artifacts',
+  // The comments feed, with a since before every entry, so it answers with everything it would.
+  '/api/comments?since=2000-01-01T00:00:00Z', '/api/comments',
 ]
 const METHODS = ['GET', 'POST', 'PUT', 'DELETE']
 const PERSONAL_AUDIO = `personal/${personalAudioDir(writer.uid)}/${AUDIO_MARKER}.webm`
@@ -159,7 +161,7 @@ describe('a personal note is never readable by the publisher, through any route'
       const handlers = Object.entries(routes).filter(([, v]) => typeof v === 'function') as [string, (...a: unknown[]) => unknown][]
       // The iteration is the point: it must find every route, including the reader's own.
       expect(handlers.length).toBeGreaterThanOrEqual(23)
-      expect(handlers.map(([k]) => k)).toEqual(expect.arrayContaining(['RESPONSES', 'STATE_GET', 'PERSONAL_GET', 'Page', 'READS', 'TRANSCRIBE', 'UPLOAD']))
+      expect(handlers.map(([k]) => k)).toEqual(expect.arrayContaining(['RESPONSES', 'STATE_GET', 'PERSONAL_GET', 'Page', 'READS', 'TRANSCRIBE', 'UPLOAD', 'COMMENTS_FEED']))
       let answered = 0
       for (const [name, fn] of handlers) {
         for (const text of await everyAnswer(fn, headers)) {
@@ -176,6 +178,16 @@ describe('a personal note is never readable by the publisher, through any route'
     const routes = await build(null)
     const req = new NextRequest(`https://artifacts.example.com/api/artifacts/${ID}/responses`, { headers: { authorization: 'Bearer k' } })
     const text = await textOf(routes.RESPONSES(req, { params: Promise.resolve({ id: ID }) }))
+    expect(text).toContain('a shared comment')
+    for (const m of MARKERS) expect(text).not.toContain(m)
+  })
+
+  it('and the comments feed, as the publisher, carries the shared comment and never the note', async () => {
+    const routes = await build(null)
+    const req = new NextRequest('https://artifacts.example.com/api/comments?since=2000-01-01T00:00:00Z', { headers: { authorization: 'Bearer k' } })
+    const res = await routes.COMMENTS_FEED(req)
+    expect(res.status).toBe(200)
+    const text = await res.text()
     expect(text).toContain('a shared comment')
     for (const m of MARKERS) expect(text).not.toContain(m)
   })

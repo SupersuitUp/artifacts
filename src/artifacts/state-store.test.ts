@@ -1,6 +1,6 @@
 // The Firestore implementation has no emulator test here; it is proven live in Task 8.
 // This file carries the contract against the memory implementation, which both share.
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createMemoryStateStore, readerKeyFor, type StateStore, type Writer } from './state-store.js'
 import { MAX_MANY_PER_READER } from './state.js'
 
@@ -80,5 +80,26 @@ describe('hasOne', () => {
     expect(await mem.hasOne!('p', 'vote', sam.key)).toBe(true)
     expect(await mem.hasOne!('p', 'other', sam.key)).toBe(false)
     expect(await mem.hasOne!('q', 'vote', sam.key)).toBe(false)
+  })
+})
+
+describe('slotSince: one slot across every page, by time, for the comments feed', () => {
+  afterEach(() => { vi.useRealTimers() })
+  const at = async (iso: string, run: () => Promise<unknown>) => { vi.setSystemTime(new Date(iso)); await run() }
+
+  it('returns only that slot, across pages, strictly after the time, oldest first, at most the limit', async () => {
+    vi.useFakeTimers()
+    const mem = createMemoryStateStore()
+    await at('2026-09-28T10:00:00.000Z', () => mem.append({ artifactId: 'p', slot: 'comments', writer: sam, value: 'before' }))
+    await at('2026-09-28T11:00:00.000Z', () => mem.append({ artifactId: 'p', slot: 'comments', writer: sam, value: 'exactly at since' }))
+    await at('2026-09-28T13:00:00.000Z', () => mem.append({ artifactId: 'q', slot: 'comments', writer: anon, value: 'later, other page' }))
+    await at('2026-09-28T12:00:00.000Z', () => mem.append({ artifactId: 'p', slot: 'comments', writer: anon, value: 'after' }))
+    await at('2026-09-28T12:30:00.000Z', () => mem.append({ artifactId: 'p', slot: 'notes', writer: sam, value: 'another slot' }))
+    await at('2026-09-28T12:30:00.000Z', () => mem.set({ artifactId: 'p', slot: 'vote', writer: sam, value: 'a vote' }))
+    const got = await mem.slotSince!('comments', '2026-09-28T11:00:00.000Z', 200)
+    expect(got.map((e) => e.value)).toEqual(['after', 'later, other page'])
+    expect(got.map((e) => e.artifactId)).toEqual(['p', 'q'])
+    expect((await mem.slotSince!('comments', '2026-09-28T11:00:00.000Z', 1)).map((e) => e.value)).toEqual(['after'])
+    expect(await mem.slotSince!('comments', '2026-09-28T13:00:00.000Z', 200)).toEqual([])
   })
 })

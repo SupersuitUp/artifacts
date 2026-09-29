@@ -4,6 +4,7 @@
 //   POST /api/artifacts/<id>/state      { slot, op: set|append|remove|replace, value?, entry? }
 //   GET  /api/artifacts/<id>/responses  publish key; every answer with who (?format=csv)
 //   DELETE /api/artifacts/<id>/responses?reader=<key>  publish key; one reader's answers
+//   GET  /api/comments?since=<ISO>      publish key; every shared comment on any page after a time
 //
 // Who is writing: the grant a gated page already uses, or on a page with `writers: anyone`, an
 // anonymous id in an HttpOnly cookie. When both are present the anonymous answers move to the
@@ -26,6 +27,20 @@ import type { ReadersStore } from '../artifacts/readers-store.js'
 export const ANON_COOKIE = 'artifact_anon'
 const ANON_ID = /^[A-Za-z0-9]{24}$/
 const MAX_BODY = 16 * 1024
+/** The most comments one feed answer carries. A caller that gets this many moves its cursor to the
+ *  last row's `at` and asks again. */
+export const FEED_MAX = 200
+// An ISO 8601 time with a zone: 2026-09-28T12:00Z, 2026-09-28T12:00:00.123+02:00. A date alone, or
+// a time with no zone, is refused rather than read in the server's own zone.
+const ISO_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,9})?)?(Z|[+-]\d{2}:?\d{2})$/
+/** `since` as the stored `at` form (UTC, milliseconds), or null. A `+` offset left unencoded in a
+ *  query string arrives as a space, so that one spelling is read back as the `+` it was. */
+export function feedSince(raw: string | null): string | null {
+  const v = (raw ?? '').trim().replace(/ (\d{2}:?\d{2})$/, '+$1')
+  if (!ISO_TIME.test(v)) return null
+  const d = new Date(v)
+  return Number.isNaN(d.getTime()) ? null : d.toISOString()
+}
 
 /** The id an anonymous writer's rate counter is stored under. An HMAC over the site and the IP,
  *  keyed by the reader secret when the host has one (so the stored value cannot be reversed by
@@ -284,5 +299,37 @@ export function createStateRoutes(ctx: StateRoutesContext) {
     return json({ id, title: a.title, responses: rows })
   }
 
-  return { STATE_GET, STATE_POST, RESPONSES }
+  /** GET /api/comments?since=<ISO>: every SHARED comment on any of this host's pages written after
+   *  `since` (exclusive), oldest first, at most FEED_MAX, each with a link that opens it on the
+   *  page. It reads the `comments` slot of the state core only; personal notes live in a store no
+   *  publisher route reads, so they cannot appear here. The publisher's own notifier polls it. */
+  async function COMMENTS_FEED(req: NextRequest) {
+    if (!isPublishAuthed(req, ctx.publishKey())) return json({ error: 'Unauthorized' }, 401)
+    const since = feedSince(req.nextUrl.searchParams.get('since'))
+    if (!since) return json({ error: 'since must be an ISO 8601 time with a zone, like 2026-09-28T12:00:00Z' }, 400)
+    if (!ctx.state) return json({ error: 'this host keeps no answers' }, 501)
+    if (!ctx.state.slotSince) return json({ error: 'this host cannot list comments by time' }, 501)
+    const now = new Date().toISOString()
+    const entries = await ctx.state.slotSince(COMMENTS_SLOT, since, FEED_MAX)
+    const pages = new Map<string, Promise<ArtifactRecord | null>>()
+    const pageOf = (id: string) => { if (!pages.has(id)) pages.set(id, ctx.store.get(id)); return pages.get(id)! }
+    const comments = []
+    for (const e of entries) {
+      const a = await pageOf(e.artifactId)
+      // A page deleted since the comment was left has nowhere for the link to land.
+      if (!a) continue
+      const v = e.value as CommentValue
+      const audio = isCommentAudioPath(v.audio) && ctx.audioUrl ? await ctx.audioUrl(e.artifactId, v.audio) : null
+      comments.push({
+        artifactId: e.artifactId, title: a.title, entryId: e.id, parent: v.parent ?? null,
+        name: e.writer.anonymous ? null : e.writer.name?.trim() || 'a signed-in reader',
+        quote: v.anchor?.kind === 'text' ? v.anchor.quote : null, region: v.anchor?.kind === 'region',
+        body: v.body, transcript: v.transcript ?? null, audioUrl: audio, at: e.at,
+        link: `${ctx.pageUrl(e.artifactId)}#comment-${e.id}`,
+      })
+    }
+    return json({ now, comments })
+  }
+
+  return { STATE_GET, STATE_POST, RESPONSES, COMMENTS_FEED }
 }

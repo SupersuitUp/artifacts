@@ -40,6 +40,11 @@ export interface StateStore {
    *  id and time. Null when no such entry is theirs. Optional so a host's own store keeps working;
    *  without it an edit answers 501. */
   replace?(input: { artifactId: string; slot: string; readerKey: string; entryId: string; value: unknown }): Promise<StateEntry | null>
+  /** Every entry in one slot across ALL of this tenant's pages written strictly after `after` (an
+   *  ISO time, compared as the stored `at` string), oldest first, at most `limit`. The comments
+   *  feed reads it. Optional so a host's own store keeps working; without it the feed answers 501.
+   *  The Firestore query needs a composite index on <base>State: slot ASC, at ASC. */
+  slotSince?(slot: string, after: string, limit: number): Promise<StateEntry[]>
 }
 
 export const readerKeyFor = {
@@ -129,6 +134,10 @@ export function createStateStore(db: Firestore, base: string): StateStore {
       await ref.update({ json: JSON.stringify(value) })
       return { ...e, value }
     },
+    // One indexed range query over the tenant's whole collection: equality on slot, range and
+    // order on at. Needs the composite index (slot ASC, at ASC) on <base>State, or Firestore
+    // refuses the query with FAILED_PRECONDITION and a link that creates it.
+    slotSince: (slot, after, limit) => load(col().where('slot', '==', slot).where('at', '>', after).orderBy('at').limit(limit)),
   }
   return store
 }
@@ -192,5 +201,10 @@ export function createMemoryStateStore(): StateStore {
       docs.set(entryId, next)
       return structuredClone(next)
     },
+    slotSince: async (slot, after, limit) => [...docs.values()]
+      .filter((e) => e.slot === slot && e.at > after)
+      .sort((x, y) => x.at.localeCompare(y.at) || x.id.localeCompare(y.id))
+      .slice(0, limit)
+      .map((e) => structuredClone(e)),
   }
 }

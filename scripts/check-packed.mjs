@@ -119,10 +119,16 @@ try {
   if (cbad.status !== 400) fail(`a malformed comment answered ${cbad.status}, not 400`)
   const cr = await (await fetch(`${base}/api/artifacts/cmt23456/responses`, { headers: { authorization: 'Bearer k' } })).json()
   if (cr.responses?.[0]?.slot !== 'comments' || cr.responses[0].value?.body !== 'packed comment') fail(`responses read back ${JSON.stringify(cr)}`)
+  // The comments feed: the same comment, with a link that lands on it; refused without the key.
+  const fd = await (await fetch(`${base}/api/comments?since=2000-01-01T00:00:00Z`, { headers: { authorization: 'Bearer k' } })).json()
+  const fc = fd.comments?.find((c) => c.body === 'packed comment')
+  if (!fc || fc.artifactId !== 'cmt23456' || fc.link !== `http://localhost/cmt23456#comment-${fc.entryId}` || typeof fd.now !== 'string') fail(`the comments feed read back ${JSON.stringify(fd)}`)
+  const fno = await fetch(`${base}/api/comments?since=2000-01-01T00:00:00Z`)
+  if (fno.status !== 401) fail(`the comments feed without the key answered ${fno.status}, not 401`)
   const pr = await fetch(`${base}/api/artifacts/cmt23456/personal`)
   if (pr.status !== 401 || (await pr.json()).device !== true) fail(`personal notes for a signed-out reader answered ${pr.status}, not 401 device`)
 
-  console.log('check-packed: fixture builds; page, version history, share card, publish, state routes, the notes widget and comments answer correctly')
+  console.log('check-packed: fixture builds; page, version history, share card, publish, state routes, the notes widget, comments and the comments feed answer correctly')
 } finally {
   server.kill()
 }
