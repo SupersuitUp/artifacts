@@ -1,4 +1,4 @@
-export { freedomDefault, type BrandPack, type ShareCardAssets, type Palette, type Backdrop } from './pack.js'
+export { freedomDefault, type BrandPack, type ShareCardAssets, type Palette, type Backdrop, type CoverProps, type ArticleProps, type SectionProps, type SectionOutline, type FigureProps } from './pack.js'
 export { BrandGround, BrandMark } from './wrapper.js'
 export { renderShareCard } from './share-card.js'
 export { THEME_MODES, type ThemeMode, themeCss, themedPack, resolveMode } from './theme.js'

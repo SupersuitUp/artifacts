@@ -3,6 +3,26 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.16.0 (2026-09-29)
+
+**A brand pack can draw a page's structure, and one page can wear a pack of its own.** Four new
+optional `BrandPack` fields: `Cover` (the title block), `Article` (what holds the cover and body),
+`Section` (each top-level section, with its index, count and the outline, for a break before it
+or a wrapper around it) and `figure(src, alt)` (a component in place of an image or embed). New
+routes config `packs` (by name) and `packFor(artifact)`, and front matter `pack: <name>`.
+
+- DETECTOR: none needed. A pack that uses none of the new fields renders exactly as on 0.15.0,
+  pinned by a golden rendered from 0.15.0 itself (`src/routes/__golden__`).
+- REMEDY: nothing, unless you want a page drawn differently: set the fields on a pack of your
+  own and register it with `packs` or choose it with `packFor`.
+- Tests: the golden (default and wrapped packs, current page and a past version); each extension
+  point; a claimed image replacing its paragraph and an unclaimed one untouched; `pack:` by name,
+  an unknown name, `packFor` ahead of front matter, other pages untouched, the share card following
+  the page's pack; `pack:` parse and refusals and the store round trip; and the read-along: a page
+  rendered through all four has exactly the narrated words. Each was broken on purpose once and
+  failed (figure left speakable, sections not split, cover and article ignored, `packFor` and
+  `pack:` ignored, `pack` not cleared on republish).
+
 ## 0.15.0 (2026-09-29)
 
 **A reader signed in with the wrong Google account can change it.** Before, "Sign out" only

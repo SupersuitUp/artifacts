@@ -41,6 +41,10 @@ export type ArtifactMeta = {
   state?: StateConfig
   /** Light, dark, or the reader's device, overriding the brand pack's mode for this page. */
   theme?: ThemeMode
+  /** The brand pack this page renders in, by the name the host registered it under (`packs` in
+   *  the routes config). A name the host does not know renders in its default pack. Content, like
+   *  `theme:`: a republish without the line goes back to the default. */
+  pack?: string
   /** The table of contents: absent draws it once the page has four sections, false never. */
   toc?: boolean
   /** Terms this page defines inline: the first occurrence of each is underlined and opens its
@@ -57,10 +61,13 @@ export type ArtifactMeta = {
   commentsVisible?: CommentsVisible
 }
 
+/** A pack name, as a host registers one. */
+export const PACK_NAME = /^[a-z0-9][a-z0-9-]{0,39}$/
+
 /** The longest `to:` a page may carry: a name or two, never a sentence. */
 export const MAX_TO_CHARS = 60
 
-const KNOWN = new Set(['title', 'summary', 'subtitle', 'to', 'template', 'audience', 'cover', 'id', 'voice', 'narration', 'timings', 'narrationHash', 'password', 'access', 'state', 'theme', 'toc', 'definitions', 'change', 'comments', 'comments_visible'])
+const KNOWN = new Set(['title', 'summary', 'subtitle', 'to', 'template', 'audience', 'cover', 'id', 'voice', 'narration', 'timings', 'narrationHash', 'password', 'access', 'state', 'theme', 'pack', 'toc', 'definitions', 'change', 'comments', 'comments_visible'])
 
 export function parseArtifactSource(
   text: string,
@@ -102,6 +109,10 @@ export function parseArtifactSource(
   if (d.theme !== undefined) {
     if (!THEME_MODES.includes(d.theme as ThemeMode)) return { ok: false, error: `theme must be one of: ${THEME_MODES.join(', ')}` }
     meta.theme = d.theme as ThemeMode
+  }
+  if (d.pack !== undefined && d.pack !== null) {
+    if (typeof d.pack !== 'string' || !PACK_NAME.test(d.pack)) return { ok: false, error: 'pack must be a pack name: lowercase letters, digits and dashes, up to 40 characters' }
+    meta.pack = d.pack
   }
   if (d.toc !== undefined) {
     if (typeof d.toc !== 'boolean') return { ok: false, error: 'toc must be true or false' }

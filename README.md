@@ -157,6 +157,7 @@ summary: Three bets, what each costs, and what we stop doing to afford them.
 | `password` | Shuts the body behind a door (below) |
 | `access` | `freedom`, `invite` or `public`: a confidential page (below) |
 | `theme` | `light`, `dark` or `system` (follow the reader's device). Overrides the brand pack's mode for this page |
+| `pack` | A brand pack the host registered by name (`packs` in the routes config). An unknown name renders in the host's default pack; a republish without the line goes back to it |
 | `toc` | The table of contents. Absent, it appears once the page has four `##` sections; `false` never; `true` from one |
 | `definitions` | Terms defined inline (below). A republish without it removes them |
 | `change` | One line saying what this version changed (see Version history) |
@@ -545,6 +546,29 @@ motion. `colors` are `r,g,b` triplets (default `GLOW_PASTELS`); `veil` is 0 to 1
 ```ts
 const pack: BrandPack = { ...freedomDefault, mode: 'light', backdrop: { kind: 'bubbles' } }
 ```
+
+**Drawing more than colours.** Four optional fields let a pack draw a page's structure. A pack
+that sets none of them renders every page byte for byte as before (a test holds that).
+
+- `Cover` draws the title block instead of the centred header. It is handed `title`, `subtitle`
+  and `summary` to render (they are spoken, in that order), the shell's `kicker` and `meta`
+  (version line, signed-in line) to place, and the page's `markdown` to quote from.
+- `Article` holds the cover, the inline contents and the body, instead of the centred column.
+- `Section` receives each top-level section (split at the shallowest heading level the page
+  uses): its `index`, `count`, the whole `outline`, the heading's `text` and `slug`, the default
+  `heading`, or its `headingContent` and `headingAttrs` (id and comment anchor) for a pack that
+  draws the heading itself, and the section's body as `children`.
+- `figure(src, alt)` returns a component to draw an image or embed in its place, or undefined to
+  keep the default. An image alone in its paragraph replaces the paragraph.
+
+Everything a pack adds beyond the text it is handed must sit inside `data-nospeak`, which the
+read-along skips; the shell puts figures there itself. A test renders a page through all four
+and checks the words on the page are exactly the words narrated.
+
+**One page in a different pack.** Register packs by name with `packs: { name: pack }` and a page
+picks one with `pack: name` in its front matter. `packFor(artifact)` lets the host choose instead,
+ahead of the front matter, for a page whose file cannot carry the line. The share card follows
+the page's pack.
 
 ## Environment
 

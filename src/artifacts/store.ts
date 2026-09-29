@@ -34,6 +34,8 @@ export type ArtifactRecord = {
   access?: Access
   state?: StateConfig
   theme?: ThemeMode
+  /** The brand pack the page asked for by name; see ArtifactMeta.pack. */
+  pack?: string
   toc?: boolean
   definitions?: Definition[]
   /** Who may leave shared comments; absent is off. Personal notes need nothing. */
@@ -208,6 +210,7 @@ async function saveArtifact(col: Col, input: SaveInput): Promise<SaveResult> {
     ...(input.meta.access && input.meta.access !== 'public' ? { access: input.meta.access } : {}),
     ...(input.meta.state ? { state: input.meta.state } : {}),
     ...(input.meta.theme ? { theme: input.meta.theme } : {}),
+    ...(input.meta.pack ? { pack: input.meta.pack } : {}),
     ...(input.meta.toc !== undefined ? { toc: input.meta.toc } : {}),
     ...(input.meta.definitions?.length ? { definitions: input.meta.definitions } : {}),
     ...(input.meta.comments ? { comments: input.meta.comments } : {}),
@@ -253,6 +256,7 @@ async function saveArtifact(col: Col, input: SaveInput): Promise<SaveResult> {
     // How the page looks is content too: a line the file no longer carries goes back to the default.
     const look = {
       ...(input.meta.theme ? {} : { theme: FieldValue.delete() }),
+      ...(input.meta.pack ? {} : { pack: FieldValue.delete() }),
       ...(input.meta.toc !== undefined ? {} : { toc: FieldValue.delete() }),
       ...(input.meta.definitions?.length ? {} : { definitions: FieldValue.delete() }),
       // Comments are not an access control, so a line the file no longer carries goes back to

@@ -12,7 +12,7 @@ import { narrationText } from '../artifacts/narration.js'
 import { ArtifactMarkdown } from '../artifacts/render.js'
 import { ArtifactDoor } from '../artifacts/door.js'
 import { isUnlocked, keyHash, unlockCookieName } from '../artifacts/unlock.js'
-import { cleanNote, type ArtifactStore, type VersionEntry } from '../artifacts/store.js'
+import { cleanNote, type ArtifactRecord, type ArtifactStore, type VersionEntry } from '../artifacts/store.js'
 import { effectiveWriters, shapeChanges } from '../artifacts/state.js'
 import { COMMENTS_SLOT, type CommentsMode } from '../artifacts/comments.js'
 import type { StateStore } from '../artifacts/state-store.js'
@@ -51,6 +51,12 @@ export type ArtifactRoutesConfig = {
   /** Where uploaded files go. Optional; without it PUT_ASSET answers 501. */
   assets?: ArtifactAssets
   brand: BrandPack
+  /** Other packs a page may choose by name with `pack: <name>` in its front matter. A name this
+   *  host does not know falls back to `brand`, so a page never fails to render over its look. */
+  packs?: Record<string, BrandPack>
+  /** Choose a page's pack on the host, ahead of its front matter: for a page whose file cannot
+   *  carry the line, or a look the host decides. Undefined means no opinion. */
+  packFor?: (artifact: ArtifactRecord) => BrandPack | undefined
   /** The host that serves a 200, e.g. https://artifacts.example.com. No trailing slash. */
   siteUrl: string
   /** Read at request time, so a rotated key needs no rebuild. */
@@ -112,6 +118,14 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
   // page follows its light, dark or system mode (brand/theme.ts).
   const pack = config.brand
   const brand = themedPack(pack)
+  /** The pack one page renders in: the host's choice, then the page's `pack:`, then the default. */
+  const looks = new Map<BrandPack, { pack: BrandPack; brand: BrandPack }>()
+  function lookOf(a: ArtifactRecord): { pack: BrandPack; brand: BrandPack } {
+    const p = config.packFor?.(a) ?? (a.pack ? config.packs?.[a.pack] : undefined) ?? pack
+    let l = looks.get(p)
+    if (!l) looks.set(p, (l = { pack: p, brand: themedPack(p) }))
+    return l
+  }
   const prefix = config.pagePrefix ?? '/'
   const pageUrl = (id: string) => `${siteUrl}${prefix}${id}`
   const pagePath = (id: string) => `${prefix}${id}`
@@ -141,7 +155,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
 
   /** The kicker over every title: the pack's line, then who the page is for. Never spoken: the
    *  whole paragraph is data-nospeak, and narrationText has no `to` to read. */
-  function Kicker({ to }: { to?: string }) {
+  function Kicker({ to, brand }: { to?: string; brand: BrandPack }) {
     return (
       <p data-nospeak className="mb-4 text-[11px] font-medium uppercase tracking-[0.3em]" style={{ color: brand.accent }}>
         {brand.kicker}
@@ -155,6 +169,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     const a = ARTIFACT_ID.test(id) ? await store.get(id) : null
     if (!a) return { title: 'Not found', robots: { index: false, follow: false } }
     const url = pageUrl(a.id)
+    const { brand } = lookOf(a)
     const image = absolute(a.cover) ?? (brand.share ? shareCardUrl(a.id, a.updatedAt) : absolute(config.defaultShareImage))
     // Who it is for leads the unfurl, so a thread shows it before the reader opens anything.
     const title = a.to ? `For ${a.to}: ${a.title}` : a.title
@@ -205,6 +220,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
   async function serve(id: string, searchParams: PageProps['searchParams'], n: number | null) {
     const a = ARTIFACT_ID.test(id) ? await store.get(id) : null
     if (!a) notFound()
+    const { pack, brand } = lookOf(a)
     const render = (top: boolean, reader: Reader | null) => (n === null ? Body(a, { top, reader }) : VersionBody(a, n, { top }))
     if (a.access) return GatedPage(a, id, render, n)
     // A password shuts the body, never the title: the header stays so the reader knows which
@@ -233,7 +249,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
       return (
         <BrandGround pack={pack} mode={a.theme}>
           <div className="mx-auto max-w-2xl px-6 pt-24 pb-8 text-center sm:pt-28">
-            <Kicker to={a.to} />
+            <Kicker to={a.to} brand={brand} />
             <h1 className="text-4xl sm:text-5xl" style={{ fontFamily: brand.type.display, color: brand.ink }}>
               {a.title}
             </h1>
@@ -264,6 +280,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
   /** A page with `access:`. The body is rendered only after the reader is known and allowed;
    *  everyone else gets the title, the summary, and a door. */
   async function GatedPage(a: Rec, id: string, render: (top: boolean, reader: Reader | null) => Promise<React.ReactNode>, n: number | null) {
+    const { pack, brand } = lookOf(a)
     const here = n === null ? pageUrl(id) : `${pageUrl(id)}/v/${n}`
     const readCookie = config.readCookie ?? defaultReadCookie
     // Only a host that signs readers in can know one; the read never fails the page.
@@ -272,7 +289,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     const d = config.readers ? decide(a.access!, reader, allow) : ({ open: false, why: 'signed-out' } as const)
     const header = (
       <div className="mx-auto max-w-2xl px-6 pt-24 pb-8 text-center sm:pt-28">
-        <Kicker to={a.to} />
+        <Kicker to={a.to} brand={brand} />
         <h1 className="text-4xl sm:text-5xl" style={{ fontFamily: brand.type.display, color: brand.ink }}>
           {a.title}
         </h1>
@@ -344,8 +361,24 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     )
   }
 
+  /** The title block and the body, in the pack's Article when it has one. Without one this is
+   *  exactly the markup every page had before packs could frame it. */
+  function Framed({ pack, cover, toc, children }: { pack: BrandPack; cover: React.ReactNode; toc: React.ReactNode; children: React.ReactNode }) {
+    if (pack.Article) return <pack.Article cover={cover} toc={toc}>{children}</pack.Article>
+    return (
+      <>
+        {cover}
+        <article className="mx-auto max-w-2xl px-6 pb-24">
+          {toc}
+          {children}
+        </article>
+      </>
+    )
+  }
+
   /** A past version: its own body and title, read-only (no narration, no answers), under a banner. */
   async function VersionBody(a: Rec, n: number, { top }: { top: boolean }) {
+    const { pack, brand } = lookOf(a)
     const v = store.version ? await store.version(a.id, n) : null
     if (!v) notFound()
     if (v.current) redirect(pagePath(a.id))
@@ -363,29 +396,40 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
             <a href={pagePath(a.id)} className="underline underline-offset-4" style={{ color: brand.accent }}>Read the current version</a>
           </p>
         </div>
-        <div className={`mx-auto max-w-2xl px-6 ${top ? 'pt-10 sm:pt-12' : 'pt-10'} pb-8 text-center`}>
-          <Kicker to={v.to} />
-          <h1 className="text-4xl sm:text-5xl" style={{ fontFamily: brand.type.display, color: brand.ink }}>
-            {title}
-          </h1>
-          {v.subtitle ? (
-            <p className="mx-auto mt-4 max-w-xl text-xl sm:text-2xl" style={{ fontFamily: brand.type.display, color: brand.ink }}>
-              {v.subtitle}
-            </p>
-          ) : null}
-          <p className="mx-auto mt-6 max-w-xl text-lg italic opacity-80">{summary}</p>
-          <VersionLine a={a} n={n} at={v.at} history={history} />
-        </div>
-        <article className="mx-auto max-w-2xl px-6 pb-24">
-          {toc.length ? <TocInline items={toc} /> : null}
-          <ArtifactMarkdown markdown={v.markdown} definitions={a.definitions} />
-        </article>
+        <Framed
+          pack={pack}
+          toc={toc.length ? <TocInline items={toc} /> : null}
+          cover={pack.Cover ? (
+            <pack.Cover
+              title={title} subtitle={v.subtitle} summary={summary} to={v.to} markdown={v.markdown}
+              kicker={<Kicker to={v.to} brand={brand} />} meta={<VersionLine a={a} n={n} at={v.at} history={history} />}
+              version={n} updatedAt={v.at} createdAt={a.createdAt}
+            />
+          ) : (
+            <div className={`mx-auto max-w-2xl px-6 ${top ? 'pt-10 sm:pt-12' : 'pt-10'} pb-8 text-center`}>
+              <Kicker to={v.to} brand={brand} />
+              <h1 className="text-4xl sm:text-5xl" style={{ fontFamily: brand.type.display, color: brand.ink }}>
+                {title}
+              </h1>
+              {v.subtitle ? (
+                <p className="mx-auto mt-4 max-w-xl text-xl sm:text-2xl" style={{ fontFamily: brand.type.display, color: brand.ink }}>
+                  {v.subtitle}
+                </p>
+              ) : null}
+              <p className="mx-auto mt-6 max-w-xl text-lg italic opacity-80">{summary}</p>
+              <VersionLine a={a} n={n} at={v.at} history={history} />
+            </div>
+          )}
+        >
+          <ArtifactMarkdown markdown={v.markdown} definitions={a.definitions} Section={pack.Section} figure={pack.figure} />
+        </Framed>
       </>
     )
   }
 
   /** The page itself, shared by open and gated pages. */
   async function Body(a: Rec, { top, reader }: { top: boolean; reader: Reader | null }) {
+    const { pack, brand } = lookOf(a)
     let words: WordTiming[] = []
     if (a.narration && a.timings) {
       try {
@@ -402,39 +446,70 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
       <>
         {toc.length ? <TocRail items={toc} /> : null}
         <div id="artifact-narration-root">
-          <div className={`mx-auto max-w-2xl px-6 ${top ? 'pt-24 sm:pt-28' : 'pt-12'} pb-8 text-center`}>
-            <Kicker to={a.to} />
-            <h1 className="text-4xl sm:text-5xl" style={{ fontFamily: brand.type.display, color: brand.ink }}>
-              {a.title}
-            </h1>
-            {a.subtitle ? (
-              <p className="mx-auto mt-4 max-w-xl text-xl sm:text-2xl" style={{ fontFamily: brand.type.display, color: brand.ink }}>
-                {a.subtitle}
-              </p>
-            ) : null}
-            <p className="mx-auto mt-6 max-w-xl text-lg italic opacity-80">{a.summary}</p>
-            <VersionLine a={a} n={a.version ?? (a.versions?.length ?? 0) + 1} at={a.updatedAt} history={await historyOf(a.id)} />
-            {/* An open page has no banner, so this is the only place a signed-in reader learns
-                which account they are in and how to get out of it. A gated page's banner says it. */}
-            {top && reader ? (
-              <p data-nospeak data-reader-line className="mt-2 text-xs opacity-60">
-                {`Signed in as ${reader.email} · `}
-                <a href={switchUrl(a.id)} className="underline">Use a different account</a>
-                {' · '}
-                <a href={signOutUrl(a.id)} className="underline">Sign out</a>
-              </p>
-            ) : null}
-          </div>
-          {a.cover ? (
-            <div className="mx-auto max-w-2xl px-6 pb-8">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={a.cover} alt="" className="w-full rounded-xl border border-[color:var(--a-line)]" />
-            </div>
-          ) : null}
-          <article className="mx-auto max-w-2xl px-6 pb-24">
-            {toc.length ? <TocInline items={toc} /> : null}
-            <ArtifactMarkdown markdown={a.markdown} definitions={a.definitions} notes={config.state && a.state ? { artifactId: a.id, accent: brand.accent } : undefined} />
-          </article>
+          {await (async () => {
+            const n = a.version ?? (a.versions?.length ?? 0) + 1
+            const meta = (
+              <>
+                <VersionLine a={a} n={n} at={a.updatedAt} history={await historyOf(a.id)} />
+                {/* An open page has no banner, so this is the only place a signed-in reader learns
+                    which account they are in and how to get out of it. A gated page's banner says it. */}
+                {top && reader ? (
+                  <p data-nospeak data-reader-line className="mt-2 text-xs opacity-60">
+                    {`Signed in as ${reader.email} · `}
+                    <a href={switchUrl(a.id)} className="underline">Use a different account</a>
+                    {' · '}
+                    <a href={signOutUrl(a.id)} className="underline">Sign out</a>
+                  </p>
+                ) : null}
+              </>
+            )
+            const header = pack.Cover ? (
+              <pack.Cover
+                title={a.title} subtitle={a.subtitle} summary={a.summary} to={a.to} markdown={a.markdown}
+                kicker={<Kicker to={a.to} brand={brand} />} meta={meta}
+                version={n} updatedAt={a.updatedAt} createdAt={a.createdAt}
+              />
+            ) : (
+              <div className={`mx-auto max-w-2xl px-6 ${top ? 'pt-24 sm:pt-28' : 'pt-12'} pb-8 text-center`}>
+                <Kicker to={a.to} brand={brand} />
+                <h1 className="text-4xl sm:text-5xl" style={{ fontFamily: brand.type.display, color: brand.ink }}>
+                  {a.title}
+                </h1>
+                {a.subtitle ? (
+                  <p className="mx-auto mt-4 max-w-xl text-xl sm:text-2xl" style={{ fontFamily: brand.type.display, color: brand.ink }}>
+                    {a.subtitle}
+                  </p>
+                ) : null}
+                <p className="mx-auto mt-6 max-w-xl text-lg italic opacity-80">{a.summary}</p>
+                {meta}
+              </div>
+            )
+            return (
+              <Framed
+                pack={pack}
+                toc={toc.length ? <TocInline items={toc} /> : null}
+                cover={
+                  <>
+                    {header}
+                    {a.cover ? (
+                      <div className="mx-auto max-w-2xl px-6 pb-8">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={a.cover} alt="" className="w-full rounded-xl border border-[color:var(--a-line)]" />
+                      </div>
+                    ) : null}
+                  </>
+                }
+              >
+                <ArtifactMarkdown
+                  markdown={a.markdown}
+                  definitions={a.definitions}
+                  notes={config.state && a.state ? { artifactId: a.id, accent: brand.accent } : undefined}
+                  Section={pack.Section}
+                  figure={pack.figure}
+                />
+              </Framed>
+            )
+          })()}
         </div>
         <CommentLayer
           artifactId={a.id}
@@ -695,10 +770,11 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
    *  tenant on the static default never serves a half-styled card. */
   async function SHARE_IMAGE(_request: NextRequest, { params }: Params) {
     const { id } = await params
-    if (!brand.share) return new NextResponse('no share card for this host', { status: 404 })
     const a = ARTIFACT_ID.test(id) ? await store.get(id) : null
+    const look = a ? lookOf(a) : { pack, brand }
+    if (!look.brand.share) return new NextResponse('no share card for this host', { status: 404 })
     if (!a) return new NextResponse(`no artifact with id ${id}`, { status: 404 })
-    return renderShareCard(pack, a.title, { to: a.to })
+    return renderShareCard(look.pack, a.title, { to: a.to })
   }
 
   /** GET|POST /api/artifacts/<id>/versions, publish key: the history, and a note written onto one

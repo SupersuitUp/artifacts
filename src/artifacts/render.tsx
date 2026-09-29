@@ -4,9 +4,13 @@
 // Two extensions past GFM, both small on purpose:
 //   ```links   one "url | note" per line, rendered as link cards
 //   > [!note] / > [!warning]   a callout instead of a blockquote
-import type { ReactNode } from 'react'
+import { Children, isValidElement, type ComponentType, type ReactElement, type ReactNode } from 'react'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import remarkParse from 'remark-parse'
+import { unified } from 'unified'
+import type { Root, RootContent } from 'mdast'
+import type { FigureProps, SectionOutline, SectionProps } from '../brand/pack.js'
 import { blocksOf, hasNotesWidget, headingsOf, type Heading } from './widgets.js'
 import { HeadingNotes, NoteToggle, NotesEarlier, NotesProvider } from '../widgets/notes.js'
 import { VideoAutoplay } from '../reader/video-autoplay.js'
@@ -109,9 +113,34 @@ type Positioned = { position?: { start: { offset?: number } } } | undefined
 /** `data-block` for a top-level block: the id a region comment is pinned to (widgets.blocksOf). */
 type BlockAttr = (node: Positioned) => { 'data-block'?: string }
 
-function baseComponents(block: BlockAttr): Components {
+/** A pack's figure resolver (BrandPack.figure). */
+export type FigureFor = (src: string, alt: string) => ComponentType<FigureProps> | undefined
+type HastLike = { type: string; tagName?: string; value?: string; properties?: Record<string, unknown>; children?: HastLike[] }
+
+/** The one image a paragraph holds and nothing else (whitespace aside), or null. */
+function soleImage(node: unknown): { src: string; alt: string } | null {
+  const kids = ((node as HastLike | undefined)?.children ?? []).filter((c) => !(c.type === 'text' && !c.value?.trim()))
+  if (kids.length !== 1 || kids[0].type !== 'element' || kids[0].tagName !== 'img') return null
+  const src = kids[0].properties?.src
+  return typeof src === 'string' ? { src, alt: String(kids[0].properties?.alt ?? '') } : null
+}
+
+function baseComponents(block: BlockAttr, figure?: FigureFor): Components {
   return {
-  p: ({ node, children }) => <p {...block(node)} className="my-4 leading-relaxed">{children}</p>,
+  p: ({ node, children }) => {
+    // An image alone in its paragraph that the pack draws itself replaces the paragraph, so the
+    // pack's figure may hold block content (a <p> cannot) and still carry the comment anchor.
+    const img = figure ? soleImage(node) : null
+    const F = img ? figure!(img.src, img.alt) : undefined
+    if (img && F) {
+      return (
+        <div {...block(node)} data-nospeak data-artifact-figure>
+          <F src={img.src} alt={img.alt} />
+        </div>
+      )
+    }
+    return <p {...block(node)} className="my-4 leading-relaxed">{children}</p>
+  },
   ul: ({ node, children }) => <ul {...block(node)} className="my-4 list-disc space-y-1 pl-6">{children}</ul>,
   ol: ({ node, children }) => <ol {...block(node)} className="my-4 list-decimal space-y-1 pl-6">{children}</ol>,
   hr: () => <hr className="my-10 border-[color:var(--a-line)]" />,
@@ -124,15 +153,24 @@ function baseComponents(block: BlockAttr): Components {
     <th className="border-b border-[color:var(--a-line-strong)] px-3 py-2 text-left font-semibold text-[color:var(--a-strong)]">{children}</th>
   ),
   td: ({ children }) => <td className="border-b border-[color:var(--a-line)] px-3 py-2 align-top">{children}</td>,
-  img: ({ src, alt }) =>
-    typeof src === 'string' && VIDEO.test(src) ? (
+  img: ({ src, alt }) => {
+    const F = typeof src === 'string' ? figure?.(src, alt ?? '') : undefined
+    if (F) {
+      return (
+        <span data-nospeak data-artifact-figure className="block">
+          <F src={src as string} alt={alt ?? ''} />
+        </span>
+      )
+    }
+    return typeof src === 'string' && VIDEO.test(src) ? (
       <InlineVideo src={src} label={alt ?? ''} />
     ) : typeof src === 'string' && AUDIO.test(src) ? (
       <InlineAudio src={src} label={alt ?? ''} />
     ) : (
       // eslint-disable-next-line @next/next/no-img-element
       <img src={typeof src === 'string' ? src : undefined} alt={alt ?? ''} className="my-6 w-full rounded-lg border border-[color:var(--a-line)]" />
-    ),
+    )
+  },
   a: ({ href, children }) =>
     !isReachableHref(href) ? (
       <span>{children}</span>
@@ -218,7 +256,7 @@ const HEADING_CLASS: Record<number, string> = {
 
 /** Components for any page: every heading gets its slug as an id, the one headingsOf derived,
  *  so a contents link and a note both land on it. */
-function pageComponents(headings: Heading[], block: BlockAttr): Components {
+function pageComponents(headings: Heading[], block: BlockAttr, figure?: FigureFor): Components {
   const byLine = new Map(headings.map((h) => [h.line, h]))
   const heading = (depth: 1 | 2 | 3 | 4 | 5 | 6): Components['h1'] =>
     function Heading({ node, children }) {
@@ -226,14 +264,14 @@ function pageComponents(headings: Heading[], block: BlockAttr): Components {
       const h = byLine.get(node?.position?.start.line ?? -1)
       return <Tag id={h?.slug} {...block(node)} className={HEADING_CLASS[depth]}>{children}</Tag>
     }
-  return { ...baseComponents(block), h1: heading(1), h2: heading(2), h3: heading(3), h4: heading(4), h5: heading(5), h6: heading(6) }
+  return { ...baseComponents(block, figure), h1: heading(1), h2: heading(2), h3: heading(3), h4: heading(4), h5: heading(5), h6: heading(6) }
 }
 
 /** Components for a page with a notes block: every heading gets its slug as an id, a note
  *  control, and its notes after it. The heading is found by its source line, so the slug is the
  *  one headingsOf derived, the same one a note stores. */
-function notesComponents(headings: Heading[], block: BlockAttr): Components {
-  const components = baseComponents(block)
+function notesComponents(headings: Heading[], block: BlockAttr, figure?: FigureFor): Components {
+  const components = baseComponents(block, figure)
   const byLine = new Map(headings.map((h) => [h.line, h]))
   const heading = (depth: 1 | 2 | 3 | 4 | 5 | 6): Components['h1'] =>
     function NotedHeading({ node, children }) {
@@ -258,6 +296,66 @@ function notesComponents(headings: Heading[], block: BlockAttr): Components {
   }
 }
 
+/** The page's top-level sections: every heading among the body's top-level blocks at the
+ *  shallowest depth any of them uses. Headings inside lists or quotes never start a section. */
+export function sectionOutline(markdown: string, headings: Heading[] = headingsOf(markdown)): SectionOutline[] {
+  const tree = unified().use(remarkParse).use(remarkGfm).parse(markdown) as Root
+  const tops = tree.children.filter((n): n is Extract<RootContent, { type: 'heading' }> => n.type === 'heading')
+  if (!tops.length) return []
+  const depth = Math.min(...tops.map((h) => h.depth))
+  const byLine = new Map(headings.map((h) => [h.line, h]))
+  return tops
+    .filter((h) => h.depth === depth)
+    .map((h, index) => {
+      const known = byLine.get(h.position?.start.line ?? -1)
+      return { index, depth, text: known?.text ?? '', slug: known?.slug ?? '' }
+    })
+}
+
+/** Groups the root's blocks into one node per top-level section (a heading at `depth` and what
+ *  follows it up to the next), so the renderer can hand each to the pack's Section. The blocks
+ *  keep their positions, so comment anchors and heading slugs are exactly what they were. */
+function remarkSections(depth: number) {
+  return () => (tree: Root) => {
+    const out: RootContent[] = []
+    let body: { children: RootContent[] } | null = null
+    let i = 0
+    for (const n of tree.children) {
+      if (n.type === 'heading' && n.depth === depth) {
+        body = { children: [] }
+        const b = { type: 'artifactSectionBody', data: { hName: 'div', hProperties: { dataArtifactSectionBody: '' } }, children: body.children }
+        out.push({ type: 'artifactSection', data: { hName: 'section', hProperties: { dataArtifactSection: String(i++) } }, children: [n, b] } as unknown as RootContent)
+      } else if (body) body.children.push(n)
+      else out.push(n)
+    }
+    tree.children = out
+  }
+}
+
+function sectionComponent(Section: ComponentType<SectionProps>, outline: SectionOutline[], block: BlockAttr): Components['section'] {
+  return function ArtifactSection({ node, children }) {
+    const i = Number((node?.properties as Record<string, unknown> | undefined)?.dataArtifactSection)
+    const o = outline[i]
+    // Not one of ours (a raw <section> never reaches here: raw HTML is escaped).
+    if (!o) return <section>{children}</section>
+    const [heading, body] = Children.toArray(children).filter(isValidElement) as ReactElement<{ children?: ReactNode; node?: Positioned }>[]
+    return (
+      <Section
+        index={i}
+        count={outline.length}
+        outline={outline}
+        text={o.text}
+        slug={o.slug}
+        heading={heading}
+        headingContent={heading?.props.children}
+        headingAttrs={{ id: o.slug, ...block(heading?.props.node) }}
+      >
+        {body?.props.children}
+      </Section>
+    )
+  }
+}
+
 // The term is text with a dotted underline; the description copy is visually hidden and out of
 // flow (absolute), so it takes no room in the line. Neither ever changes size: the definition
 // that opens is drawn by DefinitionLayer on document.body.
@@ -278,8 +376,14 @@ export function ArtifactMarkdown({
   markdown,
   notes,
   definitions,
+  Section,
+  figure,
 }: {
   markdown: string
+  /** The pack's section component (BrandPack.Section): each top-level section is drawn through it. */
+  Section?: ComponentType<SectionProps>
+  /** The pack's figure resolver (BrandPack.figure). */
+  figure?: FigureFor
   notes?: { artifactId: string; accent?: string }
   /** Terms to define inline (front matter `definitions:`): the first occurrence of each is underlined. */
   definitions?: Definition[]
@@ -292,11 +396,12 @@ export function ArtifactMarkdown({
     return id ? { 'data-block': id } : {}
   }
   const defined = definitions?.length ? definitions : null
+  const outline = Section ? sectionOutline(markdown, headings) : []
+  const plugins = [remarkGfm, ...(defined ? [remarkDefinitions(defined)] : []), ...(outline.length ? [remarkSections(outline[0].depth)] : [])]
+  const components = on ? notesComponents(headings, block, figure) : pageComponents(headings, block, figure)
+  if (outline.length) components.section = sectionComponent(Section!, outline, block)
   const body = (
-    <ReactMarkdown
-      remarkPlugins={defined ? [remarkGfm, remarkDefinitions(defined)] : [remarkGfm]}
-      components={on ? notesComponents(headings, block) : pageComponents(headings, block)}
-    >
+    <ReactMarkdown remarkPlugins={plugins} components={components}>
       {markdown}
     </ReactMarkdown>
   )
