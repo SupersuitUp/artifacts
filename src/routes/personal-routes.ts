@@ -12,7 +12,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { ARTIFACT_ID_RE } from './ids.js'
 import { GRANT_COOKIE, decide, signInUrl, verifyGrant } from '../artifacts/reader.js'
 import { isUnlocked, unlockCookieName } from '../artifacts/unlock.js'
-import { validatePersonal, type PersonalStore } from '../artifacts/personal-store.js'
+import { personalAudioDir, validatePersonal, type PersonalStore } from '../artifacts/personal-store.js'
+import { isPersonalAudioPath } from '../artifacts/audio.js'
 import type { ArtifactStore } from '../artifacts/store.js'
 import type { ReadersStore } from '../artifacts/readers-store.js'
 
@@ -24,6 +25,8 @@ export type PersonalRoutesContext = {
   pageUrl: (id: string) => string
   signInOrigin?: string
   siteUrl: string
+  /** A signed URL to play one of the reader's own recordings. */
+  audioUrl?: (id: string, path: string) => Promise<string>
 }
 type Params = { params: Promise<{ id: string }> }
 const MAX_BODY = 16 * 1024
@@ -52,7 +55,13 @@ export function createPersonalRoutes(ctx: PersonalRoutesContext) {
     return { id, uid: reader.uid, personal: ctx.personal }
   }
 
-  const list = async (o: { id: string; uid: string; personal: PersonalStore }) => json({ notes: await o.personal.list(o.id, o.uid) })
+  // Each note with a recording carries a signed URL to play it, issued to its owner here and nowhere else.
+  const list = async (o: { id: string; uid: string; personal: PersonalStore }) => {
+    const notes: (Awaited<ReturnType<PersonalStore['list']>>[number] & { audioUrl?: string })[] = await o.personal.list(o.id, o.uid)
+    const dir = personalAudioDir(o.uid)
+    if (ctx.audioUrl) for (const n of notes) if (isPersonalAudioPath(n.value.audio, dir)) n.audioUrl = await ctx.audioUrl(o.id, n.value.audio)
+    return json({ notes })
+  }
   // A write carries the reader's cookies; a browser always names its Origin on one, so a foreign one is refused.
   const foreign = (req: NextRequest) => { const origin = req.headers.get('origin'); return origin !== null && origin !== siteOrigin }
 
@@ -79,6 +88,8 @@ export function createPersonalRoutes(ctx: PersonalRoutesContext) {
     if ('error' in o) return o.error
     const v = validatePersonal(b.value)
     if (!v.ok) return json({ error: v.error }, 400)
+    // A note's recording is one this reader uploaded as a personal note: never a comment's, never another reader's.
+    if (v.value.audio !== undefined && !isPersonalAudioPath(v.value.audio, personalAudioDir(o.uid))) return json({ error: 'a note\'s audio is the path its upload returned' }, 400)
     if (b.entry !== undefined) {
       if (typeof b.entry !== 'string' || !(await o.personal.replace(o.id, o.uid, b.entry, v.value))) return json({ error: 'no note of yours with that id' }, 404)
       return list(o)

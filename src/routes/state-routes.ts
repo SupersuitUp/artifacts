@@ -16,6 +16,7 @@ import { GRANT_COOKIE, decide, firstName, signInUrl, verifyGrant, type Reader } 
 import { isUnlocked, unlockCookieName } from '../artifacts/unlock.js'
 import { ANON_WRITES_PER_MINUTE, MAX_ENTRIES_PER_SLOT, checkValue, effectiveWriters, slotVisibility } from '../artifacts/state.js'
 import { COMMENTS_SLOT, validateComment, type CommentValue } from '../artifacts/comments.js'
+import { isCommentAudioPath } from '../artifacts/audio.js'
 import { readerKeyFor, type StateStore, type Writer } from '../artifacts/state-store.js'
 import { NOTES_SLOT, checkNoteValue, hasNotesWidget } from '../artifacts/widgets.js'
 import { responsesCsv, responsesOf, stateView } from '../artifacts/state-view.js'
@@ -50,6 +51,9 @@ export type StateRoutesContext = {
   /** The page owner's sign-in email. Signed in as them, a page's comments show every entry with
    *  full names, whatever `comments_visible:` says. */
   ownerEmail?: string
+  /** A signed URL to play a comment's recording. Called only for `comments/` paths, and only for
+   *  comments the asker is already being shown. Without it a recording has no play control. */
+  audioUrl?: (id: string, path: string) => Promise<string>
 }
 type Params = { params: Promise<{ id: string }> }
 
@@ -90,6 +94,17 @@ export function createStateRoutes(ctx: StateRoutesContext) {
 
   const writerFor = (r: Reader): Writer => ({ key: readerKeyFor.signedIn(r.uid), uid: r.uid, email: r.email, name: r.name, anonymous: false })
 
+  /** Beside each comment row with a recording, a signed URL to play it. Only ever a `comments/`
+   *  path: a personal recording can never be named by a comment, and is never signed here. */
+  async function withAudioUrls<T extends { value: unknown }>(id: string, rows: T[]): Promise<T[]> {
+    if (!ctx.audioUrl) return rows
+    for (const r of rows) {
+      const audio = (r.value as { audio?: unknown } | null)?.audio
+      if (isCommentAudioPath(audio)) (r as T & { audioUrl?: string }).audioUrl = await ctx.audioUrl(id, audio)
+    }
+    return rows
+  }
+
   async function viewBody(a: ArtifactRecord, reader: Reader | null, readerKey: string | null) {
     const allow = reader && ctx.readers && a.access ? await ctx.readers.allowList(a.id) : []
     const entries = await ctx.state!.entries(a.id)
@@ -100,6 +115,11 @@ export function createStateRoutes(ctx: StateRoutesContext) {
       slots[COMMENTS_SLOT].shared = entries.filter((e) => e.slot === COMMENTS_SLOT)
         .sort((x, y) => x.at.localeCompare(y.at) || x.id.localeCompare(y.id))
         .map((e) => ({ id: e.id, name: e.writer.name?.trim() || 'a reader', value: e.value, at: e.at, mine: e.readerKey === readerKey }))
+    }
+    if (commentsOn(a) && slots[COMMENTS_SLOT]) {
+      const v = slots[COMMENTS_SLOT]
+      await withAudioUrls(a.id, Array.isArray(v.mine) ? (v.mine as { value: unknown }[]) : [])
+      await withAudioUrls(a.id, v.shared ?? [])
     }
     return {
       reader: reader ? { firstName: firstName(reader, allow) } : null,
@@ -212,6 +232,9 @@ export function createStateRoutes(ctx: StateRoutesContext) {
         const seen = await visibleComments(a, writer.key, reader)
         const c = validateComment(b.value, (cid) => seen.get(cid) ?? null)
         if (!c.ok) return json({ error: c.error }, 400)
+        // A shared comment's recording is one uploaded as a comment, never a path elsewhere under the
+        // page: naming a personal recording here would get it signed for the publisher.
+        if (c.value.audio !== undefined && !isCommentAudioPath(c.value.audio)) return json({ error: 'a comment\'s audio is the path its upload returned' }, 400)
         // An edit keeps the comment where it is in its thread: a reply stays a reply to the same one.
         if (op === 'replace' && seen.has(entryId!) && (seen.get(entryId!)!.parent ?? null) !== (c.value.parent ?? null))
           return json({ error: 'an edit cannot move a comment into or out of a thread' }, 400)
@@ -256,6 +279,8 @@ export function createStateRoutes(ctx: StateRoutesContext) {
     const rows = responsesOf(await ctx.state.entries(id))
     if (req.nextUrl.searchParams.get('format') === 'csv')
       return new NextResponse(responsesCsv(rows), { headers: { 'content-type': 'text/csv; charset=utf-8', 'cache-control': 'no-store' } })
+    // The publisher hears a shared comment's recording from here; the rows are signed in place.
+    await withAudioUrls(id, rows.filter((r) => r.slot === COMMENTS_SLOT))
     return json({ id, title: a.title, responses: rows })
   }
 

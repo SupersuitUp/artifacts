@@ -12,13 +12,18 @@
 // `base` is the artifacts collection path (`tenants/<id>/artifacts`), the same base the readers
 // store uses, so each tenant's notes sit beside its own pages. A reader who is not signed in keeps
 // notes on their device instead (reader/device-notes.ts): those never reach any server at all.
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import type { Firestore } from 'firebase-admin/firestore'
 import { validateComment, type CommentValue } from './comments.js'
 
 export type PersonalNoteValue = Omit<CommentValue, 'parent'>
 export type PersonalNote = { id: string; value: PersonalNoteValue; at: string; updatedAt?: string }
 export const MAX_PERSONAL_PER_READER = 500
+
+/** The directory a signed-in reader's voice-note recordings live in under a page: derived from
+ *  their uid, so a path names its owner without spelling out an account id, and a route can tell
+ *  in one comparison whether a recording is the asker's own. */
+export const personalAudioDir = (readerUid: string) => createHash('sha256').update(`personal-audio|${readerUid}`).digest('hex').slice(0, 24)
 
 export interface PersonalStore {
   list(artifactId: string, readerUid: string): Promise<PersonalNote[]>

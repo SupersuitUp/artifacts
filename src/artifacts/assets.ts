@@ -4,6 +4,7 @@
 // could do, so every operator gets the same door: PUT bytes with their key, get a URL back.
 import { createHash } from 'node:crypto'
 import type { Bucket } from '@google-cloud/storage'
+import { MAX_AUDIO_BYTES } from './audio.js'
 
 export interface ArtifactAssets {
   /** Store `bytes` for artifact `id` under `name`; return the public URL. */
@@ -16,6 +17,19 @@ export interface ArtifactAssets {
   signUpload?(id: string, name: string, digest: string, contentType: string): Promise<{ uploadUrl: string; headers: Record<string, string>; url: string }>
   /** After a signed upload: make it readable and return its URL, or null if nothing arrived. */
   finishUpload?(id: string, name: string, digest: string): Promise<string | null>
+
+  // READERS' VOICE MEMOS. Never made public: every read is a short-lived signed URL, issued only
+  // where the route already shows the comment or note the recording belongs to. `path` is under
+  // the page (`comments/<memo>.webm`, `personal/<dir>/<memo>.m4a`), checked by the route first.
+  // All four are optional; a host without them keeps memos on the reader's device.
+  /** A signed URL a reader PUTs one recording to, at most MAX_AUDIO_BYTES. */
+  signAudioUpload?(id: string, path: string, contentType: string): Promise<{ uploadUrl: string; headers: Record<string, string> }>
+  /** After the PUT: the stored size, or null if nothing arrived. */
+  audioSize?(id: string, path: string): Promise<number | null>
+  /** The recording's bytes, for the transcriber; null when there is none. */
+  readAudio?(id: string, path: string): Promise<Buffer | null>
+  /** A signed URL to play the recording, valid for about an hour. */
+  audioUrl?(id: string, path: string): Promise<string>
 }
 
 /** The digest half of a stored name: the first 8 hex of the bytes' sha256. */
@@ -115,6 +129,38 @@ export function createArtifactAssets(bucket: Bucket, prefix: string): ArtifactAs
         // uniform bucket access: already public
       }
       return `https://storage.googleapis.com/${bucket.name}/${key}`
+    },
+    // The size cap rides in the signature (`x-goog-content-length-range`), so the bucket itself
+    // refuses an oversize body; the browser must send the returned headers verbatim.
+    async signAudioUpload(id, path, contentType) {
+      const range = `0,${MAX_AUDIO_BYTES}`
+      const headers = { 'content-type': contentType, 'cache-control': 'private, max-age=3600', 'x-goog-content-length-range': range }
+      const [uploadUrl] = await bucket.file(`${clean}/${id}/${path}`).getSignedUrl({
+        version: 'v4',
+        action: 'write',
+        expires: Date.now() + 15 * 60 * 1000,
+        contentType,
+        extensionHeaders: { 'cache-control': headers['cache-control'], 'x-goog-content-length-range': range },
+      })
+      return { uploadUrl, headers }
+    },
+    async audioSize(id, path) {
+      const file = bucket.file(`${clean}/${id}/${path}`)
+      const [there] = await file.exists()
+      if (!there) return null
+      const [meta] = await file.getMetadata()
+      return Number(meta.size ?? 0)
+    },
+    async readAudio(id, path) {
+      const file = bucket.file(`${clean}/${id}/${path}`)
+      const [there] = await file.exists()
+      if (!there) return null
+      const [bytes] = await file.download()
+      return bytes
+    },
+    async audioUrl(id, path) {
+      const [url] = await bucket.file(`${clean}/${id}/${path}`).getSignedUrl({ version: 'v4', action: 'read', expires: Date.now() + 60 * 60 * 1000 })
+      return url
     },
   }
 }

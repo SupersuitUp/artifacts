@@ -37,6 +37,7 @@ import { AckDoor, ConfidentialBanner, NO_PRINT_CSS, NotAllowedDoor, SignInDoor, 
 import { ARTIFACT_ID_RE } from './ids.js'
 import { createStateRoutes } from './state-routes.js'
 import { createPersonalRoutes } from './personal-routes.js'
+import { createVoiceRoutes } from './voice-routes.js'
 import type { PersonalStore } from '../artifacts/personal-store.js'
 import type { Transcriber } from '../artifacts/transcribe.js'
 
@@ -122,11 +123,18 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
   const readerSecret = () => config.readerSecret?.()
   const signOutUrl = (id: string) => `/api/reader/leave?to=${encodeURIComponent(pagePath(id))}`
   const shareCardUrl = (id: string, updatedAt: string) => `${pageUrl(id)}/share.png?v=${encodeURIComponent(updatedAt)}`
+  // Readers' recordings are played through short-lived signed URLs, issued only beside the comment
+  // or note they belong to; a host whose assets cannot sign them shows no play control.
+  const audioUrl = config.assets?.audioUrl ? (id: string, path: string) => config.assets!.audioUrl!(id, path) : undefined
   const stateRoutes = createStateRoutes({
     store, state: config.state, readers: config.readers, readerSecret, publishKey: config.publishKey, pageUrl, signInOrigin, siteUrl,
-    clientIp: config.clientIp, ownerEmail: config.ownerEmail,
+    clientIp: config.clientIp, ownerEmail: config.ownerEmail, audioUrl,
   })
-  const personalRoutes = createPersonalRoutes({ store, personal: config.personal, readers: config.readers, readerSecret, pageUrl, signInOrigin, siteUrl })
+  const personalRoutes = createPersonalRoutes({ store, personal: config.personal, readers: config.readers, readerSecret, pageUrl, signInOrigin, siteUrl, audioUrl })
+  const voiceRoutes = createVoiceRoutes({
+    store, state: config.state, personal: config.personal, readers: config.readers, assets: config.assets, transcribe: config.transcribe,
+    readerSecret, pageUrl, signInOrigin, siteUrl, clientIp: config.clientIp,
+  })
 
   async function generateMetadata({ params }: Params): Promise<Metadata> {
     const { id } = await params
@@ -630,6 +638,19 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
    * bytes never arrived. 501 on a host whose assets cannot sign, so the publisher falls back.
    */
   async function UPLOAD(request: NextRequest, { params }: { params: Promise<{ id: string; name: string }> }) {
+    const raw = await request.text().catch(() => '')
+    let body: { digest?: unknown; done?: unknown; audio?: unknown } = {}
+    try {
+      const parsed: unknown = raw.length <= 4096 ? JSON.parse(raw) : null
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) body = parsed as typeof body
+    } catch {
+      body = {}
+    }
+    // A reader's voice memo: the reader's own doors, never the publish key (voice-routes.ts).
+    if (body.audio !== undefined) {
+      const { id, name } = await params
+      return voiceRoutes.readerUpload(request, id, name, body)
+    }
     if (!isPublishAuthed(request, config.publishKey())) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     const assets = config.assets
     if (!assets?.signUpload || !assets.finishUpload) return NextResponse.json({ error: 'this host does not take direct uploads' }, { status: 501 })
@@ -639,7 +660,6 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     if (!ASSET_NAME.test(name)) return NextResponse.json({ error: 'asset name must be one path segment: letters, digits, dot, dash, underscore' }, { status: 400 })
     const type = contentTypeFor(name)
     if (!type) return NextResponse.json({ error: 'asset type not allowed; use webp, png, jpg, gif, mp3, mp4 or json' }, { status: 415 })
-    const body = (await request.json().catch(() => ({}))) as { digest?: unknown; done?: unknown }
     const digest = typeof body.digest === 'string' ? body.digest : ''
     if (!ASSET_DIGEST.test(digest)) return NextResponse.json({ error: 'digest must be the first 8 hex of the sha256 of the bytes' }, { status: 400 })
     if (body.done === true) {
@@ -687,5 +707,5 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     return NextResponse.json({ deleted: true })
   }
 
-  return { Page, generateMetadata, VersionPage, generateVersionMetadata, VERSIONS, POST, GET, DELETE, PUT_ASSET, UPLOAD, SHARE_IMAGE, ENTER, LEAVE, TRACK, ACK, ACCESS, READS, ...stateRoutes, ...personalRoutes, dynamic: 'force-dynamic' as const, maxDuration: 30 }
+  return { Page, generateMetadata, VersionPage, generateVersionMetadata, VERSIONS, POST, GET, DELETE, PUT_ASSET, UPLOAD, SHARE_IMAGE, ENTER, LEAVE, TRACK, ACK, ACCESS, READS, TRANSCRIBE: voiceRoutes.TRANSCRIBE, ...stateRoutes, ...personalRoutes, dynamic: 'force-dynamic' as const, maxDuration: 30 }
 }
