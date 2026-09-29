@@ -7,6 +7,7 @@
 // Everything drawn here carries data-nospeak: narration reads the prose, never the notes, and
 // the read-along highlighter skips the same nodes. Notes are shown as text, never as markup.
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
+import { NO_ZOOM_FONT } from '../reader/no-zoom.js'
 import { MAX_NOTE_CHARS, NOTES_SLOT, placeNotes, type PlacedNote } from '../artifacts/notes-place.js'
 
 type Ctx = {
@@ -164,6 +165,7 @@ function NoteForm({ slug, heading, c }: { slug: string; heading: string; c: Ctx 
       <textarea
         value={text}
         onChange={(e) => setText(e.target.value)}
+        style={NO_ZOOM_FONT}
         maxLength={MAX_NOTE_CHARS}
         rows={3}
         aria-label={`A note on ${heading}`}

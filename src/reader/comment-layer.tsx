@@ -27,6 +27,7 @@ import { AudioPlay, hostVoice, newMemoId, type VoiceHost } from './voice-recorde
 import { deviceAudio as defaultDeviceAudio, isDeviceAudio, type DeviceAudio } from './device-audio.js'
 import { audioExtFor } from '../artifacts/audio.js'
 import { themeVarsAround } from './theme-vars.js'
+import { NO_ZOOM_FONT } from './no-zoom.js'
 import { addDeviceNote, deviceNotes, removeDeviceNote, replaceDeviceNote } from './device-notes.js'
 import { boxOf, headingAt, indexText, offsetAt, placeAnchor, regionFrom } from './comment-place.js'
 
@@ -538,7 +539,7 @@ function InlineForm({ label, initial = '', accent = 'currentColor', onSubmit, on
   return (
     <form className="mt-2" onSubmit={async (e) => { e.preventDefault(); if (text.trim()) setError(await onSubmit(text.trim())) }}>
       <textarea value={text} autoFocus rows={2} onChange={(e) => setText(e.target.value)} aria-label={label}
-        className="w-full rounded-lg border border-[color:var(--a-line)] bg-transparent p-2 text-[15px]" />
+        className="w-full rounded-lg border border-[color:var(--a-line)] bg-transparent p-2" style={NO_ZOOM_FONT} />
       {error ? <p role="alert" className="text-xs text-amber-500">{error}</p> : null}
       <div className="mt-1 flex gap-3 text-xs">
         <button type="submit" disabled={!text.trim()} className="rounded-full px-3 py-0.5 font-medium disabled:opacity-40" style={{ background: accent, color: 'var(--a-on-accent, #111)' }}>{label}</button>

@@ -9,6 +9,7 @@
 // you speak, then the host's transcript when the recording stops, unless you have edited the box
 // since, in which case your words win. With neither, the memo is kept and the box stays empty.
 import { useRef, useState, type FormEvent } from 'react'
+import { NO_ZOOM_FONT } from './no-zoom.js'
 import { MAX_COMMENT_CHARS, type CommentValue, type CommentsMode } from '../artifacts/comments.js'
 import { VoiceRecorder, type VoiceHost, type VoiceMemo, type VoiceScope } from './voice-recorder.js'
 
@@ -99,6 +100,7 @@ export function CommentCard({
       <textarea
         value={text}
         autoFocus
+        style={NO_ZOOM_FONT}
         onChange={(e) => { setText(e.target.value); edited.current = true; setTranscript('typed') }}
         onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) void submit() }}
         maxLength={MAX_COMMENT_CHARS}
