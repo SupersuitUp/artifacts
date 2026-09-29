@@ -3,6 +3,26 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.13.0 (2026-09-28)
+
+**A publisher can hear about new comments, and every comment has a link to itself.**
+
+- `COMMENTS_FEED`: `GET /api/comments?since=<ISO with zone>`, publish key only. Shared comments
+  across the tenant's pages, oldest first, at most 200, `at > since`: `{ now, comments: [{
+  artifactId, title, entryId, parent, name, quote, region, body, transcript, audioUrl, at, link }] }`.
+  `name` null means an anonymous reader. Personal notes never appear (the privacy test calls it).
+  Comments on deleted pages are left out. Callers keep the last row's `at` as their cursor and
+  use `now` only on a first run.
+- Deep link: `/<id>#comment-<entryId>` scrolls to the comment and opens its thread, on load and
+  on `hashchange`; a reply opens its parent's thread; an earlier-versions comment is highlighted.
+- New optional `StateStore.slotSince(slot, after, limit)`; a store without it answers 501.
+- DETECTOR: a host with no `/api/comments` route.
+- REMEDY: bump; add `app/api/comments/route.ts` delegating GET to `COMMENTS_FEED`; create the
+  Firestore composite index on `<base>State` (collection scope): `slot` ascending, `at` ascending.
+- Tests: `comments-feed.test.tsx`, five deep-link tests, the privacy test, and the packed
+  fixture reading a comment back through the feed. Since-exclusivity, the slot filter, the
+  personal-note exclusion, reply-to-parent and the hashchange listener are mutation-checked.
+
 ## 0.12.1 (2026-09-28)
 
 **Tapping into a comment box no longer zooms the page on iPhone.** iOS Safari zooms the page
