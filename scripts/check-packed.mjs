@@ -12,7 +12,7 @@
 // So: pack, unpack into test/fixture/node_modules/@supersuit/artifacts (peers resolve from this
 // repo's node_modules, as they would from a host's), `next build` the fixture, check the trace
 // carries the font, then `next start` it and fetch a page, a share card and a route handler.
-import { execFileSync, spawn } from 'node:child_process'
+import { execFileSync, spawn, spawnSync } from 'node:child_process'
 import { mkdirSync, rmSync, readFileSync, existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
@@ -36,9 +36,14 @@ for (const bad of paths.filter((p) => /\.test\.|^src\/|^test\//.test(p))) fail(`
 if (!paths.includes('fonts/Newsreader-600.ttf')) fail('tarball has no fonts/Newsreader-600.ttf')
 const reader = readFileSync(join(dest, 'lib/reader/artifact-reader.js'), 'utf8')
 if (!/^['"]use client['"]/.test(reader)) fail("compiled reader lost its 'use client' directive")
-for (const f of ['browser-reader.js', 'player-bar.js', 'comment-layer.js', 'comment-card.js']) {
+for (const f of ['player-bar.js', 'comment-layer.js', 'comment-card.js']) {
   if (!/^['"]use client['"]/.test(readFileSync(join(dest, 'lib/reader', f), 'utf8'))) fail(`compiled ${f} lost its 'use client' directive`)
 }
+// GUARD: nothing the package ships may speak with the browser's own voice.
+const scan = spawnSync('grep', ['-rl', 'speechSynthesis', join(dest, 'lib')], { encoding: 'utf8' })
+if (scan.status === 2) fail(`could not scan the package: ${scan.stderr}`)
+const speakers = scan.stdout.trim()
+if (speakers) fail(`the package speaks with the browser voice: ${speakers}`)
 const notesJs = readFileSync(join(dest, 'lib/widgets/notes.js'), 'utf8')
 if (!/^['"]use client['"]/.test(notesJs)) fail("compiled notes widget lost its 'use client' directive")
 console.log(`check-packed: ${filename}, ${paths.length} files`)
@@ -66,9 +71,10 @@ try {
   const html = await page.text()
   if (page.status !== 200 || !html.includes('Fixture')) fail(`page answered ${page.status}`)
   if ((html.match(/data-defined-term="harness"/g) ?? []).length !== 1) fail('the defined term is not underlined exactly once')
-  // The fixture page has no narration, so the browser read-aloud mounts (hidden until the client
-  // finds speechSynthesis), and the recorded player does not.
-  if (!html.includes('data-artifact-reader="browser"') || html.includes('<audio')) fail('the un-narrated page does not mount the browser read-aloud')
+  // GUARD: the fixture page has no narration, so it has NO player at all. A page is read by the
+  // audio recorded at publish (Kokoro, or ElevenLabs on request) or not read; never by the
+  // browser's own voice (the operator, 2026-09-29: "NEVER PUT DEFAULT SAFARI VOICE DICTATION").
+  if (html.includes('data-artifact-reader') || html.includes('<audio')) fail('the un-narrated page mounts a player')
 
   // Version history: the page names its version and carries the History control; a past version
   // renders under its banner at its own URL; a version that does not exist is a 404.

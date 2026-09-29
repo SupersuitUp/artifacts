@@ -106,6 +106,21 @@ describe('artifact store', () => {
     expect(await getArtifact(r.id)).toBeNull()
     expect(await deleteArtifact(r.id)).toBe(false)
   })
+  it('audio is kept across a republish that does not mention it, and `voice: none` removes it', async () => {
+    const audio = { voice: 'freedom', narration: 'https://cdn.example.com/n.mp3', timings: 'https://cdn.example.com/n.json', narrationHash: 'h' }
+    const r = await saveArtifact({ meta: { ...meta, ...audio }, markdown: 'b' })
+    if ('notFound' in r) throw new Error('unexpected')
+    await saveArtifact({ id: r.id, meta, markdown: 'b2' })
+    expect((await getArtifact(r.id))?.narration).toBe(audio.narration)
+    await saveArtifact({ id: r.id, meta: { ...meta, voice: 'none' }, markdown: 'b3' })
+    const off = await getArtifact(r.id)
+    expect([off?.voice, off?.narration, off?.timings, off?.narrationHash]).toEqual([undefined, undefined, undefined, undefined])
+  })
+  it('a new page with `voice: none` stores no voice', async () => {
+    const r = await saveArtifact({ meta: { ...meta, voice: 'none' }, markdown: 'b' })
+    if ('notFound' in r) throw new Error('unexpected')
+    expect((await getArtifact(r.id))?.voice).toBeUndefined()
+  })
   it('a state config rides through, and a re-publish without one clears it', async () => {
     const state = { writers: 'anyone' as const, visibility: 'private' as const, slots: { vote: { shape: 'one' as const } } }
     const r = await saveArtifact({ meta: { ...meta, state }, markdown: 'b' })

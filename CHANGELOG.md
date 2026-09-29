@@ -3,6 +3,28 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.18.0 (2026-09-29)
+
+**No page is ever read by the browser's own voice, and a page can turn its audio off.** 0.10.0
+made a page with no recorded narration read itself with `speechSynthesis`, which on a phone is
+Safari's built-in voice. The operator heard it on a letter going to a partner: *"NEVER PUT
+DEFAULT SAFARI VOICE DICTATION. ALWAYS KOKORO OR IF I WANT TO SPEND MONEY 11LABS."* A page is
+now read by the audio recorded at publish, or it has no player at all.
+
+And *"add ability to disable audio"*: `voice: none` on a republish removes the page's stored
+narration, timings and hash, so the player goes too. Before this, an update merged fields, so a
+recording survived every republish that did not mention it and there was no way to take it off.
+
+- Removed: `BrowserReader`, `planSentences`, `wordAt`, `sentenceOf`, `fromWord`,
+  `MAX_SENTENCE_WORDS` from `./reader`. Nothing in a host should have mounted them directly.
+- DETECTOR: an un-narrated page that shows a player bar, or any `speechSynthesis` in `lib/`.
+- REMEDY: bump. To silence a page, republish it with `voice: none` (a publisher that sends it;
+  Freedom's publish-artifact does from the release after this).
+- Tests: route GUARDs that an un-narrated page, and one whose timings fail, mount no reader; store
+  tests that audio survives a silent republish and `voice: none` clears it; `check-packed` fails if
+  the tarball carries `speechSynthesis` or the fixture page mounts a player. The default-pages
+  golden was regenerated on purpose: the only change is the removed browser-reader element.
+
 ## 0.17.0 (2026-09-29)
 
 **A host can accept a signed, hour-long publisher pass wherever it accepts the publish key.** A

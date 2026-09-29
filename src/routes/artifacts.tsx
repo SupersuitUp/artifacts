@@ -23,7 +23,6 @@ import { showToc, tocOf, TocInline, TocRail } from '../artifacts/toc.js'
 import { renderShareCard } from '../brand/share-card.js'
 import type { BrandPack } from '../brand/pack.js'
 import { ArtifactReader, type WordTiming } from '../reader/artifact-reader.js'
-import { BrowserReader } from '../reader/browser-reader.js'
 import { CommentLayer } from '../reader/comment-layer.js'
 import { ReaderWatch } from '../reader/reader-watch.js'
 import { UpdatedTime } from '../reader/updated-time.js'
@@ -543,10 +542,9 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
             accent={brand.accent}
             ground={brand.ground}
           />
-        ) : (
-          // No recorded narration, or its timings would not load: the browser reads the page.
-          <BrowserReader rootId="artifact-narration-root" accent={brand.accent} ground={brand.ground} />
-        )}
+        ) : null /* No recorded narration: no player. Never the browser's own voice (the operator,
+          2026-09-29: "NEVER PUT DEFAULT SAFARI VOICE DICTATION"); the audio is Kokoro or ElevenLabs,
+          recorded at publish, or there is none. */}
       </>
     )
   }

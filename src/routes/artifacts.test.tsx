@@ -93,9 +93,11 @@ describe('createArtifactRoutes', () => {
     expect(out).toContain('hi')
     expect(out).toContain('data-brand-ground="freedom-default"')
   })
-  it('a page with no narration mounts the browser read-aloud, and no audio player', async () => {
+  it('GUARD: a page with no narration has no player at all, never the browser voice', async () => {
+    // The operator, 2026-09-29: "NEVER PUT DEFAULT SAFARI VOICE DICTATION". A page is read by the
+    // audio recorded at publish (Kokoro, or ElevenLabs on request) or it is not read.
     const out = renderToStaticMarkup(await routes.Page(params('abc23456')))
-    expect(out).toContain('data-artifact-reader="browser"')
+    expect(out).not.toContain('data-artifact-reader')
     expect(out).not.toContain('<audio')
   })
   it('a page with narration and timings mounts the recorded reader, and not the browser one', async () => {
@@ -107,19 +109,18 @@ describe('createArtifactRoutes', () => {
       const out = renderToStaticMarkup(await r.Page(params('abc23456')))
       expect(out).toContain('<audio')
       expect(out).toContain('data-artifact-player')
-      expect(out).not.toContain('data-artifact-reader="browser"')
     } finally {
       globalThis.fetch = real
     }
   })
-  it('a page whose narration timings will not load falls back to the browser read-aloud', async () => {
+  it('GUARD: a page whose narration timings will not load shows no player, never the browser voice', async () => {
     const narrated = { ...rec, narration: 'https://cdn.example.com/n.mp3', timings: 'https://cdn.example.com/n.json' }
     const r = createArtifactRoutes({ store: fakeStore({ get: vi.fn(async () => narrated) }), brand: freedomDefault, siteUrl: 'https://example.com', publishKey: () => 'k' })
     const real = globalThis.fetch
     globalThis.fetch = vi.fn(async () => new Response('gone', { status: 404 })) as typeof fetch
     try {
       const out = renderToStaticMarkup(await r.Page(params('abc23456')))
-      expect(out).toContain('data-artifact-reader="browser"')
+      expect(out).not.toContain('data-artifact-reader')
       expect(out).not.toContain('<audio')
     } finally {
       globalThis.fetch = real

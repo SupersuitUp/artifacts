@@ -202,7 +202,7 @@ async function saveArtifact(col: Col, input: SaveInput): Promise<SaveResult> {
     ...(input.meta.to ? { to: input.meta.to } : {}),
     ...(input.meta.audience ? { audience: input.meta.audience } : {}),
     ...(input.meta.cover ? { cover: input.meta.cover } : {}),
-    ...(input.meta.voice ? { voice: input.meta.voice } : {}),
+    ...(input.meta.voice && input.meta.voice !== 'none' ? { voice: input.meta.voice } : {}),
     ...(input.meta.narration ? { narration: input.meta.narration } : {}),
     ...(input.meta.timings ? { timings: input.meta.timings } : {}),
     ...(input.meta.narrationHash ? { narrationHash: input.meta.narrationHash } : {}),
@@ -264,8 +264,13 @@ async function saveArtifact(col: Col, input: SaveInput): Promise<SaveResult> {
       ...(input.meta.comments ? {} : { comments: FieldValue.delete() }),
       ...(input.meta.commentsVisible ? {} : { commentsVisible: FieldValue.delete() }),
     }
+    // `voice: none` is the page declaring it has no audio. An update merges, so the recording it
+    // had would otherwise survive every republish; clear it on purpose, and the player goes with it.
+    const audio = input.meta.voice === 'none'
+      ? { voice: FieldValue.delete(), narration: FieldValue.delete(), timings: FieldValue.delete(), narrationHash: FieldValue.delete() }
+      : {}
     await ref.update({
-      ...fields, ...password, ...subtitle, ...to, ...access, ...state, ...look, markdown: input.markdown, version: next,
+      ...fields, ...password, ...subtitle, ...to, ...access, ...state, ...look, ...audio, markdown: input.markdown, version: next,
       // `updatedAt` is when this version went live; finishing its own publish does not move it.
       ...(fresh || input.markdown !== existing.markdown ? { updatedAt: now } : {}),
       note: nextNote ?? FieldValue.delete(),
