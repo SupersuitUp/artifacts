@@ -3,6 +3,20 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.14.0 (2026-09-28)
+
+**A page can say who it is for.** `to: Isaiah` in front matter reads "For Isaiah" in three
+places: after the kicker on the page (not spoken), in the link preview's title ("For Isaiah:
+<title>", og:title, twitter:title and <title>), and as a line above the title on the share card.
+1 to 60 characters, one line; a republish without it clears it. Past versions keep the name they
+were published with. `audience:` is unchanged: stored, never shown.
+
+- DETECTOR: a page with `to:` whose preview does not name the reader.
+- REMEDY: bump; publishers must forward `to`.
+- Tests: parse and refusals, store round trip and clear-on-omit, the kicker on open, password,
+  gated and version pages, the three metadata titles, the share card markup and PNG, narration
+  leaving the name out. Metadata title, share card prop and clear-on-omit mutation-checked.
+
 ## 0.13.0 (2026-09-28)
 
 **A publisher can hear about new comments, and every comment has a link to itself.**
