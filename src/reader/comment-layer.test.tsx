@@ -190,3 +190,21 @@ describe('CommentLayer', () => {
     expect(document.querySelector('[data-comment-pin]')?.getAttribute('data-comment-pin')).toBe('personal')
   })
 })
+
+// The overlay is portalled onto document.body, outside the element the page's theme variables
+// are set on, so without carrying them the chip and the Comment button drew with no colours:
+// dark text on a dark page (found live on 2026-09-28).
+describe('theme', () => {
+  it('the portalled overlay carries the page theme variables from around the root', async () => {
+    stubStorage(); stubFetch()
+    document.documentElement.style.setProperty('--a-accent', '#c2a15c')
+    document.documentElement.style.setProperty('--a-on-accent', '#101010')
+    document.documentElement.style.setProperty('--a-surface', '#222')
+    await mount()
+    const ui = document.querySelector<HTMLElement>('body > [data-comment-ui]') ?? document.querySelector<HTMLElement>('[data-comment-ui]')!
+    expect(ui.style.getPropertyValue('--a-accent')).toBe('#c2a15c')
+    expect(ui.style.getPropertyValue('--a-on-accent')).toBe('#101010')
+    expect(ui.style.getPropertyValue('--a-surface')).toBe('#222')
+    for (const v of ['--a-accent', '--a-on-accent', '--a-surface']) document.documentElement.style.removeProperty(v)
+  })
+})

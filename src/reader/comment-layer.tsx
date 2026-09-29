@@ -17,12 +17,13 @@
 //
 // Rendered empty on the server and on the first client render so the markup always hydrates; the
 // overlay is portalled onto document.body so its coordinates are page coordinates.
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { MAX_QUOTE_CHARS, textAnchorFrom, type Anchor } from '../artifacts/anchor.js'
 import { COMMENTS_SLOT, type CommentValue, type CommentsMode } from '../artifacts/comments.js'
 import type { PersonalNote } from '../artifacts/personal-store.js'
 import { CommentCard } from './comment-card.js'
+import { themeVarsAround } from './theme-vars.js'
 import { addDeviceNote, deviceNotes, removeDeviceNote, replaceDeviceNote } from './device-notes.js'
 import { boxOf, headingAt, indexText, offsetAt, placeAnchor, regionFrom } from './comment-place.js'
 
@@ -91,6 +92,7 @@ export function CommentLayer({
   const [thread, setThread] = useState<string | null>(null)
   const [drag, setDrag] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null)
   const [tick, setTick] = useState(0)
+  const [theme, setTheme] = useState<Record<string, string>>({})
 
   const call = useCallback(async (url: string, init?: RequestInit) => {
     try {
@@ -101,6 +103,15 @@ export function CommentLayer({
     }
   }, [])
   const refreshDevice = useCallback(() => setDevice(personalFrom(deviceNotes(artifactId), 'device')), [artifactId])
+
+  // The theme the overlay carries, re-read when a `system` page flips between light and dark.
+  useEffect(() => {
+    const read = () => setTheme(themeVarsAround(document.getElementById(rootId)))
+    read()
+    const mq = typeof window.matchMedia === 'function' ? window.matchMedia('(prefers-color-scheme: dark)') : null
+    mq?.addEventListener?.('change', read)
+    return () => mq?.removeEventListener?.('change', read)
+  }, [rootId])
 
   useEffect(() => {
     setMounted(true)
@@ -312,7 +323,7 @@ export function CommentLayer({
   const openItem = open?.item ?? layout.earlier.find((i) => i.id === thread)
   const count = tops.length
   const overlay: ReactNode = mounted ? (
-    <div data-comment-ui data-nospeak className="font-sans">
+    <div data-comment-ui data-nospeak className="font-sans" style={theme as CSSProperties}>
       {showPins ? layout.placed.map(({ item, left, top, box }) => (
         <div key={item.id}>
           {box ? (
