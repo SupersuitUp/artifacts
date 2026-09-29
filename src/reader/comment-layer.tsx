@@ -15,6 +15,10 @@
 // deep and only on shared comments. Everything drawn here is data-nospeak and data-comment-ui, so
 // the read-aloud never reads it and the text index never counts it.
 //
+// A link to `#comment-<entryId>` (what the publisher's notification carries) lands on the comment:
+// on load and on every hashchange the pin is scrolled into view and its thread opened; a reply's
+// id opens its parent's thread; a comment on an earlier version is scrolled to and highlighted.
+//
 // Rendered empty on the server and on the first client render so the markup always hydrates; the
 // overlay is portalled onto document.body so its coordinates are page coordinates.
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
@@ -38,6 +42,9 @@ type RawRow = { id?: unknown; name?: unknown; value?: unknown; at?: unknown; min
 const isValue = (v: unknown): v is CommentValue =>
   !!v && typeof v === 'object' && typeof (v as CommentValue).body === 'string' && !!(v as CommentValue).anchor && typeof (v as CommentValue).anchor === 'object'
 const LONG_PRESS_MS = 400
+const HASH = /^#comment-([A-Za-z0-9_-]{1,128})$/
+/** The entry id a `#comment-<id>` hash names, or null. */
+const commentHashId = (hash: string): string | null => HASH.exec(hash)?.[1] ?? null
 const DRAG_PX = 8
 /** Where a drag never starts a box: controls, and anything that is somebody's words. */
 const NOT_FOR_BOXES = 'a, button, input, textarea, select, audio, video[controls], summary, label, [data-comment-ui], [data-note-toggle], [data-heading-notes], [data-artifact-notes], .artifact-defined-term, .artifact-word'
@@ -109,6 +116,11 @@ export function CommentLayer({
   const [drag, setDrag] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null)
   const [tick, setTick] = useState(0)
   const [theme, setTheme] = useState<Record<string, string>>({})
+  /** The comment the address names, until it has been found and shown. */
+  const [target, setTarget] = useState<string | null>(null)
+  const [highlight, setHighlight] = useState<string | null>(null)
+  /** A selector to scroll into view once the render that draws it has committed. */
+  const [scrollTo, setScrollTo] = useState<string | null>(null)
 
   const call = useCallback(async (url: string, init?: RequestInit) => {
     try {
@@ -269,6 +281,14 @@ export function CommentLayer({
     }
   }, [rootId])
 
+  // The address names a comment: on load, and every time the hash changes while the page is open.
+  useEffect(() => {
+    const read = () => { const id = commentHashId(window.location.hash); if (id) setTarget(id) }
+    read()
+    window.addEventListener('hashchange', read)
+    return () => window.removeEventListener('hashchange', read)
+  }, [])
+
   const items = useMemo(() => [...shared, ...serverNotes, ...device], [shared, serverNotes, device])
   const tops = useMemo(() => items.filter((i) => !i.value.parent || !items.some((p) => p.id === i.value.parent)), [items])
 
@@ -298,6 +318,35 @@ export function CommentLayer({
     return { placed, earlier }
     // `tick` re-measures after a resize.
   }, [mounted, rootId, tops, tick]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Show the comment the address names once it has loaded: a reply is shown in its parent's thread.
+  // Held until the comments arrive; an id that never arrives (deleted, or not this reader's to see)
+  // simply does nothing.
+  useEffect(() => {
+    if (!target || !mounted) return
+    const item = items.find((i) => i.id === target)
+    if (!item) return
+    const parent = item.value.parent ? items.find((i) => i.id === item.value.parent) : undefined
+    const id = (parent ?? item).id
+    setTarget(null)
+    if (layout.placed.some((p) => p.item.id === id)) {
+      setShowPins(true)
+      setHighlight(null)
+      setThread(id)
+      setScrollTo(`[data-comment-pin][data-comment-id="${id}"]`)
+    } else if (layout.earlier.some((i) => i.id === id)) {
+      setThread(null)
+      setHighlight(id)
+      setScrollTo(`[data-comment-earlier-id="${id}"]`)
+    }
+  }, [target, mounted, items, layout])
+
+  // Effects run after the DOM is committed, so the pin or list item drawn for the target is there.
+  useEffect(() => {
+    if (!scrollTo) return
+    document.querySelector(scrollTo)?.scrollIntoView?.({ block: 'center', behavior: 'smooth' })
+    setScrollTo(null)
+  }, [scrollTo])
 
   /** The recording's path for where it is being saved: reused when the card already uploaded it
    *  there, uploaded now when the reader switched between Share and Just for me after recording. */
@@ -439,7 +488,9 @@ export function CommentLayer({
           <p className="text-[11px] uppercase tracking-[0.2em]" style={{ color: accent }}>Comments on earlier versions</p>
           <ul className="m-0 mt-2 grid list-none gap-3 p-0">
             {layout.earlier.map((item) => (
-              <li key={item.id} className="m-0 border-l-2 py-1 pl-3" style={{ borderColor: accent, borderStyle: item.kind === 'personal' ? 'dashed' : 'solid' }}>
+              <li key={item.id} data-comment-earlier-id={item.id} {...(highlight === item.id ? { 'data-comment-highlight': '' } : {})}
+                className="m-0 border-l-2 py-1 pl-3"
+                style={{ borderColor: accent, borderStyle: item.kind === 'personal' ? 'dashed' : 'solid', ...(highlight === item.id ? { background: `color-mix(in srgb, ${accent} 14%, transparent)` } : {}) }}>
                 {item.value.anchor.kind === 'text' ? <span className="block text-[13px] italic opacity-70">“{item.value.anchor.quote}”</span> : <span className="block text-[13px] italic opacity-70">A box on part of the page that has changed</span>}
                 <span className="block whitespace-pre-wrap text-[15px] text-[color:var(--a-strong)]">{item.value.body}</span>
                 <span className="block text-xs opacity-60">

@@ -208,3 +208,88 @@ describe('theme', () => {
     for (const v of ['--a-accent', '--a-on-accent', '--a-surface']) document.documentElement.style.removeProperty(v)
   })
 })
+
+// A notification's link lands on the comment itself: /<id>#comment-<entryId> scrolls to its pin
+// and opens its thread; a reply's opens its parent's; one on an earlier version is highlighted.
+describe('deep link', () => {
+  const SHARED: Row[] = [
+    { id: 's1', name: 'Sam', value: value(text('river', 'The ', ' runs north'), 'Which river?'), at: '2026-09-28T00:00:00Z' },
+    { id: 'r1', name: 'Jo', value: value(text('river', 'The ', ' runs north'), 'The north one.', { parent: 's1' }), at: '2026-09-28T00:00:01Z' },
+    { id: 's2', name: 'Kit', value: value(text('floods'), 'Every year?'), at: '2026-09-28T00:00:02Z' },
+    { id: 's3', name: 'Ada', value: value(text('a sentence that was cut'), 'Gone now'), at: '2026-09-28T00:00:03Z' },
+  ]
+  let scrolled: Element[]
+  beforeEach(() => {
+    stubStorage()
+    scrolled = []
+    Element.prototype.scrollIntoView = function (this: Element) { scrolled.push(this) } as never
+  })
+  afterEach(() => {
+    delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView
+    history.replaceState(null, '', location.pathname)
+  })
+  const hash = (h: string) => history.replaceState(null, '', `${location.pathname}${h}`)
+  const settle = () => act(async () => { await new Promise((r) => setTimeout(r, 0)) })
+
+  it('on load, scrolls the pin into view and opens its thread', async () => {
+    hash('#comment-s2')
+    stubFetch({ shared: SHARED })
+    await mount({ comments: 'anyone', canShare: true })
+    await settle()
+    const thread = document.querySelector('[data-comment-thread]')
+    expect(thread?.textContent).toContain('Every year?')
+    expect(scrolled.map((e) => e.getAttribute('data-comment-id'))).toContain('s2')
+  })
+
+  it('a reply\'s link opens its parent\'s thread, with the reply in it', async () => {
+    hash('#comment-r1')
+    stubFetch({ shared: SHARED })
+    await mount({ comments: 'anyone', canShare: true })
+    await settle()
+    const thread = document.querySelector('[data-comment-thread]')!
+    expect(thread.textContent).toContain('Which river?')
+    expect(thread.textContent).toContain('The north one.')
+    expect(scrolled.map((e) => e.getAttribute('data-comment-id'))).toContain('s1')
+  })
+
+  it('a comment on an earlier version is scrolled to and highlighted in that list', async () => {
+    hash('#comment-s3')
+    stubFetch({ shared: SHARED })
+    await mount({ comments: 'anyone', canShare: true })
+    await settle()
+    const li = document.querySelector('[data-comment-earlier-id="s3"]')!
+    expect(li.hasAttribute('data-comment-highlight')).toBe(true)
+    expect(document.querySelector('[data-comment-earlier-id][data-comment-highlight]:not([data-comment-earlier-id="s3"])')).toBeNull()
+    expect(scrolled).toContain(li)
+    expect(document.querySelector('[data-comment-thread]')).toBeNull()
+  })
+
+  it('a hashchange after load does the same, and an unknown id does nothing', async () => {
+    stubFetch({ shared: SHARED })
+    await mount({ comments: 'anyone', canShare: true })
+    expect(document.querySelector('[data-comment-thread]')).toBeNull()
+    hash('#comment-nope')
+    await act(async () => { window.dispatchEvent(new HashChangeEvent('hashchange')) })
+    await settle()
+    expect(document.querySelector('[data-comment-thread]')).toBeNull()
+    expect(scrolled).toEqual([])
+    hash('#comment-s1')
+    await act(async () => { window.dispatchEvent(new HashChangeEvent('hashchange')) })
+    await settle()
+    expect(document.querySelector('[data-comment-thread]')?.textContent).toContain('Which river?')
+    expect(scrolled.map((e) => e.getAttribute('data-comment-id'))).toContain('s1')
+  })
+
+  it('shows the pins again when the reader had hidden them', async () => {
+    stubFetch({ shared: SHARED })
+    await mount({ comments: 'anyone', canShare: true })
+    await act(async () => { document.querySelector<HTMLButtonElement>('[data-comment-button]')!.click() })
+    await act(async () => { document.querySelector<HTMLButtonElement>('[data-comment-pins-toggle]')!.click() })
+    expect(document.querySelectorAll('[data-comment-pin]')).toHaveLength(0)
+    hash('#comment-s2')
+    await act(async () => { window.dispatchEvent(new HashChangeEvent('hashchange')) })
+    await settle()
+    expect(document.querySelector('[data-comment-id="s2"]')).not.toBeNull()
+    expect(document.querySelector('[data-comment-thread]')?.textContent).toContain('Every year?')
+  })
+})
