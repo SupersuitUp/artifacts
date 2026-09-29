@@ -1,4 +1,4 @@
-import { createArtifactRoutes, createMemoryStateStore, freedomDefault, type ArtifactRecord, type ArtifactStore } from '@supersuit/artifacts'
+import { createArtifactRoutes, createMemoryPersonalStore, createMemoryStateStore, freedomDefault, type ArtifactRecord, type ArtifactStore } from '@supersuit/artifacts'
 
 const store: ArtifactStore = {
   get: async (id): Promise<ArtifactRecord | null> => (id === 'abc23456'
@@ -14,7 +14,14 @@ const store: ArtifactStore = {
           createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z', versions: [], views: 0,
           state: { writers: 'anyone', visibility: 'shared', slots: { notes: { shape: 'many' } } },
         }
-      : null),
+      : id === 'cmt23456'
+        ? {
+            id, title: 'Comments', summary: 'S', template: 'document', markdown: '## Findings\n\nThe river runs north.\n',
+            createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z', version: 1, views: 0,
+            comments: 'anyone', commentsVisible: 'owner',
+            state: { writers: 'signed-in', visibility: 'private', slots: { comments: { shape: 'many', visibility: 'private', writers: 'anyone' } } },
+          }
+        : null),
   save: async () => ({ id: 'abc23456', version: 1, created: true }),
   delete: async () => true,
   bumpViews: async () => {},
@@ -29,4 +36,5 @@ const store: ArtifactStore = {
 export const artifacts = createArtifactRoutes({
   store, brand: freedomDefault, siteUrl: 'http://localhost', publishKey: () => 'k',
   state: createMemoryStateStore(),
+  personal: createMemoryPersonalStore(),
 })

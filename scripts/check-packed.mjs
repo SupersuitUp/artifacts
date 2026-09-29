@@ -36,7 +36,7 @@ for (const bad of paths.filter((p) => /\.test\.|^src\/|^test\//.test(p))) fail(`
 if (!paths.includes('fonts/Newsreader-600.ttf')) fail('tarball has no fonts/Newsreader-600.ttf')
 const reader = readFileSync(join(dest, 'lib/reader/artifact-reader.js'), 'utf8')
 if (!/^['"]use client['"]/.test(reader)) fail("compiled reader lost its 'use client' directive")
-for (const f of ['browser-reader.js', 'player-bar.js']) {
+for (const f of ['browser-reader.js', 'player-bar.js', 'comment-layer.js', 'comment-card.js']) {
   if (!/^['"]use client['"]/.test(readFileSync(join(dest, 'lib/reader', f), 'utf8'))) fail(`compiled ${f} lost its 'use client' directive`)
 }
 const notesJs = readFileSync(join(dest, 'lib/widgets/notes.js'), 'utf8')
@@ -106,7 +106,23 @@ try {
   const nr = await (await fetch(`${base}/api/artifacts/nts23456/state`, { headers: { cookie: ncookie } })).json()
   if (nr.slots?.notes?.shared?.[0]?.value?.note !== 'packed') fail(`notes read back ${JSON.stringify(nr)}`)
 
-  console.log('check-packed: fixture builds; page, version history, share card, publish, state routes and the notes widget answer correctly')
+  // Comments: the page draws the layer with what this reader may do, every block carries its id,
+  // a shared comment posts through the state API and reads back through /responses, and a reader
+  // who is not signed in is told to keep personal notes on the device.
+  const cHtml = await (await fetch(`${base}/cmt23456`)).text()
+  if (!cHtml.includes('data-comment-layer="anyone"') || !cHtml.includes('data-comment-can-share="yes"')) fail('the comments page drew no comment layer')
+  if (!/data-block="b-p-[0-9a-f]{8}"/.test(cHtml)) fail('the page carries no block ids')
+  const comment = { anchor: { kind: 'text', quote: 'river', prefix: 'The ', suffix: ' runs north.' }, body: 'packed comment', version: 1 }
+  const cw = await fetch(`${base}/api/artifacts/cmt23456/state`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-forwarded-for': '203.0.113.11' }, body: JSON.stringify({ slot: 'comments', op: 'append', value: comment }) })
+  if (cw.status !== 200) fail(`a comment answered ${cw.status}`)
+  const cbad = await fetch(`${base}/api/artifacts/cmt23456/state`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-forwarded-for': '203.0.113.11' }, body: JSON.stringify({ slot: 'comments', op: 'append', value: { body: 'no anchor', version: 1 } }) })
+  if (cbad.status !== 400) fail(`a malformed comment answered ${cbad.status}, not 400`)
+  const cr = await (await fetch(`${base}/api/artifacts/cmt23456/responses`, { headers: { authorization: 'Bearer k' } })).json()
+  if (cr.responses?.[0]?.slot !== 'comments' || cr.responses[0].value?.body !== 'packed comment') fail(`responses read back ${JSON.stringify(cr)}`)
+  const pr = await fetch(`${base}/api/artifacts/cmt23456/personal`)
+  if (pr.status !== 401 || (await pr.json()).device !== true) fail(`personal notes for a signed-out reader answered ${pr.status}, not 401 device`)
+
+  console.log('check-packed: fixture builds; page, version history, share card, publish, state routes, the notes widget and comments answer correctly')
 } finally {
   server.kill()
 }
