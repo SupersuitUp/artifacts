@@ -140,3 +140,26 @@ describe('theme and toc', () => {
   })
 })
 
+
+describe('to', () => {
+  const src = (line: string) => `---\ntitle: T\nsummary: S\n${line}\n---\nb`
+  it('names who the page is for, trimmed', () => {
+    const r = parseArtifactSource(src('to: "  Marisol Quint  "'))
+    expect(r.ok && r.meta.to).toBe('Marisol Quint')
+  })
+  it('absent or empty-valued means no one in particular', () => {
+    const none = parseArtifactSource(src('audience: x'))
+    expect(none.ok && 'to' in none.meta).toBe(false)
+    const bare = parseArtifactSource(src('to:'))
+    expect(bare.ok && 'to' in bare.meta).toBe(false)
+  })
+  it('refuses a blank, a non-string, a newline and anything over 60 characters, naming the rule', () => {
+    for (const line of ['to: "   "', 'to: 42', 'to: [a, b]', 'to: "Marisol\\nQuint"', `to: ${'x'.repeat(61)}`]) {
+      const r = parseArtifactSource(src(line))
+      expect(r.ok, line).toBe(false)
+      expect(!r.ok && r.error, line).toBe('to must be one line naming who the page is for, 1 to 60 characters')
+    }
+    const sixty = parseArtifactSource(src(`to: ${'x'.repeat(60)}`))
+    expect(sixty.ok && sixty.meta.to).toBe('x'.repeat(60))
+  })
+})

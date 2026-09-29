@@ -15,6 +15,10 @@ export type ArtifactMeta = {
   /** A line under the title. Title, subtitle and summary are three separate fields; the summary
    *  is the teaser, and the unfurl carries the title and the summary. */
   subtitle?: string
+  /** Who the page is for ("For <name>" in the kicker, the unfurl title and the share card). A
+   *  label, not an access control: a republish without it removes it. Never spoken. Distinct from
+   *  `audience`, which is stored and never shown. */
+  to?: string
   audience?: string
   cover?: string
   id?: string
@@ -53,7 +57,10 @@ export type ArtifactMeta = {
   commentsVisible?: CommentsVisible
 }
 
-const KNOWN = new Set(['title', 'summary', 'subtitle', 'template', 'audience', 'cover', 'id', 'voice', 'narration', 'timings', 'narrationHash', 'password', 'access', 'state', 'theme', 'toc', 'definitions', 'change', 'comments', 'comments_visible'])
+/** The longest `to:` a page may carry: a name or two, never a sentence. */
+export const MAX_TO_CHARS = 60
+
+const KNOWN = new Set(['title', 'summary', 'subtitle', 'to', 'template', 'audience', 'cover', 'id', 'voice', 'narration', 'timings', 'narrationHash', 'password', 'access', 'state', 'theme', 'toc', 'definitions', 'change', 'comments', 'comments_visible'])
 
 export function parseArtifactSource(
   text: string,
@@ -77,6 +84,11 @@ export function parseArtifactSource(
   for (const k of ['subtitle', 'audience', 'cover', 'id', 'voice', 'narration', 'timings', 'narrationHash', 'password'] as const) {
     const v = d[k]
     if (typeof v === 'string' && v) meta[k] = v
+  }
+  if (d.to !== undefined && d.to !== null) {
+    const to = typeof d.to === 'string' ? d.to.trim() : ''
+    if (!to || to.length > MAX_TO_CHARS || /[\r\n]/.test(to)) return { ok: false, error: `to must be one line naming who the page is for, 1 to ${MAX_TO_CHARS} characters` }
+    meta.to = to
   }
   if (d.change !== undefined && d.change !== null) {
     if (typeof d.change !== 'string') return { ok: false, error: 'change must be one line of text' }

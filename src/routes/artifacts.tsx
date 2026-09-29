@@ -136,19 +136,32 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     readerSecret, pageUrl, signInOrigin, siteUrl, clientIp: config.clientIp,
   })
 
+  /** The kicker over every title: the pack's line, then who the page is for. Never spoken: the
+   *  whole paragraph is data-nospeak, and narrationText has no `to` to read. */
+  function Kicker({ to }: { to?: string }) {
+    return (
+      <p data-nospeak className="mb-4 text-[11px] font-medium uppercase tracking-[0.3em]" style={{ color: brand.accent }}>
+        {brand.kicker}
+        {to ? <span data-nospeak data-to>{` · For ${to}`}</span> : null}
+      </p>
+    )
+  }
+
   async function generateMetadata({ params }: Params): Promise<Metadata> {
     const { id } = await params
     const a = ARTIFACT_ID.test(id) ? await store.get(id) : null
     if (!a) return { title: 'Not found', robots: { index: false, follow: false } }
     const url = pageUrl(a.id)
     const image = absolute(a.cover) ?? (brand.share ? shareCardUrl(a.id, a.updatedAt) : absolute(config.defaultShareImage))
+    // Who it is for leads the unfurl, so a thread shows it before the reader opens anything.
+    const title = a.to ? `For ${a.to}: ${a.title}` : a.title
     return {
-      title: a.title,
+      title,
       description: a.summary,
       alternates: { canonical: pagePath(a.id) },
       robots: { index: false, follow: false },
       openGraph: {
-        title: a.title,
+        title,
         description: a.summary,
         url,
         siteName: brand.name,
@@ -157,7 +170,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
       },
       twitter: {
         card: image ? 'summary_large_image' : 'summary',
-        title: a.title,
+        title,
         description: a.summary,
         ...(image ? { images: [image] } : {}),
       },
@@ -217,9 +230,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
       return (
         <BrandGround pack={pack} mode={a.theme}>
           <div className="mx-auto max-w-2xl px-6 pt-24 pb-8 text-center sm:pt-28">
-            <p data-nospeak className="mb-4 text-[11px] font-medium uppercase tracking-[0.3em]" style={{ color: brand.accent }}>
-              {brand.kicker}
-            </p>
+            <Kicker to={a.to} />
             <h1 className="text-4xl sm:text-5xl" style={{ fontFamily: brand.type.display, color: brand.ink }}>
               {a.title}
             </h1>
@@ -258,9 +269,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     const d = config.readers ? decide(a.access!, reader, allow) : ({ open: false, why: 'signed-out' } as const)
     const header = (
       <div className="mx-auto max-w-2xl px-6 pt-24 pb-8 text-center sm:pt-28">
-        <p data-nospeak className="mb-4 text-[11px] font-medium uppercase tracking-[0.3em]" style={{ color: brand.accent }}>
-          {brand.kicker}
-        </p>
+        <Kicker to={a.to} />
         <h1 className="text-4xl sm:text-5xl" style={{ fontFamily: brand.type.display, color: brand.ink }}>
           {a.title}
         </h1>
@@ -352,9 +361,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
           </p>
         </div>
         <div className={`mx-auto max-w-2xl px-6 ${top ? 'pt-10 sm:pt-12' : 'pt-10'} pb-8 text-center`}>
-          <p data-nospeak className="mb-4 text-[11px] font-medium uppercase tracking-[0.3em]" style={{ color: brand.accent }}>
-            {brand.kicker}
-          </p>
+          <Kicker to={v.to} />
           <h1 className="text-4xl sm:text-5xl" style={{ fontFamily: brand.type.display, color: brand.ink }}>
             {title}
           </h1>
@@ -393,9 +400,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
         {toc.length ? <TocRail items={toc} /> : null}
         <div id="artifact-narration-root">
           <div className={`mx-auto max-w-2xl px-6 ${top ? 'pt-24 sm:pt-28' : 'pt-12'} pb-8 text-center`}>
-            <p data-nospeak className="mb-4 text-[11px] font-medium uppercase tracking-[0.3em]" style={{ color: brand.accent }}>
-              {brand.kicker}
-            </p>
+            <Kicker to={a.to} />
             <h1 className="text-4xl sm:text-5xl" style={{ fontFamily: brand.type.display, color: brand.ink }}>
               {a.title}
             </h1>
@@ -677,7 +682,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     if (!brand.share) return new NextResponse('no share card for this host', { status: 404 })
     const a = ARTIFACT_ID.test(id) ? await store.get(id) : null
     if (!a) return new NextResponse(`no artifact with id ${id}`, { status: 404 })
-    return renderShareCard(pack, a.title)
+    return renderShareCard(pack, a.title, { to: a.to })
   }
 
   /** GET|POST /api/artifacts/<id>/versions, publish key: the history, and a note written onto one

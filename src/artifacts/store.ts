@@ -22,6 +22,8 @@ export type ArtifactRecord = {
   summary: string
   template: 'document'
   subtitle?: string
+  /** Who the page is for; see ArtifactMeta.to. */
+  to?: string
   audience?: string
   cover?: string
   voice?: string
@@ -54,7 +56,7 @@ export type ArtifactRecord = {
 export type VersionEntry = { version: number; at: string; note?: string; current?: true }
 /** One version, readable: its body and the title it carried (absent on versions filed before
  *  0.7.0, which kept only the body; the page's current title stands in). */
-export type VersionRecord = VersionEntry & { markdown: string; title?: string; subtitle?: string; summary?: string }
+export type VersionRecord = VersionEntry & { markdown: string; title?: string; subtitle?: string; to?: string; summary?: string }
 
 /** A change note is one line: whitespace collapsed, capped, empty means none. */
 export const MAX_CHANGE_NOTE_CHARS = 280
@@ -149,7 +151,7 @@ async function versionOf(col: Col, id: string, n: number): Promise<VersionRecord
   const cur = currentOf(a)
   if (n === cur) {
     return { version: n, at: a.updatedAt, markdown: a.markdown, title: a.title, summary: a.summary, current: true,
-      ...(a.subtitle ? { subtitle: a.subtitle } : {}), ...(a.note ? { note: a.note } : {}) }
+      ...(a.subtitle ? { subtitle: a.subtitle } : {}), ...(a.to ? { to: a.to } : {}), ...(a.note ? { note: a.note } : {}) }
   }
   if (n > cur) return null
   if (a.versions) {
@@ -195,6 +197,7 @@ async function saveArtifact(col: Col, input: SaveInput): Promise<SaveResult> {
     summary: input.meta.summary,
     template: input.meta.template,
     ...(input.meta.subtitle ? { subtitle: input.meta.subtitle } : {}),
+    ...(input.meta.to ? { to: input.meta.to } : {}),
     ...(input.meta.audience ? { audience: input.meta.audience } : {}),
     ...(input.meta.cover ? { cover: input.meta.cover } : {}),
     ...(input.meta.voice ? { voice: input.meta.voice } : {}),
@@ -231,7 +234,7 @@ async function saveArtifact(col: Col, input: SaveInput): Promise<SaveResult> {
       await history.doc(vid(current)).set({
         version: current, markdown: existing.markdown, at: existing.updatedAt,
         title: existing.title, summary: existing.summary,
-        ...(existing.subtitle ? { subtitle: existing.subtitle } : {}), ...(existing.note ? { note: existing.note } : {}),
+        ...(existing.subtitle ? { subtitle: existing.subtitle } : {}), ...(existing.to ? { to: existing.to } : {}), ...(existing.note ? { note: existing.note } : {}),
       })
     }
     const next = fresh ? current + 1 : current
@@ -240,6 +243,8 @@ async function saveArtifact(col: Col, input: SaveInput): Promise<SaveResult> {
     const password = input.meta.password ? {} : { password: FieldValue.delete() }
     // A subtitle the file no longer carries is gone from the page, like any other content.
     const subtitle = input.meta.subtitle ? {} : { subtitle: FieldValue.delete() }
+    // Who it is for is a label on the content, never an access control: absent clears it.
+    const to = input.meta.to ? {} : { to: FieldValue.delete() }
     // Access is the opposite of password on purpose: absent leaves it alone, and only an explicit
     // `access: public` opens the page. Reopening a confidential page must never be a side effect.
     const access = input.meta.access === 'public' ? { access: FieldValue.delete() } : {}
@@ -256,7 +261,7 @@ async function saveArtifact(col: Col, input: SaveInput): Promise<SaveResult> {
       ...(input.meta.commentsVisible ? {} : { commentsVisible: FieldValue.delete() }),
     }
     await ref.update({
-      ...fields, ...password, ...subtitle, ...access, ...state, ...look, markdown: input.markdown, version: next,
+      ...fields, ...password, ...subtitle, ...to, ...access, ...state, ...look, markdown: input.markdown, version: next,
       // `updatedAt` is when this version went live; finishing its own publish does not move it.
       ...(fresh || input.markdown !== existing.markdown ? { updatedAt: now } : {}),
       note: nextNote ?? FieldValue.delete(),

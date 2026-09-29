@@ -28,8 +28,9 @@ export function titleSize(title: string): number {
   return 52
 }
 
-export function ShareCard({ pack, title, fontName, backdrop }: { pack: BrandPack; title: string; fontName: string; backdrop?: string }) {
+export function ShareCard({ pack, title, to, fontName, backdrop }: { pack: BrandPack; title: string; to?: string; fontName: string; backdrop?: string }) {
   const size = titleSize(title)
+  const kicker = { display: 'flex', fontSize: 22, letterSpacing: 5, textTransform: 'uppercase', color: pack.accent, fontWeight: 500 } as const
   return (
     <div
       style={{
@@ -44,18 +45,18 @@ export function ShareCard({ pack, title, fontName, backdrop }: { pack: BrandPack
         fontFamily: fontName,
       }}
     >
-      <div style={{ display: 'flex', fontSize: 22, letterSpacing: 5, textTransform: 'uppercase', color: pack.accent, fontWeight: 500 }}>
-        {pack.kicker}
-      </div>
+      <div style={kicker}>{pack.kicker}</div>
+      {/* Who the page is for, in the kicker's own style: a second kicker line, never a title. */}
+      {to ? <div style={{ ...kicker, marginTop: 12, lineHeight: 1.4 }}>{`For ${to}`}</div> : null}
       <div style={{ display: 'flex', marginTop: 28, fontSize: size, lineHeight: 1.18, maxWidth: 980, lineClamp: 3 }}>{title}</div>
     </div>
   )
 }
 
 /** A 1200x630 PNG for one page. Caller has already checked `pack.share` exists. */
-export async function renderShareCard(pack: BrandPack, title: string): Promise<Response> {
+export async function renderShareCard(pack: BrandPack, title: string, opts: { to?: string } = {}): Promise<Response> {
   const { font, backdrop } = await assetsFor(pack)
-  return new ImageResponse(<ShareCard pack={pack} title={title} fontName={font.name} backdrop={backdrop} />, {
+  return new ImageResponse(<ShareCard pack={pack} title={title} to={opts.to} fontName={font.name} backdrop={backdrop} />, {
     width: SHARE_W,
     height: SHARE_H,
     fonts: [{ name: font.name, data: font.data, weight: font.weight as 600, style: 'normal' }],

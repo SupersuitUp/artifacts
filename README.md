@@ -149,9 +149,10 @@ summary: Three bets, what each costs, and what we stop doing to afford them.
 | `title` (required) | The large line, and the unfurl title |
 | `summary` (required) | The italic teaser under it, and the unfurl description |
 | `subtitle` | A line between the two. A republish without it removes it |
+| `to` | Who the page is for, e.g. `to: Marisol`. Shows as "For Marisol" after the kicker, leads the unfurl title ("For Marisol: <title>") and gets its own line on the share card. Never read aloud, and not an access control. One line, 1 to 60 characters; a republish without it removes it |
+| `audience` | Free text stored with the page, never shown |
 | `id` | Republish in place instead of minting a new page |
 | `cover` | An image URL (absolute or site-relative) used as the unfurl image instead of the share card |
-| `audience` | Free text stored with the page |
 | `voice`, `narration`, `timings`, `narrationHash` | Read-aloud: the audio and word timings a publisher generated. Absent (or the timings will not load), the page is read by the browser's own voice instead, lighting the same words; a browser with no `speechSynthesis` shows no player |
 | `password` | Shuts the body behind a door (below) |
 | `access` | `freedom`, `invite` or `public`: a confidential page (below) |

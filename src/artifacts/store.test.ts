@@ -226,5 +226,15 @@ describe('version history', () => {
     expect(after?.comments).toBeUndefined()
     expect(after?.commentsVisible).toBeUndefined()
   })
+  it('to rides through, is kept with its version, and a re-publish without it clears it', async () => {
+    const r = await saveArtifact({ meta: { ...meta, to: 'Marisol' }, markdown: 'b' })
+    if ('notFound' in r) throw new Error('unexpected')
+    expect((await getArtifact(r.id))?.to).toBe('Marisol')
+    expect(await store.version!(r.id, 1)).toMatchObject({ to: 'Marisol', current: true })
+    await saveArtifact({ id: r.id, meta, markdown: 'b2' })
+    expect((await getArtifact(r.id))?.to).toBeUndefined()
+    expect(await store.version!(r.id, 1)).toMatchObject({ version: 1, to: 'Marisol' })
+    expect(await store.version!(r.id, 2)).not.toHaveProperty('to')
+  })
 })
 
