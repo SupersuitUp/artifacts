@@ -3,6 +3,38 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.11.0 (2026-09-28)
+
+**Comment on any part of a page.** Select text, or drag a box over anything that is not text
+(an image, a table, a heading), and a comment card opens pinned to that spot. Pins sit in the
+margin; a toggle hides them. Threads take one level of replies.
+
+- **Shared comments** are per page: `comments: anyone | signed-in | off` (default `off`) and
+  `comments_visible: owner | readers` (default `owner`). They ride the state core as a `many`
+  slot named `comments`, so caps, rate limits, CSRF, sign-in migration and the agreement gate on
+  confidential pages apply unchanged. A gated page forces `signed-in`. The owner, signed in with
+  `ownerEmail`, sees every comment with names on the page; `/responses` returns them.
+- **Personal notes** work on every page, for every reader. When a reader cannot share, the card
+  says before they type: "Only you will see this. <owner> has not opened this page to comments,
+  so this is a personal note. They won't see it." Signed-in readers' notes are stored in a new
+  store no publisher route reads; anonymous readers' notes never leave the device.
+- **Anchors survive a republish**: text by quote plus 32 characters of context, regions by a
+  content-hashed block id (`data-block` on every rendered block) and fractions of that block.
+  A comment whose spot is gone is listed under "Comments on earlier versions".
+- State API: `op: replace` edits your own entry (optional `StateStore.replace`; a store without
+  it answers 501); deleting someone else's comment answers 404. Slots gained an internal
+  per-slot `writers` so `comments: anyone` can sit beside signed-in-only answers.
+- DETECTOR: a host on 0.10.x.
+- REMEDY: bump; pass `personal: createPersonalStore(db, base)`, `ownerEmail`, and add
+  `app/api/artifacts/[id]/personal/route.ts` delegating to `PERSONAL_GET`, `PERSONAL_POST`,
+  `PERSONAL_DELETE`. Without `personal`, signed-in readers' notes stay on their device.
+- Tests: anchors (re-find after insertions, duplicates and deletions; block ids stable across
+  unrelated edits), comment validation, replies, owner view, `comments: off` refusing a write with
+  the UI bypassed, the comment layer and card (the warning line, the share switch, device notes,
+  pins, the earlier-versions list), and `personal-privacy.test.tsx`, which calls every handler the
+  factory returns as publisher, owner and nobody and fails if any of them returns a personal note.
+  The packed fixture posts a comment and reads it back through `/responses`.
+
 ## 0.10.0 (2026-09-28)
 
 **Every page can be read aloud.** A page with no recorded narration, or whose timings will not
