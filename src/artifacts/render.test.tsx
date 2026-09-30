@@ -84,9 +84,20 @@ describe('ArtifactMarkdown', () => {
     expect(out).not.toContain('data-callout')
   })
   it('gives fenced code a copy affordance', () => {
+    // This test named the affordance and only ever checked the hook it hangs on, so the host
+    // shipped without a copy button at all until 2026-09-30. CodeCopy is what draws it.
     const out = html('```bash\nls\n```')
     expect(out).toContain('<pre')
     expect(out).toContain('data-artifact-code')
+  })
+  it('wraps a fence, because most of them hold prose written as one long line per paragraph', () => {
+    // Without this a 7 KB paste-in block rendered 9,089px wide with every line clipped.
+    const out = html('```\n' + 'word '.repeat(400) + '\n```')
+    expect(out).toContain('whitespace-pre-wrap')
+  })
+  it('mounts the copy behaviour only when the page actually has a fence', () => {
+    expect(html('```bash\nls\n```')).toContain('data-artifact-code')
+    expect(html('just a paragraph, no fence')).not.toContain('data-artifact-code')
   })
 
   describe('the notes widget', () => {

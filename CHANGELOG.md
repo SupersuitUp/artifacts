@@ -3,6 +3,32 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.19.0 (2026-09-30)
+
+**A code block has a copy button, and it wraps.** Both were found on one page: an operator
+published a setup page to open on somebody else's laptop, where a paste-in briefing WAS the page,
+and there was nothing to press and nothing readable to select. The block rendered 9,089px wide
+with every line clipped at the right edge, because a fence here usually holds prose written as
+one long line per paragraph and `white-space: pre` does not wrap those.
+
+`render.test.tsx` had a case called *gives fenced code a copy affordance* that only ever checked
+for the `data-artifact-code` attribute the affordance would hang on, so the host shipped with the
+hook and no button and the suite stayed green.
+
+- New client component `CodeCopy` (`reader/code-copy.js`), mounted by `ArtifactMarkdown` only when
+  the markdown holds a fence. It reads the `<code>`, never `pre.textContent`, so its own label
+  does not land in the paste, and it falls back to a hidden textarea where `navigator.clipboard`
+  is undefined, which is any page served over plain http.
+- Fences render `whitespace-pre-wrap [overflow-wrap:anywhere]` with `pr-16` to clear the button.
+  Soft wrapping inserts no characters, so what a reader copies is byte for byte what was written.
+- DETECTOR: open any page with a fenced block. No button in its top-right corner, or a long line
+  running off the right edge, means this version is not deployed.
+- REMEDY: bump.
+- Tests: one copy button per block and it copies that block; the label stays out of the paste;
+  the no-clipboard fallback; nothing added twice and everything removed on unmount; the fence
+  carries `whitespace-pre-wrap`; and the mount happens only when a fence is present. The wrap
+  test is red against 0.18.1.
+
 ## 0.18.1 (2026-09-29)
 
 **On a phone, the Comment button sits at the top of the screen.** It used to appear just under

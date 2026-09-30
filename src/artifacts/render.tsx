@@ -14,6 +14,7 @@ import type { FigureProps, SectionOutline, SectionProps } from '../brand/pack.js
 import { blocksOf, hasNotesWidget, headingsOf, type Heading } from './widgets.js'
 import { HeadingNotes, NoteToggle, NotesEarlier, NotesProvider } from '../widgets/notes.js'
 import { VideoAutoplay } from '../reader/video-autoplay.js'
+import { CodeCopy } from '../reader/code-copy.js'
 import { DefinitionLayer } from '../reader/definition-layer.js'
 import { remarkDefinitions, type Definition } from './definitions.js'
 
@@ -88,6 +89,9 @@ const VIDEO = /\.mp4(?:[?#].*)?$/i
  *  nothing until one is pressed. The alt is its caption, shown above the player. */
 const AUDIO = /\.mp3(?:[?#].*)?$/i
 const VIDEO_IN_MD = /\]\([^)\s]+\.mp4(?:[?#][^)]*)?\)/i
+// A fenced block, which `links` and `notes` fences are too; mounting for those costs one
+// no-op effect and is cheaper than parsing the markdown twice to find out.
+const CODE_IN_MD = /^```/m
 const escapeAttr = (s: string) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
 // Written as markup, not JSX: React renders `muted` as a property and leaves it out of server
@@ -209,7 +213,12 @@ function baseComponents(block: BlockAttr, figure?: FigureFor): Components {
       <pre
         {...block(node)}
         data-artifact-code
-        className="my-6 overflow-x-auto rounded-lg border border-[color:var(--a-line)] bg-[color:var(--a-code)] p-4 text-sm text-[color:var(--a-strong)]"
+        // whitespace-pre-wrap, because a fence here usually holds PROSE meant to be pasted
+        // somewhere, written as one long line per paragraph. Under `pre` those lines do not
+        // wrap: a 7 KB briefing rendered as a box 9,089px wide with every line clipped at the
+        // right edge (2026-09-30). Soft wrapping inserts no characters, so what the reader
+        // copies is still byte for byte what the author wrote.
+        className="my-6 overflow-x-auto whitespace-pre-wrap [overflow-wrap:anywhere] rounded-lg border border-[color:var(--a-line)] bg-[color:var(--a-code)] p-4 pr-16 text-sm text-[color:var(--a-strong)]"
       >
         {children}
       </pre>
@@ -414,6 +423,7 @@ export function ArtifactMarkdown({
         </NotesProvider>
       ) : body}
       {VIDEO_IN_MD.test(markdown) ? <VideoAutoplay /> : null}
+      {CODE_IN_MD.test(markdown) ? <CodeCopy /> : null}
       {defined ? (
         <>
           <style>{DEFINED_TERM_CSS}</style>
