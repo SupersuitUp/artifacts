@@ -809,7 +809,14 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     const ok = await store.delete(id)
     if (!ok) return NextResponse.json({ error: `no artifact with id ${id}` }, { status: 404 })
     revalidatePath(pagePath(id))
-    return NextResponse.json({ deleted: true })
+    // The page is gone either way; a bucket failure here is reported, never turned into a 500
+    // that tells the publisher a delete failed when it succeeded.
+    if (!config.assets?.deleteReaderAudio) return NextResponse.json({ deleted: true })
+    try {
+      return NextResponse.json({ deleted: true, recordings: await config.assets.deleteReaderAudio(id) })
+    } catch (e) {
+      return NextResponse.json({ deleted: true, recordings: null, recordingsError: e instanceof Error ? e.message : String(e) })
+    }
   }
 
   return { Page, generateMetadata, VersionPage, generateVersionMetadata, VERSIONS, POST, GET, DELETE, PUT_ASSET, UPLOAD, SHARE_IMAGE, ENTER, LEAVE, TRACK, ACK, ACCESS, READS, TRANSCRIBE: voiceRoutes.TRANSCRIBE, ...stateRoutes, ...personalRoutes, dynamic: 'force-dynamic' as const, maxDuration: 30 }

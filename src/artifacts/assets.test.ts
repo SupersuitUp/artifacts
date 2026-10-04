@@ -28,6 +28,25 @@ describe('artifact assets', () => {
   it('handles a name with no extension rather than corrupting it', () => {
     expect(hashedName('narration', Buffer.from('x'))).toMatch(/^narration\.[0-9a-f]{8}$/)
   })
+  // A deleted page used to leave every reader's voice memo behind in the bucket, forever and
+  // unreachable: the comment rows went with the page, the recordings did not.
+  it('deletes only the page\'s reader recordings, under comments/ and personal/', async () => {
+    const del = vi.fn(async () => {})
+    const listed: Record<string, string[]> = {
+      'tenants/t/artifacts/abc23456/comments/': ['c1.webm', 'c2.webm'],
+      'tenants/t/artifacts/abc23456/personal/': ['h1/n1.m4a'],
+    }
+    const getFiles = vi.fn(async ({ prefix }: { prefix: string }) => [(listed[prefix] ?? []).map((n) => ({ name: prefix + n, delete: del }))])
+    const bucket = { name: 'b', getFiles } as unknown as import('@google-cloud/storage').Bucket
+    const assets = createArtifactAssets(bucket, 'tenants/t/artifacts')
+    expect(await assets.deleteReaderAudio!('abc23456')).toBe(3)
+    expect(getFiles.mock.calls.map((c) => c[0].prefix)).toEqual([
+      'tenants/t/artifacts/abc23456/comments/',
+      'tenants/t/artifacts/abc23456/personal/',
+    ])
+    expect(del).toHaveBeenCalledTimes(3)
+    expect(del).toHaveBeenCalledWith({ ignoreNotFound: true })
+  })
   it('writes under prefix/id/name and returns the public url', async () => {
     const save = vi.fn(async () => {})
     const makePublic = vi.fn(async () => {})
