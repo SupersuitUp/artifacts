@@ -53,6 +53,9 @@ export interface ReadersStore {
   flag(input: { artifactId: string; reader: Reader; kind: FlagKind; detail?: string; country?: string }): Promise<void>
   sessions(artifactId: string): Promise<SessionDoc[]>
   flags(artifactId: string): Promise<FlagDoc[]>
+  /** Every page that has a list, with its list: what a daily sweep walks. Optional, so a store
+   *  written before 0.20.0 still satisfies the interface; without it the sweep finds nothing. */
+  listed?(): Promise<{ artifactId: string; readers: AllowEntry[] }[]>
 }
 
 /** An email as a map key: lowercased, and with the dots Firestore reads as a path escaped. */
@@ -146,6 +149,10 @@ export function createReadersStore(db: Firestore, base: string): ReadersStore {
       const snap = await flags().where('artifactId', '==', artifactId).get()
       return snap.docs.map((d) => d.data() as FlagDoc)
     },
+    async listed() {
+      const snap = await access().get()
+      return snap.docs.map((d) => ({ artifactId: d.id, readers: listOf(d.data()) })).filter((p) => p.readers.length > 0)
+    },
   }
 }
 
@@ -158,6 +165,8 @@ export type ReaderSummary = {
   maxScroll: number
   firstSeen: string
   lastSeen: string
+  /** When their most recent visit began. Later than `firstSeen`'s day means they came back. */
+  lastStarted: string
   flags: { kind: FlagKind; at: string; detail?: string }[]
 }
 
@@ -167,13 +176,14 @@ export function summarize(sessionDocs: SessionDoc[], flagDocs: FlagDoc[]) {
   for (const s of sessionDocs) {
     const r = by.get(s.email) ?? {
       email: s.email, name: s.name, member: s.member, sessions: 0, activeSeconds: 0, maxScroll: 0,
-      firstSeen: s.startedAt, lastSeen: s.lastAt, flags: [],
+      firstSeen: s.startedAt, lastSeen: s.lastAt, lastStarted: s.startedAt, flags: [],
     }
     r.sessions += 1
     r.activeSeconds += s.activeSeconds ?? 0
     r.maxScroll = Math.max(r.maxScroll, s.maxScroll ?? 0)
     if (s.startedAt < r.firstSeen) r.firstSeen = s.startedAt
     if (s.lastAt > r.lastSeen) r.lastSeen = s.lastAt
+    if (s.startedAt > r.lastStarted) r.lastStarted = s.startedAt
     by.set(s.email, r)
   }
   const refused = new Map<string, { email: string; name: string | null; attempts: number; lastAt: string }>()

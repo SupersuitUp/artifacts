@@ -3,6 +3,33 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.20.0 (2026-10-07)
+
+**A host can hear when a confidential page is read.** The reader record answered `GET /reads`
+when asked and told nobody when it changed. One generic hook and one pure function close that,
+and the package still sends nothing anywhere.
+
+- New config `onReaderEvent(event)`: called after a reading heartbeat is recorded (`visit`),
+  after a signed-in person is refused at the door (`refused`, after the refusal is on the
+  record), and for every listed reader of every gated page when the host calls the new
+  `routes.sweepReaders()` (`sweep`, for a daily job). The event carries the page, the reader,
+  their `summary`, their list `entry` (with `addedAt`), and the page's `words` and `readSeconds`.
+  Awaited; anything it throws is swallowed.
+- New pure `readAlertsDue(...)` and helpers (`readSecondsFor`, `wordCount`, `localDay`, the
+  thresholds as constants): first-open, refused, finished (90% scroll AND a third of the reading
+  time at 230 wpm), came-back (a later local day), quiet (listed 3 to 14 days ago, never opened),
+  each once per reader per page, never for `ignore`d addresses. First-open and came-back only
+  fire within a day of the visit, so a host turning alerts on over old history is not flooded.
+- `ReaderSummary` gains `lastStarted`; `ReadersStore` gains optional `listed()` (the Firestore
+  store implements it), so a store written earlier still type-checks.
+- DETECTOR: a host that passes `onReaderEvent` and gets a type error is on 0.19.x.
+- REMEDY: bump. Nothing changes for a host that does not pass the hook: no extra reads, and a
+  refusal is recorded exactly as before.
+- Tests: every alert rule, its once-only guard, the ignore list, the local-day zone, the quiet
+  window; the hook's payload for a beat, a refusal (ordered after the flag) and a sweep; a
+  throwing or rejecting sink costs the reader nothing; no extra reads without the hook. Each rule
+  was broken on purpose and went red.
+
 ## 0.19.0 (2026-09-30)
 
 **A code block has a copy button, and it wraps.** Both were found on one page: an operator

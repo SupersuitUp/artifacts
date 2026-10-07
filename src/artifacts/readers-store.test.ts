@@ -41,3 +41,18 @@ describe('allow', () => {
     expect(calls[0].opts).toBeUndefined()
   })
 })
+
+describe('listed', () => {
+  it('returns every page with a non-empty list, from the Access collection under the base', async () => {
+    const { createReadersStore } = await import('./readers-store.js')
+    const seen: string[] = []
+    const docs = [
+      { id: 'abc23456', data: () => ({ readers: { 'b@example,com': { email: 'b@example.com', addedAt: '2026-10-01T00:00:00Z' } } }) },
+      { id: 'def23456', data: () => ({ readers: {} }) },
+    ]
+    const db = { collection: (path: string) => { seen.push(path); return { get: async () => ({ docs }) } } } as unknown as import('firebase-admin/firestore').Firestore
+    const out = await createReadersStore(db, 'tenants/t/artifact').listed!()
+    expect(seen).toContain('tenants/t/artifactAccess')
+    expect(out).toEqual([{ artifactId: 'abc23456', readers: [{ email: 'b@example.com', addedAt: '2026-10-01T00:00:00Z' }] }])
+  })
+})

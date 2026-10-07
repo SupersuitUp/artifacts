@@ -215,6 +215,32 @@ name, says why they can read it, tiles their address as a faint watermark, and r
 time, scroll depth, and attempts to print, copy at length, or save. Refused sign-ins are
 recorded too, which is how a forwarded link shows up.
 
+### Knowing when it is read (`onReaderEvent`, `readAlertsDue`)
+
+The record answers when asked; `onReaderEvent` is how a host hears that it changed. It is called
+after a reading heartbeat is recorded (`kind: 'visit'`), after a signed-in person is refused at
+the door (`'refused'`, with the account they tried), and for every listed reader when the host
+calls `routes.sweepReaders()` from a daily job (`'sweep'`, so a host can notice a page nobody
+opened). Each event carries the page (id, title, url), the reader, their totals (`summary`, or
+null), their list entry (with `addedAt`), and the page's `words` and `readSeconds` at 230 words a
+minute. It is awaited and anything it throws is swallowed, so a broken sink never costs a reader
+their page. Without it nothing extra is read.
+
+The package sends nothing anywhere. `readAlertsDue({ sent, email, summary, refusedAttempt,
+readSeconds, now, addedAt, timeZone, ignore })` turns one event into the alerts worth sending,
+each at most once per reader per page (pass back what you already sent):
+
+| Kind | When |
+| --- | --- |
+| `first-open` | their first visit, within the last day |
+| `refused` | a refusal at the door, with the account tried |
+| `finished` | scrolled to 90% AND read for a third of the page's reading time |
+| `came-back` | a visit that began on a later local day (in `timeZone`) than the first |
+| `quiet` | listed 3 to 14 days ago and never opened |
+
+Addresses in `ignore` (the publisher's own) never alert. Where an alert goes, and how a host
+remembers what it sent, is the host's business.
+
 ### The reader pass (the contract with your sign-in side)
 
 This package does not sign anyone in. It sends readers to your sign-in authority and trusts a

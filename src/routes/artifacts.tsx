@@ -32,6 +32,7 @@ import {
   type Access, type Reader,
 } from '../artifacts/reader.js'
 import { FLAG_KINDS, summarize, type FlagKind, type ReadersStore } from '../artifacts/readers-store.js'
+import { readSecondsFor, wordCount, type ReaderEvent } from '../artifacts/read-alerts.js'
 import { AckDoor, ConfidentialBanner, NO_PRINT_CSS, NotAllowedDoor, SignInDoor, Watermark, ackText } from '../artifacts/confidential.js'
 import { ARTIFACT_ID_RE } from './ids.js'
 import { createStateRoutes } from './state-routes.js'
@@ -100,6 +101,12 @@ export type ArtifactRoutesConfig = {
    *  own. Without it the transcribe route answers 404 and readers get the browser's live
    *  transcript, or an empty box to type into. */
   transcribe?: Transcriber
+  /** Told when a reader's state on a gated page changes: after a reading heartbeat is recorded,
+   *  after a signed-in person is refused at the door, and for every listed reader when the host
+   *  runs `sweepReaders()`. The host decides what, if anything, to do (`readAlertsDue` turns an
+   *  event into the alerts worth sending). Awaited, and anything it throws is swallowed: a broken
+   *  sink never costs a reader their page or their record. Without it nothing extra is read. */
+  onReaderEvent?: (event: ReaderEvent) => void | Promise<void>
 }
 
 /** Ids are 8 chars from the safe alphabet; anything else is not a page and never reaches the store. */
@@ -161,6 +168,55 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     store, state: config.state, personal: config.personal, readers: config.readers, assets: config.assets, transcribe: config.transcribe,
     readerSecret, pageUrl, signInOrigin, siteUrl, clientIp: config.clientIp,
   })
+
+  // ---- Reader events (onReaderEvent). Nothing here runs, and nothing extra is read, without it.
+  const wordsCache = new Map<string, { updatedAt: string; words: number }>()
+  /** Words a reader reads on the page, cached per version so a heartbeat does not re-parse it. */
+  function wordsOf(a: Rec): number {
+    const c = wordsCache.get(a.id)
+    if (c && c.updatedAt === a.updatedAt) return c.words
+    const words = wordCount(narrationText(a))
+    wordsCache.set(a.id, { updatedAt: a.updatedAt, words })
+    return words
+  }
+  const same = (x: string, y: string) => x.trim().toLowerCase() === y.trim().toLowerCase()
+  async function emitReaderEvent(e: Omit<ReaderEvent, 'url' | 'title' | 'words' | 'readSeconds' | 'at' | 'artifactId'>, a: Rec) {
+    if (!config.onReaderEvent) return
+    try {
+      const words = wordsOf(a)
+      await config.onReaderEvent({ ...e, artifactId: a.id, title: a.title, url: pageUrl(a.id), words, readSeconds: readSecondsFor(words), at: new Date().toISOString() })
+    } catch {
+      // A broken sink never costs a reader their page or their record.
+    }
+  }
+  /** One reader's record on one page, read fresh, for an event. */
+  async function readerSummary(id: string, email: string) {
+    const [sessions, flags] = await Promise.all([config.readers!.sessions(id), config.readers!.flags(id)])
+    return summarize(sessions, flags).readers.find((r) => same(r.email, email)) ?? null
+  }
+
+  /** Tell `onReaderEvent` about every listed reader of every gated page, opened or not, so a host
+   *  can notice what has NOT happened (a page nobody opened). Run it from a daily job. Needs a
+   *  readers store with `listed()`; without one, or without the hook, it does nothing. */
+  async function sweepReaders(): Promise<{ pages: number; readers: number }> {
+    const readers = config.readers
+    if (!config.onReaderEvent || !readers?.listed) return { pages: 0, readers: 0 }
+    let pages = 0
+    let count = 0
+    for (const p of await readers.listed()) {
+      const a = ARTIFACT_ID.test(p.artifactId) ? await store.get(p.artifactId) : null
+      if (!a?.access) continue
+      pages += 1
+      const [sessions, flags] = await Promise.all([readers.sessions(a.id), readers.flags(a.id)])
+      const sums = summarize(sessions, flags).readers
+      for (const entry of p.readers) {
+        const summary = sums.find((r) => same(r.email, entry.email)) ?? null
+        await emitReaderEvent({ kind: 'sweep', reader: { email: entry.email, name: entry.name ?? summary?.name ?? null }, summary, entry }, a)
+        count += 1
+      }
+    }
+    return { pages, readers: count }
+  }
 
   /** The kicker over every title: the pack's line, then who the page is for. Never spoken: the
    *  whole paragraph is data-nospeak, and narrationText has no `to` to read. */
@@ -311,7 +367,12 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
       </div>
     )
     if (!d.open) {
-      if (d.why === 'not-allowed' && config.readers) void config.readers.flag({ artifactId: id, reader: d.reader, kind: 'refused' }).catch(() => {})
+      if (d.why === 'not-allowed' && config.readers) {
+        const flagged = config.readers.flag({ artifactId: id, reader: d.reader, kind: 'refused' }).catch(() => {})
+        // Told after the refusal is on the record, so a sink that reads it back finds it.
+        if (config.onReaderEvent) await flagged.then(() => emitReaderEvent({ kind: 'refused', reader: { email: d.reader.email, name: d.reader.name }, summary: null, entry: null }, a))
+        else void flagged
+      }
       return (
         <BrandGround pack={pack} mode={a.theme}>
           {header}
@@ -610,13 +671,19 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     if (!ARTIFACT_ID.test(id) || !/^[A-Za-z0-9-]{8,64}$/.test(session)) return new NextResponse(null, { status: 400 })
     const a = await store.get(id)
     if (!a?.access) return new NextResponse(null, { status: 404 })
-    if (!decide(a.access, reader, await config.readers.allowList(id)).open) return new NextResponse(null, { status: 403 })
+    const allow = await config.readers.allowList(id)
+    if (!decide(a.access, reader, allow).open) return new NextResponse(null, { status: 403 })
     const country = request.headers.get('x-vercel-ip-country') ?? undefined
     if (b.kind === 'beat') {
       const add = Math.max(0, Math.min(60, Math.round(Number(b.active) || 0)))
       const scroll = Math.max(0, Math.min(100, Math.round(Number(b.scroll) || 0)))
       const device = /Mobi|Android|iPhone|iPad/i.test(request.headers.get('user-agent') ?? '') ? 'mobile' : 'desktop'
       await config.readers.touchSession({ artifactId: id, session, reader, addSeconds: add, scroll, device, country })
+      if (config.onReaderEvent) {
+        const summary = await readerSummary(id, reader.email).catch(() => null)
+        const entry = allow.find((e) => same(e.email, reader.email)) ?? null
+        await emitReaderEvent({ kind: 'visit', reader: { email: reader.email, name: reader.name }, summary, entry }, a)
+      }
       return new NextResponse(null, { status: 204 })
     }
     if (b.kind === 'flag' && FLAG_KINDS.includes(b.flag as FlagKind) && b.flag !== 'refused') {
@@ -812,5 +879,5 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     return NextResponse.json({ deleted: true })
   }
 
-  return { Page, generateMetadata, VersionPage, generateVersionMetadata, VERSIONS, POST, GET, DELETE, PUT_ASSET, UPLOAD, SHARE_IMAGE, ENTER, LEAVE, TRACK, ACK, ACCESS, READS, TRANSCRIBE: voiceRoutes.TRANSCRIBE, ...stateRoutes, ...personalRoutes, dynamic: 'force-dynamic' as const, maxDuration: 30 }
+  return { Page, generateMetadata, VersionPage, generateVersionMetadata, VERSIONS, POST, GET, DELETE, PUT_ASSET, UPLOAD, SHARE_IMAGE, ENTER, LEAVE, TRACK, ACK, ACCESS, READS, sweepReaders, TRANSCRIBE: voiceRoutes.TRANSCRIBE, ...stateRoutes, ...personalRoutes, dynamic: 'force-dynamic' as const, maxDuration: 30 }
 }
