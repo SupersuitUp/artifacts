@@ -30,6 +30,13 @@ export interface ArtifactAssets {
   readAudio?(id: string, path: string): Promise<Buffer | null>
   /** A signed URL to play the recording, valid for about an hour. */
   audioUrl?(id: string, path: string): Promise<string>
+  /**
+   * When the page is deleted: remove every reader recording under it (`comments/` and
+   * `personal/`), and return how many went. Without it a deleted page left its readers' voice
+   * memos in the bucket for good, unreachable by any route and invisible to the publisher.
+   * Optional; a host without it keeps them, as before.
+   */
+  deleteReaderAudio?(id: string): Promise<number>
 }
 
 /** The digest half of a stored name: the first 8 hex of the bytes' sha256. */
@@ -161,6 +168,17 @@ export function createArtifactAssets(bucket: Bucket, prefix: string): ArtifactAs
     async audioUrl(id, path) {
       const [url] = await bucket.file(`${clean}/${id}/${path}`).getSignedUrl({ version: 'v4', action: 'read', expires: Date.now() + 60 * 60 * 1000 })
       return url
+    },
+    // The trailing slash is load-bearing: `<id>/comments/` can never match a longer id that
+    // starts with this one. The page's own published files (cover, narration) are left alone.
+    async deleteReaderAudio(id) {
+      let gone = 0
+      for (const dir of ['comments/', 'personal/']) {
+        const [files] = await bucket.getFiles({ prefix: `${clean}/${id}/${dir}` })
+        await Promise.all(files.map((f) => f.delete({ ignoreNotFound: true })))
+        gone += files.length
+      }
+      return gone
     },
   }
 }
