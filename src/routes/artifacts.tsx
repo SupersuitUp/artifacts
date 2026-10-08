@@ -96,6 +96,15 @@ export type ArtifactRoutesConfig = {
    *  its writer's name, whatever `comments_visible:` says. Without it nobody is the owner, and
    *  the publisher reads comments through /responses. */
   ownerEmail?: string
+  /** Sign-in emails, besides `ownerEmail`, of the people who administer this host's pages. They
+   *  see a page's version history; with `history: 'admins'` (the default) nobody else does. */
+  admins?: readonly string[]
+  /** Who sees a page's past versions: the History control under the summary and every
+   *  `/<id>/v/<n>`. `'admins'` (default): only `ownerEmail` and `admins`, signed in; to everyone
+   *  else the History control is absent and a past version is not found, because an earlier draft
+   *  can hold what the current one was edited to remove. `'everyone'`: every reader who can open
+   *  the page, which was the only behaviour before 0.21.0. */
+  history?: 'admins' | 'everyone'
   /** Turns a reader's voice memo into text on the server, so the service's key never reaches a
    *  browser: `deepgramTranscriber(key)` or `openaiTranscriber(key)` from `./artifacts`, or your
    *  own. Without it the transcribe route answers 404 and readers get the browser's live
@@ -147,6 +156,9 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
   const signInOrigin = config.signInOrigin
   const owner = config.owner ?? brand.name
   const ownerEmail = config.ownerEmail?.trim().toLowerCase()
+  const admins = new Set([ownerEmail, ...(config.admins ?? []).map((e) => e.trim().toLowerCase())].filter((e): e is string => !!e))
+  /** Whether this reader may see a page's past versions (config `history`). */
+  const seesHistory = (reader: Reader | null) => config.history === 'everyone' || (!!reader && admins.has(reader.email.trim().toLowerCase()))
   const readerSecret = () => config.readerSecret?.()
   const signOutUrl = (id: string) => `/api/reader/leave?to=${encodeURIComponent(pagePath(id))}`
   // Signing out alone cannot change the account: the authority still holds the Google session
@@ -286,7 +298,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     const a = ARTIFACT_ID.test(id) ? await store.get(id) : null
     if (!a) notFound()
     const { pack, brand } = lookOf(a)
-    const render = (top: boolean, reader: Reader | null) => (n === null ? Body(a, { top, reader }) : VersionBody(a, n, { top }))
+    const render = (top: boolean, reader: Reader | null) => (n === null ? Body(a, { top, reader }) : VersionBody(a, n, { top, reader }))
     if (a.access) return GatedPage(a, id, render, n)
     // A password shuts the body, never the title: the header stays so the reader knows which
     // page they were sent, and the unfurl (generateMetadata) keeps reading as the page.
@@ -417,11 +429,11 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
   }
 
   /** "Version N · Updated <minute> · History": the line under the summary. */
-  function VersionLine({ a, n, at, history }: { a: Rec; n: number; at: string; history: VersionEntry[] | null }) {
+  function VersionLine({ a, n, at, history, reader }: { a: Rec; n: number; at: string; history: VersionEntry[] | null; reader: Reader | null }) {
     return (
       <p data-nospeak className="mt-4 text-xs opacity-60">
         {`Version ${n} · Updated `}<UpdatedTime iso={at} />
-        {history && history.length > 1 ? (
+        {history && history.length > 1 && seesHistory(reader) ? (
           <>
             {' · '}
             <VersionHistory items={history} base={pagePath(a.id)} viewing={n} />
@@ -447,8 +459,10 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
   }
 
   /** A past version: its own body and title, read-only (no narration, no answers), under a banner. */
-  async function VersionBody(a: Rec, n: number, { top }: { top: boolean }) {
+  async function VersionBody(a: Rec, n: number, { top, reader }: { top: boolean; reader: Reader | null }) {
     const { pack, brand } = lookOf(a)
+    // Past versions are for admins unless the host says otherwise: to anyone else none exists.
+    if (!seesHistory(reader)) notFound()
     const v = store.version ? await store.version(a.id, n) : null
     if (!v) notFound()
     if (v.current) redirect(pagePath(a.id))
@@ -472,7 +486,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
           cover={pack.Cover ? (
             <pack.Cover
               title={title} subtitle={v.subtitle} summary={summary} to={v.to} markdown={v.markdown}
-              kicker={<Kicker to={v.to} brand={brand} />} meta={<VersionLine a={a} n={n} at={v.at} history={history} />}
+              kicker={<Kicker to={v.to} brand={brand} />} meta={<VersionLine a={a} n={n} at={v.at} history={history} reader={reader} />}
               version={n} updatedAt={v.at} createdAt={a.createdAt}
             />
           ) : (
@@ -487,7 +501,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
                 </p>
               ) : null}
               <p className="mx-auto mt-6 max-w-xl text-lg italic opacity-80">{summary}</p>
-              <VersionLine a={a} n={n} at={v.at} history={history} />
+              <VersionLine a={a} n={n} at={v.at} history={history} reader={reader} />
             </div>
           )}
         >
@@ -520,7 +534,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
             const n = a.version ?? (a.versions?.length ?? 0) + 1
             const meta = (
               <>
-                <VersionLine a={a} n={n} at={a.updatedAt} history={await historyOf(a.id)} />
+                <VersionLine a={a} n={n} at={a.updatedAt} history={await historyOf(a.id)} reader={reader} />
                 {/* An open page has no banner, so this is the only place a signed-in reader learns
                     which account they are in and how to get out of it. A gated page's banner says it. */}
                 {top && reader ? (

@@ -3,6 +3,24 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.21.0 (2026-10-08)
+
+**A page's past versions are for its admins.** Every reader who could open a page could also open
+its History and read every earlier version at `/<id>/v/<n>`, so a passage edited out of a page
+(a name taken out, a figure corrected) stayed readable one click away.
+
+- New config `admins` (sign-in emails) and `history: 'admins' | 'everyone'`. The default,
+  `'admins'`, shows the History control and serves `/<id>/v/<n>` only to a signed-in reader whose
+  email is `ownerEmail` or in `admins`, compared without case. To everyone else the control is
+  absent and a past version is not found. "Version N · Updated <minute>" still shows to everyone.
+- DETECTOR: after the bump, a reader who is not an admin no longer sees "History" under a page's
+  summary. A host that configures neither `ownerEmail` nor `admins` hides history from everyone.
+- REMEDY: pass `admins` (and `ownerEmail`) for the people who should keep seeing history, or
+  `history: 'everyone'` to keep the 0.20.0 behaviour.
+- Tests: signed out, a signed-in non-admin, the owner in another case and a listed admin, a past
+  version 404ing for non-admins, nobody configured, and `'everyone'` restoring the old page. The
+  earlier version and golden tests pin `history: 'everyone'`, so they still prove 0.20.0's page.
+
 ## 0.20.0 (2026-10-07)
 
 **A host can hear when a confidential page is read.** The reader record answered `GET /reads`

@@ -37,7 +37,7 @@ function routes(brand: BrandPack) {
     history: vi.fn(async () => [{ version: 2, at: rec.updatedAt, current: true as const }, { version: 1, at: rec.createdAt }]),
     version: vi.fn(async (_id, n) => (n === 1 ? past : null)),
   }
-  return createArtifactRoutes({ store, brand, siteUrl: 'https://example.com', publishKey: () => 'k', readCookie: async () => undefined })
+  return createArtifactRoutes({ store, brand, siteUrl: 'https://example.com', publishKey: () => 'k', readCookie: async () => undefined, history: 'everyone' })
 }
 const wrapped: BrandPack = { ...freedomDefault, id: 'wrapped', Wrapper: ({ children }) => <main data-wrapped>{children}</main> }
 

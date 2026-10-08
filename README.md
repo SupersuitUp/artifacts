@@ -123,6 +123,17 @@ phone, a side panel on a desk), so opening it moves no text. Each past version i
 the same password or confidential door as the page itself. A version that does not exist is a
 404; on a shut page the door comes first, so it never says which versions exist.
 
+**Past versions are for admins by default (0.21.0).** An earlier draft can hold what the current
+one was edited to remove, so only the page's admins see the History control or open
+`/<id>/v/<n>`: the reader signed in as `ownerEmail` or any address in `admins` (case does not
+matter). Everyone else still sees "Version N · Updated <minute>", and a past version is a 404 to
+them. With neither configured, nobody does. `history: 'everyone'` in the config restores the old
+behaviour, where every reader who can open the page reads its history.
+
+```ts
+createArtifactRoutes({ ..., ownerEmail: 'owner@example.com', admins: ['editor@example.com'] })
+```
+
 **Do not write a "Version history" section in the markdown.** Say what changed when you publish:
 
 - `POST /api/artifacts?id=<id>&note=<one line>`, or a `change:` line in the front matter. The query

@@ -52,10 +52,10 @@ beforeEach(() => {
     acknowledged: vi.fn(async () => true), acknowledge: vi.fn(async () => {}), acks: vi.fn(async () => []),
   }
 })
-const routesWith = (cookies: Record<string, string> = {}) => createArtifactRoutes({
+const routesWith = (cookies: Record<string, string> = {}, extra: Partial<Parameters<typeof createArtifactRoutes>[0]> = { history: 'everyone' }) => createArtifactRoutes({
   store, brand: freedomDefault, siteUrl: 'https://artifacts.example.com', publishKey: () => 'k',
   readers, readerSecret: () => SECRET, owner: 'Example Co', readCookie: async (n) => cookies[n],
-  signInOrigin: 'https://accounts.example.com',
+  signInOrigin: 'https://accounts.example.com', ...extra,
 })
 const current = async (cookies?: Record<string, string>, key?: string) =>
   renderToStaticMarkup(await routesWith(cookies).Page({ params: Promise.resolve({ id: ID }), searchParams: Promise.resolve(key ? { key } : {}) }))
@@ -209,5 +209,43 @@ describe('publishing carries the note and the amend', () => {
     expect(store.save).toHaveBeenLastCalledWith(expect.objectContaining({ id: ID, amend: true }))
     await r.POST(post(`?id=${ID}`, `---\ntitle: T\nsummary: S\nchange: From the file\n---\n# hi`))
     expect(store.save).toHaveBeenLastCalledWith(expect.objectContaining({ note: 'From the file', amend: false }))
+  })
+})
+
+describe('past versions are for admins by default (0.21.0)', () => {
+  const admin: Reader = { uid: 'u9', email: 'Owner@Example.com', name: 'Pat Admin', member: true }
+  const signedIn = (r: Reader) => ({ [GRANT_COOKIE]: mintGrant(SECRET, r) })
+  const cfg = { ownerEmail: 'owner@example.com', admins: ['editor@example.com'] }
+  const page = async (cookies: Record<string, string>, extra = {}) =>
+    renderToStaticMarkup(await routesWith(cookies, { ...cfg, ...extra }).Page({ params: Promise.resolve({ id: ID }), searchParams: Promise.resolve({}) }))
+  const past1 = async (cookies: Record<string, string>, extra = {}) =>
+    renderToStaticMarkup(await routesWith(cookies, { ...cfg, ...extra }).VersionPage({ params: Promise.resolve({ id: ID, n: '1' }), searchParams: Promise.resolve({}) }))
+
+  it('a signed-out reader sees the version number and no History control', async () => {
+    const html = await page({})
+    expect(html).toContain('Version 3')
+    expect(html).not.toContain('data-version-history')
+    expect(html).not.toContain('First draft')
+  })
+  it('a signed-in reader who is not an admin sees no History control either', async () => {
+    expect(await page(signedIn(member))).not.toContain('data-version-history')
+  })
+  it('the owner (any case) and a listed admin see the History control', async () => {
+    expect(await page(signedIn(admin))).toContain('data-version-history')
+    expect(await page(signedIn({ ...member, email: 'editor@example.com' }))).toContain('data-version-history')
+  })
+  it('a past version is not found for anyone but an admin', async () => {
+    await expect(past1({})).rejects.toThrow('NOT_FOUND')
+    await expect(past1(signedIn(member))).rejects.toThrow('NOT_FOUND')
+    expect(await past1(signedIn(admin))).toContain('first body')
+  })
+  it('with no owner and no admins configured, nobody sees past versions', async () => {
+    const none = { ownerEmail: undefined, admins: undefined }
+    expect(await page(signedIn(admin), none)).not.toContain('data-version-history')
+    await expect(past1(signedIn(admin), none)).rejects.toThrow('NOT_FOUND')
+  })
+  it("history: 'everyone' restores the old behaviour", async () => {
+    expect(await page({}, { history: 'everyone' })).toContain('data-version-history')
+    expect(await past1({}, { history: 'everyone' })).toContain('first body')
   })
 })

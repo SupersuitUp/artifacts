@@ -37,4 +37,7 @@ export const artifacts = createArtifactRoutes({
   store, brand: freedomDefault, siteUrl: 'http://localhost', publishKey: () => 'k',
   state: createMemoryStateStore(),
   personal: createMemoryPersonalStore(),
+  // The fixture signs nobody in, so it cannot be an admin: 'everyone' lets it prove the History
+  // panel and the /v/<n> page render from the tarball. Who sees them is proven in versions.test.tsx.
+  history: 'everyone',
 })
