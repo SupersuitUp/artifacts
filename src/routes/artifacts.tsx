@@ -10,6 +10,7 @@ import { isPublisherAuthed } from '../artifacts/auth.js'
 import { parseArtifactSource } from '../artifacts/front-matter.js'
 import { narrationText } from '../artifacts/narration.js'
 import { ArtifactMarkdown } from '../artifacts/render.js'
+import { CHECKLIST_SLOT } from '../artifacts/checklist.js'
 import { ArtifactDoor } from '../artifacts/door.js'
 import { isUnlocked, keyHash, unlockCookieName } from '../artifacts/unlock.js'
 import { cleanNote, type ArtifactRecord, type ArtifactStore, type VersionEntry } from '../artifacts/store.js'
@@ -505,7 +506,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
             </div>
           )}
         >
-          <ArtifactMarkdown markdown={v.markdown} definitions={a.definitions} Section={pack.Section} figure={pack.figure} />
+          <ArtifactMarkdown markdown={v.markdown} definitions={a.definitions} checklist={{ artifactId: a.id, accent: brand.accent }} Section={pack.Section} figure={pack.figure} />
         </Framed>
       </>
     )
@@ -588,6 +589,8 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
                   markdown={a.markdown}
                   definitions={a.definitions}
                   notes={config.state && a.state ? { artifactId: a.id, accent: brand.accent } : undefined}
+                  // Ticks are kept in the reader's browser on any host; Send needs one that keeps answers.
+                  checklist={{ artifactId: a.id, send: !!config.state && !!a.state && Object.hasOwn(a.state.slots, CHECKLIST_SLOT), owner, accent: brand.accent }}
                   Section={pack.Section}
                   figure={pack.figure}
                 />

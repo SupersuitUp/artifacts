@@ -3,6 +3,36 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## Unreleased
+
+**A page can carry a checklist a reader ticks off and comes back to.** A per-person Mac setup
+page that remembers its ticks could not be published: the renderer escapes raw HTML (rightly),
+and a ```` ```checklist ```` fence was refused at publish as a widget not yet drawn, so each prep
+page went out as its own one-off site instead of on the operator's host.
+
+- New widget `checklist`: items with stable ids (`{#id}` or the slug of the text, numbered on a
+  repeat), indented descriptions drawn as markdown with raw HTML escaped, ticks kept in the
+  reader's `localStorage` under `artifact-checklist:<page>:<item>` (storage that throws costs only
+  the memory), "n of m done", and 44px rows. Several per page.
+- Optional `send: signed-in | anyone` in the fence: a Send button writes `{ done: [ids] }` to the
+  page's own `checklist` slot (shape one, private), which the owner reads through `/responses`.
+  The server refuses ids that are not that checklist's. Drawn only on a host with a state store.
+- `sms:` and `tel:` links now work on every page (react-markdown's default dropped them), and open
+  without `target="_blank"`. Everything else still goes through the default transform.
+- `ArtifactMarkdown` takes `checklist={{ artifactId, send, owner, accent }}`; the route passes it.
+  New exports: `checklistsOf`, `checklistSendIds`, `mergeChecklistState`, `parseChecklistFence`,
+  `checkChecklistValue`, `checklistStorageKey`, `CHECKLIST_SLOT`, `artifactUrlTransform`.
+- DETECTOR: publish a page with a ```` ```checklist ```` fence. "the checklist widget is not
+  available in this version" means the host is on 0.21.0 or earlier.
+- REMEDY: bump. A page with no checklist renders byte for byte as before (the 0.15.0 golden still
+  passes unchanged).
+- Tests: the fence grammar and every refusal with its file line; ids page-wide; the slot a Send
+  declares; the component's ids and count; raw HTML in an item and a description stays text; a
+  page with no checklist identical with and without the new prop; ticks saved by page and item id
+  and back after a remount; blocked storage; Send's body and its sign-in answer; the route taking
+  only that checklist's ids and `/responses` reading it; sms/tel links and `javascript:` still
+  dead; and the packed fixture drawing and posting one. Each was broken on purpose and went red.
+
 ## 0.21.0 (2026-10-08)
 
 **A page's past versions are for its admins.** Every reader who could open a page could also open

@@ -1,8 +1,10 @@
 // Widgets: fenced blocks in a document's markdown that give readers a place to answer, drawn by
 // the shell in the page's brand and written through the state API (state.ts, state-routes.ts).
 //
-// This version draws ONE widget, `notes`: a small note control beside every heading, kept in the
-// `many` slot `notes`. A note stores the heading it was left under, both its slug and its text,
+// This version draws two widgets. `checklist` (./checklist.ts) is a list of items a reader ticks,
+// kept in their own browser, with an optional Send that hands their ticks to the page's owner
+// through the `one` slot `checklist`. `notes` is a small note control beside every heading, kept
+// in the `many` slot `notes`. A note stores the heading it was left under, both its slug and its text,
 // so a republish that renames or removes the heading keeps the note and shows it under "notes
 // on earlier versions" instead of losing it or attaching it to the wrong section.
 //
@@ -16,12 +18,13 @@ import type { Root, RootContent, PhrasingContent, Code, Nodes } from 'mdast'
 import type { StateConfig, Visibility } from './state.js'
 import { blockId } from './anchor.js'
 import { MAX_NOTE_CHARS, NOTES_SLOT, type Heading } from './notes-place.js'
+import { CHECKLIST_SLOT, assignChecklistIds, parseChecklistFence, type ChecklistBlock, type ChecklistItem, type RawChecklistBlock } from './checklist.js'
 
 export { MAX_NOTE_CHARS, NOTES_SLOT, placeNotes, type Heading, type NoteValue, type PlacedNote } from './notes-place.js'
 
 /** Widgets the design names and this version does not draw yet. A fence using one is refused at
  *  publish, so a page never ships a code block that turns into a live widget on a later update. */
-const NOT_YET = ['poll', 'form', 'checklist']
+const NOT_YET = ['poll', 'form']
 const MAX_HEADING_CHARS = 300
 
 export type NotesWidget = { line: number; visibility?: Exclude<Visibility, 'tally'> }
@@ -71,7 +74,8 @@ export function headingsOf(markdown: string): Heading[] {
 
 /** Finds the widget fences in a body. `offset` is how many lines of the file sit above the body
  *  (the front matter), so every error names the line the author sees in their editor. */
-export function scanWidgets(body: string, offset: number): { ok: true; notes: NotesWidget | null } | { ok: false; error: string } {
+export function scanWidgets(body: string, offset: number):
+  { ok: true; notes: NotesWidget | null; checklists: ChecklistBlock[] } | { ok: false; error: string } {
   const fences: Code[] = []
   walk(parse(body).children, (n) => { if (n.type === 'code') fences.push(n) })
   let notes: NotesWidget | null = null
@@ -95,7 +99,57 @@ export function scanWidgets(body: string, offset: number): { ok: true; notes: No
     }
     notes = w
   }
-  return { ok: true, notes }
+  const lists = scanChecklists(fences, offset)
+  if (!lists.ok) return lists
+  return { ok: true, notes, checklists: lists.checklists }
+}
+
+function scanChecklists(fences: Code[], offset: number): { ok: true; checklists: ChecklistBlock[] } | { ok: false; error: string } {
+  const lists: RawChecklistBlock[] = []
+  for (const f of fences) {
+    if (f.lang !== 'checklist') continue
+    const line = (f.position?.start.line ?? 1) + offset
+    const c = parseChecklistFence(f.value, line, f.meta)
+    if (!c.ok) return c
+    if (c.block.send && lists.some((l) => l.send)) return { ok: false, error: `line ${line}: a page takes at most one checklist with send` }
+    lists.push(c.block)
+  }
+  const ids = assignChecklistIds(lists)
+  return ids.ok ? { ok: true, checklists: ids.blocks } : ids
+}
+
+const fencesOf = (markdown: string) => {
+  const fences: Code[] = []
+  walk(parse(markdown).children, (n) => { if (n.type === 'code' && n.lang === 'checklist') fences.push(n) })
+  return fences
+}
+
+/** Every checklist on a page, by the line its fence opens on in the body, with the ids the page
+ *  draws. A page whose checklists do not parse (published before checklists existed, so never
+ *  validated) draws none rather than half of them. */
+export function checklistsOf(markdown: string): Map<number, ChecklistBlock> {
+  const r = scanChecklists(fencesOf(markdown), 0)
+  return new Map(r.ok ? r.checklists.map((c) => [c.line, c]) : [])
+}
+
+/** The item ids of the page's checklist that offers Send, or null when none does. The state
+ *  route asks, to check what a Send may name. */
+export function checklistSendIds(markdown: string): string[] | null {
+  const r = scanChecklists(fencesOf(markdown), 0)
+  const c = r.ok ? r.checklists.find((l) => l.send) : undefined
+  return c ? c.items.map((i: ChecklistItem) => i.id) : null
+}
+
+/** A checklist with `send` declares its own slot, `checklist`, shape one, private, written by
+ *  whoever `send:` names; the owner reads it through /responses. Like `comments:`, the slot is
+ *  the widget's own, so state: may not declare one by that name. */
+export function mergeChecklistState(state: StateConfig | undefined, checklists: ChecklistBlock[]): { ok: true; state: StateConfig | undefined } | { ok: false; error: string } {
+  const c = checklists.find((l) => l.send)
+  if (!c) return { ok: true, state }
+  if (state && Object.hasOwn(state.slots, CHECKLIST_SLOT))
+    return { ok: false, error: `line ${c.line}: the checklist's send writes to slot "${CHECKLIST_SLOT}", and state: declares a slot by that name; rename that slot` }
+  const base: StateConfig = state ?? { writers: 'signed-in', visibility: 'private', slots: {} }
+  return { ok: true, state: { ...base, slots: { ...base.slots, [CHECKLIST_SLOT]: { shape: 'one', visibility: 'private', writers: c.send! } } } }
 }
 
 /** A widget declares its own slot. The notes block adds `notes: { shape: many }` to the page's
@@ -152,7 +206,7 @@ function assetName(url: string): string {
 
 /** The stable id of every top-level block, by the offset it starts at in the markdown. The
  *  renderer puts it on the block as `data-block`, and a region comment is pinned to it. Blocks
- *  that draw no prose (a notes or links fence, a rule, raw html) get none. */
+ *  that draw no prose (a notes, links or checklist fence, a rule, raw html) get none. */
 export function blocksOf(markdown: string): Map<number, string> {
   const out = new Map<number, string>()
   const seen = new Map<string, number>()
@@ -170,7 +224,7 @@ export function blocksOf(markdown: string): Map<number, string> {
     else if (n.type === 'table') { kind = 'table'; content = plain(n) }
     else if (n.type === 'blockquote') { kind = 'quote'; content = plain(n) }
     else if (n.type === 'code') {
-      if (n.lang === 'links' || n.lang === NOTES_SLOT) continue
+      if (n.lang === 'links' || n.lang === NOTES_SLOT || n.lang === 'checklist') continue
       kind = 'code'; content = n.value
     } else continue
     const k = `${kind}\n${content}`

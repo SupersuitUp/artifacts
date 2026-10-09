@@ -19,7 +19,8 @@ import { ANON_WRITES_PER_MINUTE, MAX_ENTRIES_PER_SLOT, checkValue, effectiveWrit
 import { COMMENTS_SLOT, validateComment, type CommentValue } from '../artifacts/comments.js'
 import { isCommentAudioPath } from '../artifacts/audio.js'
 import { readerKeyFor, type StateStore, type Writer } from '../artifacts/state-store.js'
-import { NOTES_SLOT, checkNoteValue, hasNotesWidget } from '../artifacts/widgets.js'
+import { NOTES_SLOT, checkNoteValue, checklistSendIds, hasNotesWidget } from '../artifacts/widgets.js'
+import { CHECKLIST_SLOT, checkChecklistValue } from '../artifacts/checklist.js'
 import { responsesCsv, responsesOf, stateView } from '../artifacts/state-view.js'
 import type { ArtifactRecord, ArtifactStore } from '../artifacts/store.js'
 import type { ReadersStore } from '../artifacts/readers-store.js'
@@ -243,7 +244,10 @@ export function createStateRoutes(ctx: StateRoutesContext) {
       const n = await ctx.state!.remove({ artifactId: id, slot, readerKey: writer.key, entryId })
       if (isComments && entryId && !n) return json({ error: 'no comment of yours with that id' }, 404)
     } else {
-      const bad = checkValue(b.value) ?? (slot === NOTES_SLOT && hasNotesWidget(a.markdown) ? checkNoteValue(b.value) : null)
+      const sendIds = slot === CHECKLIST_SLOT ? checklistSendIds(a.markdown) : null
+      const bad = checkValue(b.value)
+        ?? (slot === NOTES_SLOT && hasNotesWidget(a.markdown) ? checkNoteValue(b.value) : null)
+        ?? (sendIds ? checkChecklistValue(b.value, sendIds) : null)
       if (bad) return json({ error: bad }, 400)
       let value: unknown = b.value
       if (isComments) {
