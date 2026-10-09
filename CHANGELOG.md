@@ -3,7 +3,7 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
-## Unreleased
+## 0.22.0
 
 **A page can carry a checklist a reader ticks off and comes back to.** A per-person Mac setup
 page that remembers its ticks could not be published: the renderer escapes raw HTML (rightly),
