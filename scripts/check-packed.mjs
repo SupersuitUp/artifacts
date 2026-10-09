@@ -46,6 +46,7 @@ const speakers = scan.stdout.trim()
 if (speakers) fail(`the package speaks with the browser voice: ${speakers}`)
 const notesJs = readFileSync(join(dest, 'lib/widgets/notes.js'), 'utf8')
 if (!/^['"]use client['"]/.test(notesJs)) fail("compiled notes widget lost its 'use client' directive")
+if (!/^['"]use client['"]/.test(readFileSync(join(dest, 'lib/widgets/checklist.js'), 'utf8'))) fail("compiled checklist widget lost its 'use client' directive")
 console.log(`check-packed: ${filename}, ${paths.length} files`)
 
 const next = join(root, 'node_modules/next/dist/bin/next')
@@ -112,6 +113,18 @@ try {
   const nr = await (await fetch(`${base}/api/artifacts/nts23456/state`, { headers: { cookie: ncookie } })).json()
   if (nr.slots?.notes?.shared?.[0]?.value?.note !== 'packed') fail(`notes read back ${JSON.stringify(nr)}`)
 
+  // The checklist widget: the fence draws the known component with its ids and count, raw HTML
+  // in it stays text, and a Send posts the ticked ids through the state API and reads back.
+  const kHtml = await (await fetch(`${base}/chk23456`)).text()
+  const kIds = [...kHtml.matchAll(/data-checklist-item="([^"]+)"/g)].map((m) => m[1]).join(',')
+  if (kIds !== 'update,sign-in-with-your-personal-apple-account,install-chrome-and-sign-in,gh-send') fail(`the checklist drew items ${kIds}`)
+  if (!kHtml.includes('0 of 4 done') || !kHtml.includes('data-checklist-send')) fail('the checklist drew no count or no Send')
+  if (kHtml.includes('<b>raw') || kHtml.includes('language-checklist')) fail('the checklist rendered raw HTML or its fence as code')
+  const kw = await fetch(`${base}/api/artifacts/chk23456/state`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-forwarded-for': '203.0.113.12' }, body: JSON.stringify({ slot: 'checklist', op: 'set', value: { done: ['update'] } }) })
+  if (kw.status !== 200) fail(`a checklist send answered ${kw.status}`)
+  const kbad = await fetch(`${base}/api/artifacts/chk23456/state`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-forwarded-for': '203.0.113.12' }, body: JSON.stringify({ slot: 'checklist', op: 'set', value: { done: ['nope'] } }) })
+  if (kbad.status !== 400) fail(`a send naming an unknown item answered ${kbad.status}, not 400`)
+
   // Comments: the page draws the layer with what this reader may do, every block carries its id,
   // a shared comment posts through the state API and reads back through /responses, and a reader
   // who is not signed in is told to keep personal notes on the device.
@@ -134,7 +147,7 @@ try {
   const pr = await fetch(`${base}/api/artifacts/cmt23456/personal`)
   if (pr.status !== 401 || (await pr.json()).device !== true) fail(`personal notes for a signed-out reader answered ${pr.status}, not 401 device`)
 
-  console.log('check-packed: fixture builds; page, version history, share card, publish, state routes, the notes widget, comments and the comments feed answer correctly')
+  console.log('check-packed: fixture builds; page, version history, share card, publish, state routes, the notes and checklist widgets, comments and the comments feed answer correctly')
 } finally {
   server.kill()
 }

@@ -3,7 +3,7 @@
 import matter from 'gray-matter'
 import { ACCESS_LEVELS, type Access } from './reader.js'
 import { parseStateConfig, type StateConfig } from './state.js'
-import { mergeWidgetState, scanWidgets } from './widgets.js'
+import { mergeChecklistState, mergeWidgetState, scanWidgets } from './widgets.js'
 import { COMMENTS_MODES, mergeCommentsState, type CommentsMode, type CommentsVisible } from './comments.js'
 import { THEME_MODES, type ThemeMode } from '../brand/theme.js'
 import { parseDefinitions, type Definition } from './definitions.js'
@@ -138,13 +138,15 @@ export function parseArtifactSource(
     if (d.comments_visible !== 'owner' && d.comments_visible !== 'readers') return { ok: false, error: 'comments_visible must be owner or readers' }
     meta.commentsVisible = d.comments_visible
   }
-  // Widgets declare their own slots, so a notes block is merged into state: here, before the
+  // Widgets declare their own slots, so a notes block (and a checklist with send) is merged into state: here, before the
   // page is stored, and the state API and the republish shape checks see it like any slot.
   // Errors name the line in the FILE: the body's lines are counted after the front matter's.
   const offset = text.endsWith(content) ? (text.slice(0, text.length - content.length).match(/\n/g) ?? []).length : 0
   const w = scanWidgets(content, offset)
   if (!w.ok) return { ok: false, error: w.error }
-  const merged = mergeWidgetState(meta.state, w.notes)
+  const noted = mergeWidgetState(meta.state, w.notes)
+  if (!noted.ok) return { ok: false, error: noted.error }
+  const merged = mergeChecklistState(noted.state, w.checklists)
   if (!merged.ok) return { ok: false, error: merged.error }
   const withComments = mergeCommentsState(merged.state, meta.comments, meta.commentsVisible)
   if (!withComments.ok) return { ok: false, error: withComments.error }

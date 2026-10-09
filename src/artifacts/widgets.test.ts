@@ -24,11 +24,11 @@ describe('slugify and headingsOf', () => {
 describe('scanWidgets', () => {
   it('finds a notes fence with its line and optional visibility', () => {
     const r = scanWidgets('## A\n\n```notes\nvisibility: shared\n```\n', 10)
-    expect(r).toEqual({ ok: true, notes: { line: 13, visibility: 'shared' } })
+    expect(r).toEqual({ ok: true, notes: { line: 13, visibility: 'shared' }, checklists: [] })
   })
   it('an empty notes fence is fine; a page without one has none', () => {
-    expect(scanWidgets('```notes\n```', 0)).toEqual({ ok: true, notes: { line: 1 } })
-    expect(scanWidgets('# plain\n\n```bash\nls\n```', 0)).toEqual({ ok: true, notes: null })
+    expect(scanWidgets('```notes\n```', 0)).toEqual({ ok: true, notes: { line: 1 }, checklists: [] })
+    expect(scanWidgets('# plain\n\n```bash\nls\n```', 0)).toEqual({ ok: true, notes: null, checklists: [] })
   })
   it('refuses a second notes fence, naming its line', () => {
     const r = scanWidgets('```notes\n```\n\n## B\n\n```notes\n```', 4)
@@ -41,7 +41,7 @@ describe('scanWidgets', () => {
     expect(scanWidgets('```notes\nvisibility: tally\n```', 0)).toEqual({ ok: false, error: 'line 2: notes visibility must be private or shared' })
   })
   it('refuses the widgets this version does not draw yet, rather than showing them as code', () => {
-    for (const w of ['poll', 'form', 'checklist'])
+    for (const w of ['poll', 'form'])
       expect(scanWidgets(`intro\n\n\`\`\`${w} x\nq: y\n\`\`\``, 0)).toEqual({ ok: false, error: `line 3: the ${w} widget is not available in this version of the artifacts package` })
   })
 })

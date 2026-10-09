@@ -27,6 +27,7 @@ Firestore), and optionally `@google-cloud/storage >= 7` for uploaded files.
 | `BrandGround`, `BrandMark` | The pack's page backdrop and mark, for your own pages (a home, a 404) |
 | `parseArtifactSource` | The front-matter contract, as a parser you can call before publishing (widget fences included) |
 | `headingsOf`, `scanWidgets`, `placeNotes` | The notes widget's pure parts: heading slugs, fence validation, where each note shows |
+| `checklistsOf`, `parseChecklistFence`, `checklistStorageKey` | The checklist widget's pure parts: the fence grammar, every item's id, where a tick is kept |
 | `mintPass`, `verifyPass` | The reader pass, for the sign-in side (see below) |
 | `mintPublisherPass`, `verifyPublisherPass` | The publisher pass: an hour-long stand-in for the publish key, for one person on one host (see below) |
 | `ARTIFACT_PUBLIC_PREFIXES` (`/gate`) | Paths to leave open if you mount artifacts inside a gated site |
@@ -406,9 +407,64 @@ the shell in the page's brand and kept through the state API above. Widgets need
 state store (`state:` in the config); on a host without one they draw nothing, and the publish
 response carries the no-answers warning.
 
-This version draws one widget, **notes**. Poll, form and checklist are coming: a fence named
-`poll`, `form` or `checklist` is refused at publish until then, so a page never ships a code
-block that turns into a live widget on a later update.
+This version draws two widgets, **checklist** and **notes**. Poll and form are coming: a fence
+named `poll` or `form` is refused at publish until then, so a page never ships a code block that
+turns into a live widget on a later update. A checklist needs no state store unless it offers
+Send.
+
+### Checklist
+
+A list a reader ticks off and comes back to: a setup page, a pre-call prep list, a launch
+checklist. It is a known component the shell draws, not markup the author writes, so raw HTML
+stays escaped and no author script ever runs.
+
+````markdown
+## Before the call
+
+```checklist
+send: anyone            # optional: signed-in | anyone; adds a Send button, see below
+- Update macOS {#update}
+  Apple menu > System Settings > General > Software Update.
+  Restart and check again until it says you're up to date.
+- [ ] Install Chrome and sign in
+  Download it from [google.com/chrome](https://www.google.com/chrome/).
+- Send us your GitHub username {#gh-send}
+  [Text Sam your username](sms:+15555550100&body=My%20GitHub%20username%20is%20)
+```
+````
+
+- **An item is a line starting with `- `** (or `* `), optionally followed by `[ ]`. `[x]` is
+  accepted and ticks nothing: ticks belong to the reader.
+- **Every item has a stable id.** `{#id}` at the end of the line sets it (lowercase letters,
+  digits, dashes, underscores; unique on the page). Without one the id is the slug of the item's
+  text, the way a heading's is (`Install Chrome and sign in` is `install-chrome-and-sign-in`), and
+  a repeat is numbered `-1`, `-2`. **Give an item an explicit id whenever its wording may change**:
+  a reworded item with a slugged id is a new item, and readers lose that tick.
+- **Indented lines under an item are its description**, drawn as markdown: links, `code`, bold,
+  short lists. Raw HTML in an item or a description is shown as text. Images, headings, tables and
+  fences are not drawn inside a checklist.
+- **Ticks are kept in the reader's browser**, in `localStorage` under
+  `artifact-checklist:<page id>:<item id>`, so they survive a reload, a republish, and a reworded
+  item with a kept id. Where storage is blocked (a private window, blocked site data) ticks last
+  for the visit. Nothing leaves the device unless the reader presses Send.
+- **The list says how far along the reader is**, "3 of 8 done", and every row is a tap target at
+  least 44px tall, so it works one-handed on a phone.
+- **Narration skips it**, like every widget: the fence is not prose and the component is
+  `data-nospeak`.
+- **Several checklists on one page** are fine; ids are unique across all of them.
+- **`sms:` and `tel:` links work on every page**, in a checklist or in prose, so "text us your
+  username" is one tap into the reader's own Messages.
+- Refused at publish, naming the line in the file: an indented line before the first item, an
+  unindented line after one, an empty item, a bad or repeated `{#id}`, a name after `checklist`,
+  any setting but `send`, a checklist with no items, and a second checklist with `send`.
+
+**Send** (`send: signed-in` or `send: anyone`) adds a "Send my progress to <owner>" button under
+the list. It writes `{ done: [item ids] }` to the page's `checklist` slot, shape `one` and
+`private`, so a reader's latest Send replaces their last and only the publisher reads them, through
+`/responses` like any answer. `send:` names who may press it (`anyone` gets the anonymous cookie
+and the rate limit, as `writers: anyone` does). The slot is the widget's own: a page may not
+declare a `checklist` slot in `state:`. The server takes only ids of that checklist, each once. On a
+host with no state store the button is not drawn; the ticks still work.
 
 ### Notes
 

@@ -21,7 +21,14 @@ const store: ArtifactStore = {
             comments: 'anyone', commentsVisible: 'owner',
             state: { writers: 'signed-in', visibility: 'private', slots: { comments: { shape: 'many', visibility: 'private', writers: 'anyone' } } },
           }
-        : null),
+        : id === 'chk23456'
+          ? {
+              id, title: 'Mac prep', summary: 'Tick these off before the call.', template: 'document',
+              markdown: '## Before the call\n\nWork down the list on the new Mac.\n\n```checklist\nsend: anyone\n- Update macOS {#update}\n  Apple menu > System Settings > General > Software Update. Restart and check again.\n- Sign in with your personal Apple Account\n  Not a work one. This brings over your messages, contacts and photos.\n- Install Chrome and sign in\n  Download it from [google.com/chrome](https://www.google.com/chrome/).\n- Send us your GitHub username {#gh-send}\n  <b>raw html stays text</b>\n```\n\nThat is everything.\n',
+              createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z', version: 1, views: 0,
+              state: { writers: 'signed-in', visibility: 'private', slots: { checklist: { shape: 'one', visibility: 'private', writers: 'anyone' } } },
+            }
+          : null),
   save: async () => ({ id: 'abc23456', version: 1, created: true }),
   delete: async () => true,
   bumpViews: async () => {},

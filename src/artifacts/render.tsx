@@ -1,18 +1,23 @@
 // Markdown to the house look, for /a/<id>. Server-safe: no hooks, no client
 // directive. Raw HTML is escaped by react-markdown's default; never add
 // rehype-raw here, this renders strangers' links on a public route.
-// Two extensions past GFM, both small on purpose:
+// Three extensions past GFM, all small on purpose:
 //   ```links   one "url | note" per line, rendered as link cards
+//   ```checklist   items a reader ticks, kept in their browser (widgets/checklist.tsx)
 //   > [!note] / > [!warning]   a callout instead of a blockquote
+// A checklist's item text and descriptions are markdown drawn by the same safe renderer: raw
+// HTML escaped, links only where a reader can follow them, no images.
 import { Children, isValidElement, type ComponentType, type ReactElement, type ReactNode } from 'react'
-import ReactMarkdown, { type Components } from 'react-markdown'
+import ReactMarkdown, { defaultUrlTransform, type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkParse from 'remark-parse'
 import { unified } from 'unified'
 import type { Root, RootContent } from 'mdast'
 import type { FigureProps, SectionOutline, SectionProps } from '../brand/pack.js'
-import { blocksOf, hasNotesWidget, headingsOf, type Heading } from './widgets.js'
+import { blocksOf, checklistsOf, hasNotesWidget, headingsOf, type Heading } from './widgets.js'
+import type { ChecklistBlock } from './checklist.js'
 import { HeadingNotes, NoteToggle, NotesEarlier, NotesProvider } from '../widgets/notes.js'
+import { Checklist } from '../widgets/checklist.js'
 import { VideoAutoplay } from '../reader/video-autoplay.js'
 import { CodeCopy } from '../reader/code-copy.js'
 import { DefinitionLayer } from '../reader/definition-layer.js'
@@ -80,6 +85,14 @@ export function isReachableHref(href: unknown): href is string {
   return typeof href === 'string' && REACHABLE.test(href)
 }
 
+/** `sms:` and `tel:` links open the reader's own Messages or Phone: a prep page's "text us your
+ *  username" is one tap. react-markdown's default drops both schemes (it keeps http(s), mailto,
+ *  xmpp and irc); everything else still goes through that default, so `javascript:` stays dead. */
+const PHONE_LINK = /^(?:sms|tel):/i
+export function artifactUrlTransform(url: string): string {
+  return PHONE_LINK.test(url) ? url : defaultUrlTransform(url)
+}
+
 /** `![alt](x.mp4)` plays as video: an animation that must stay smooth on a phone. Animated WebP
  *  is decoded frame by frame on the CPU and stuttered on an iPhone at 24fps (2026-09-27); video
  *  is decoded in hardware. */
@@ -129,7 +142,50 @@ function soleImage(node: unknown): { src: string; alt: string } | null {
   return typeof src === 'string' ? { src, alt: String(kids[0].properties?.alt ?? '') } : null
 }
 
-function baseComponents(block: BlockAttr, figure?: FigureFor): Components {
+/** What the page's checklists need to draw: every fence by its opening line, and the page they
+ *  keep ticks under. */
+type ChecklistCtx = { byLine: Map<number, ChecklistBlock>; artifactId?: string; send: boolean; owner?: string; accent?: string }
+
+// Item text and descriptions: the page's own safe link, inline code and emphasis, nothing that
+// would break out of a list row (no images, headings, tables, fences or rules).
+const CHECKLIST_DISALLOWED = ['img', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'table', 'pre', 'hr', 'blockquote', 'input']
+function checklistMarkdown(source: string, inline: boolean): ReactNode {
+  const a = baseComponents(() => ({})).a
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      urlTransform={artifactUrlTransform}
+      disallowedElements={CHECKLIST_DISALLOWED}
+      unwrapDisallowed
+      components={{
+        a,
+        p: ({ children }) => (inline ? <>{children}</> : <p className="my-1 leading-relaxed">{children}</p>),
+        ul: ({ children }) => <ul className="my-1 list-disc pl-5">{children}</ul>,
+        ol: ({ children }) => <ol className="my-1 list-decimal pl-5">{children}</ol>,
+        code: ({ children }) => <code className="rounded bg-[color:var(--a-surface-strong)] px-1.5 py-0.5 text-[0.9em] text-[color:var(--a-strong)]">{children}</code>,
+      }}
+    >
+      {source}
+    </ReactMarkdown>
+  )
+}
+
+function ChecklistFence({ line, ctx }: { line: number; ctx: ChecklistCtx }) {
+  const c = ctx.byLine.get(line)
+  // Not a checklist this page validated: draw nothing rather than its source as code.
+  if (!c) return null
+  return (
+    <Checklist
+      items={c.items.map((it) => ({ id: it.id, title: checklistMarkdown(it.text, true), description: it.description ? checklistMarkdown(it.description, false) : null }))}
+      artifactId={ctx.artifactId}
+      send={ctx.send && ctx.artifactId ? c.send : undefined}
+      owner={ctx.owner}
+      accent={ctx.accent}
+    />
+  )
+}
+
+function baseComponents(block: BlockAttr, figure?: FigureFor, checklists?: ChecklistCtx): Components {
   return {
   p: ({ node, children }) => {
     // An image alone in its paragraph that the pack draws itself replaces the paragraph, so the
@@ -181,7 +237,8 @@ function baseComponents(block: BlockAttr, figure?: FigureFor): Components {
     ) : (
     <a
       href={href}
-      target="_blank"
+      // A phone link opens an app, not a tab.
+      target={PHONE_LINK.test(href) ? undefined : '_blank'}
       rel="noopener noreferrer"
       className="text-[color:var(--a-strong)] underline decoration-[color:var(--a-line-strong)] underline-offset-4 hover:decoration-[color:var(--a-strong)]"
     >
@@ -193,9 +250,10 @@ function baseComponents(block: BlockAttr, figure?: FigureFor): Components {
       ) : null}
     </a>
     ),
-  code: ({ className, children }) => {
+  code: ({ node, className, children }) => {
     const lang = /language-(\w+)/.exec(className ?? '')?.[1]
     if (lang === 'links') return <LinkCards source={textOf(children)} />
+    if (lang === 'checklist') return checklists ? <ChecklistFence line={node?.position?.start.line ?? -1} ctx={checklists} /> : null
     // A notes fence is the widget's place on the page. Without notes enabled (the host keeps no
     // answers) it draws nothing: its settings are not prose and never shown as code.
     if (lang === 'notes') return null
@@ -208,7 +266,7 @@ function baseComponents(block: BlockAttr, figure?: FigureFor): Components {
     // A links fence renders its own block; do not wrap it in <pre>.
     const inner = Array.isArray(children) ? children[0] : children
     const cls = (inner as { props?: { className?: string } })?.props?.className ?? ''
-    if (/language-(links|notes)/.test(cls)) return <>{children}</>
+    if (/language-(links|notes|checklist)/.test(cls)) return <>{children}</>
     return (
       <pre
         {...block(node)}
@@ -265,7 +323,7 @@ const HEADING_CLASS: Record<number, string> = {
 
 /** Components for any page: every heading gets its slug as an id, the one headingsOf derived,
  *  so a contents link and a note both land on it. */
-function pageComponents(headings: Heading[], block: BlockAttr, figure?: FigureFor): Components {
+function pageComponents(headings: Heading[], block: BlockAttr, figure?: FigureFor, checklists?: ChecklistCtx): Components {
   const byLine = new Map(headings.map((h) => [h.line, h]))
   const heading = (depth: 1 | 2 | 3 | 4 | 5 | 6): Components['h1'] =>
     function Heading({ node, children }) {
@@ -273,14 +331,14 @@ function pageComponents(headings: Heading[], block: BlockAttr, figure?: FigureFo
       const h = byLine.get(node?.position?.start.line ?? -1)
       return <Tag id={h?.slug} {...block(node)} className={HEADING_CLASS[depth]}>{children}</Tag>
     }
-  return { ...baseComponents(block, figure), h1: heading(1), h2: heading(2), h3: heading(3), h4: heading(4), h5: heading(5), h6: heading(6) }
+  return { ...baseComponents(block, figure, checklists), h1: heading(1), h2: heading(2), h3: heading(3), h4: heading(4), h5: heading(5), h6: heading(6) }
 }
 
 /** Components for a page with a notes block: every heading gets its slug as an id, a note
  *  control, and its notes after it. The heading is found by its source line, so the slug is the
  *  one headingsOf derived, the same one a note stores. */
-function notesComponents(headings: Heading[], block: BlockAttr, figure?: FigureFor): Components {
-  const components = baseComponents(block, figure)
+function notesComponents(headings: Heading[], block: BlockAttr, figure?: FigureFor, checklists?: ChecklistCtx): Components {
+  const components = baseComponents(block, figure, checklists)
   const byLine = new Map(headings.map((h) => [h.line, h]))
   const heading = (depth: 1 | 2 | 3 | 4 | 5 | 6): Components['h1'] =>
     function NotedHeading({ node, children }) {
@@ -384,11 +442,16 @@ const DEFINED_TERM_CSS =
 export function ArtifactMarkdown({
   markdown,
   notes,
+  checklist,
   definitions,
   Section,
   figure,
 }: {
   markdown: string
+  /** The page a ```checklist keeps its ticks under, and whether its Send can reach the owner
+   *  (a host that keeps answers, on a page that declares the slot). Without it a checklist still
+   *  draws and ticks, for the visit only. */
+  checklist?: { artifactId: string; send?: boolean; owner?: string; accent?: string }
   /** The pack's section component (BrandPack.Section): each top-level section is drawn through it. */
   Section?: ComponentType<SectionProps>
   /** The pack's figure resolver (BrandPack.figure). */
@@ -407,10 +470,14 @@ export function ArtifactMarkdown({
   const defined = definitions?.length ? definitions : null
   const outline = Section ? sectionOutline(markdown, headings) : []
   const plugins = [remarkGfm, ...(defined ? [remarkDefinitions(defined)] : []), ...(outline.length ? [remarkSections(outline[0].depth)] : [])]
-  const components = on ? notesComponents(headings, block, figure) : pageComponents(headings, block, figure)
+  const lists = /^ {0,3}(`{3,}|~{3,})\s*checklist\b/m.test(markdown) ? checklistsOf(markdown) : null
+  const checklists: ChecklistCtx | undefined = lists
+    ? { byLine: lists, artifactId: checklist?.artifactId, send: !!checklist?.send, owner: checklist?.owner, accent: checklist?.accent }
+    : undefined
+  const components = on ? notesComponents(headings, block, figure, checklists) : pageComponents(headings, block, figure, checklists)
   if (outline.length) components.section = sectionComponent(Section!, outline, block)
   const body = (
-    <ReactMarkdown remarkPlugins={plugins} components={components}>
+    <ReactMarkdown remarkPlugins={plugins} components={components} urlTransform={artifactUrlTransform}>
       {markdown}
     </ReactMarkdown>
   )
