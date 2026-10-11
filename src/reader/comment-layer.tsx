@@ -43,6 +43,16 @@ const isValue = (v: unknown): v is CommentValue =>
   !!v && typeof v === 'object' && typeof (v as CommentValue).body === 'string' && !!(v as CommentValue).anchor && typeof (v as CommentValue).anchor === 'object'
 const LONG_PRESS_MS = 400
 const HASH = /^#comment-([A-Za-z0-9_-]{1,128})$/
+/** The sign-in link, returning to this exact address, hash included, so a reader who signs in to
+ *  see a linked comment lands on it. */
+function signInBack(signIn: string): string {
+  try {
+    const u = new URL(signIn)
+    u.searchParams.set('to', window.location.href)
+    return u.toString()
+  } catch { return signIn }
+}
+
 /** The entry id a `#comment-<id>` hash names, or null. */
 const commentHashId = (hash: string): string | null => HASH.exec(hash)?.[1] ?? null
 const DRAG_PX = 8
@@ -440,9 +450,16 @@ export function CommentLayer({
   const overlay: ReactNode = mounted ? (
     <div data-comment-ui data-nospeak className="font-sans" style={theme as CSSProperties}>
       {missing ? (
-        <div data-comment-missing role="status" className="fixed left-1/2 top-4 z-50 flex -translate-x-1/2 items-center gap-2 rounded-full border border-[color:var(--a-line-strong)] bg-[color:var(--a-surface)] px-4 py-2 text-sm text-[color:var(--a-strong)] shadow-lg">
-          <span>That comment can't be shown to you. Comments on this page are visible to its owner and admins{signedIn ? '' : '; sign in if that is you'}.</span>
-          <button type="button" aria-label="Close" onClick={() => setMissing(false)} className="opacity-70">×</button>
+        <div data-comment-missing role="status"
+          className="fixed inset-x-3 top-3 z-50 mx-auto max-w-sm rounded-xl border border-[color:var(--a-line-strong)] bg-[color:var(--a-surface)] p-4 font-sans text-sm leading-snug text-[color:var(--a-strong)] shadow-xl">
+          <div className="flex items-start gap-3">
+            <p className="m-0 flex-1">That comment can't be shown to you. Comments on this page are visible to its owner and admins.</p>
+            <button type="button" aria-label="Close" onClick={() => setMissing(false)} className="-mr-1 -mt-1 px-1 text-lg leading-none opacity-60">×</button>
+          </div>
+          {!signedIn && signIn ? (
+            <a data-comment-missing-sign-in href={signInBack(signIn)} className="mt-3 inline-block rounded-full px-4 py-1.5 font-medium no-underline"
+              style={{ background: accent, color: 'var(--a-on-accent, #111)' }}>Sign in</a>
+          ) : null}
         </div>
       ) : null}
       {showPins ? layout.placed.map(({ item, left, top, box }) => (

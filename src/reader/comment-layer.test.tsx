@@ -311,4 +311,18 @@ describe('deep link', () => {
     expect(document.querySelector('[data-comment-id="s2"]')).not.toBeNull()
     expect(document.querySelector('[data-comment-thread]')?.textContent).toContain('Every year?')
   })
+
+  it('a signed-out reader on a link they cannot see gets a Sign in button that returns to the comment', async () => {
+    hash('#comment-hidden')
+    stubFetch({ shared: SHARED })
+    await mount({ comments: 'anyone', canShare: true, signIn: 'https://accounts.example.com/artifact/sign-in?to=https%3A%2F%2Fa.example.com%2Fabc23456' })
+    await settle()
+    const card = document.querySelector('[data-comment-missing]')!
+    expect(card.textContent).toMatch(/visible to its owner and admins/)
+    const link = card.querySelector<HTMLAnchorElement>('a[data-comment-missing-sign-in]')!
+    expect(link.textContent).toBe('Sign in')
+    const to = new URL(link.href).searchParams.get('to')!
+    expect(to.endsWith('#comment-hidden')).toBe(true)
+  })
 })
+

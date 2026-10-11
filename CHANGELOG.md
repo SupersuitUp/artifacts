@@ -3,6 +3,21 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.29.0
+
+**The "comment can't be shown" notice is a readable card with a way in.** 0.28.0 drew it as a pill
+across the top of the page, over the title, and told a signed-out reader to sign in with nothing to
+press.
+
+- A card at the top of the screen, inset from the edges, at most 24rem wide, with the message, a
+  close button and, for a signed-out reader, a **Sign in** button.
+- Sign in returns to the exact address, `#comment-<id>` included, so the reader lands on the
+  comment once signed in.
+- DETECTOR: open a link to a comment you cannot see, signed out. A pill with no button means 0.28.0.
+- REMEDY: update the dependency.
+- Tests: `comment-layer.test.tsx` (the Sign in link returns to the comment's address). `test:packed`
+  green.
+
 ## 0.28.0
 
 **A link to a comment opens for the page's admins, and says so when it cannot.** On an owner-only
