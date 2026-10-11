@@ -10,7 +10,7 @@
 // since, in which case your words win. With neither, the memo is kept and the box stays empty.
 import { useRef, useState, type FormEvent } from 'react'
 import { NO_ZOOM_FONT } from './no-zoom.js'
-import { MAX_COMMENT_CHARS, type CommentValue, type CommentsMode } from '../artifacts/comments.js'
+import { MAX_COMMENT_CHARS, MAX_COMMENT_NAME_CHARS, type CommentValue, type CommentsMode } from '../artifacts/comments.js'
 import { VoiceRecorder, type VoiceHost, type VoiceMemo, type VoiceScope } from './voice-recorder.js'
 
 /** A memo as the card hands it to be saved: the recording, where it was already uploaded (if it
@@ -25,6 +25,10 @@ export function warningLine(ownerName: string, mode: CommentsMode): string {
   return `Only you will see this. ${why}, so this is a personal note. They won't see it.`
 }
 export const DEVICE_LINE = 'Saved on this device. Sign in to keep it everywhere.'
+/** Where a reader's declared name is remembered, so their next comment is already signed. */
+export const NAME_KEY = 'artifacts:comment-name'
+const recall = () => { try { return localStorage.getItem(NAME_KEY) ?? '' } catch { return '' } }
+const remember = (name: string) => { try { localStorage.setItem(NAME_KEY, name) } catch { /* a browser that keeps nothing still comments */ } }
 
 export function CommentCard({
   ownerName, mode, canShare, signedIn, quote, initial = '', accent = 'currentColor', signIn, voice = null, onSave, onCancel,
@@ -41,7 +45,7 @@ export function CommentCard({
   /** The page's voice routes. Null: a memo is kept but never uploaded or transcribed here. */
   voice?: VoiceHost | null
   /** Resolves to an error to show, or null when saved. */
-  onSave: (body: string, share: boolean, memo?: SavedMemo) => Promise<string | null>
+  onSave: (body: string, share: boolean, memo?: SavedMemo, by?: string) => Promise<string | null>
   onCancel: () => void
 }) {
   const [text, setText] = useState(initial)
@@ -51,11 +55,15 @@ export function CommentCard({
   const [memo, setMemo] = useState<VoiceMemo | null>(null)
   const [transcript, setTranscript] = useState<CommentValue['transcript']>(undefined)
   const [status, setStatus] = useState<string | null>(null)
+  const [name, setName] = useState(recall)
   // Refs, because the host's transcript arrives after an await and must see the box as it is then.
   const base = useRef('')
   const edited = useRef(false)
   const uploaded = useRef<SavedMemo['uploaded']>(null)
   const personal = !canShare || !share
+  // A reader with no account is asked for a name, so the owner can credit the feedback. Optional:
+  // a comment without one still goes through, signed "a reader".
+  const askName = !personal && !signedIn
   // Where a memo goes: a shared comment, the reader's account, or (neither) this device only.
   const scope = (): VoiceScope | null => (canShare && share ? 'comment' : signedIn ? 'personal' : null)
 
@@ -82,9 +90,10 @@ export function CommentCard({
     const body = text.trim()
     if ((!body && !memo) || busy) return
     setBusy(true)
-    const err = memo
-      ? await onSave(body, canShare && share, { memo, uploaded: uploaded.current, ...(body && transcript ? { transcript } : {}) })
-      : await onSave(body, canShare && share)
+    const by = askName && name.trim() ? name.trim() : undefined
+    if (by) remember(by)
+    const saved = memo ? { memo, uploaded: uploaded.current, ...(body && transcript ? { transcript } : {}) } : undefined
+    const err = saved || by ? await onSave(body, canShare && share, saved, by) : await onSave(body, canShare && share)
     setBusy(false)
     setError(err)
   }
@@ -119,6 +128,13 @@ export function CommentCard({
           {status ?? 'Recording kept with this comment.'}
           <button type="button" data-voice-discard className="ml-2 underline" onClick={() => { setMemo(null); uploaded.current = null }}>Discard recording</button>
         </p>
+      ) : null}
+      {askName ? (
+        <label data-comment-name className="mt-2 block text-[13px]">
+          <span className="block opacity-80">{`Your name, so ${ownerName} can credit your feedback`}</span>
+          <input value={name} onChange={(e) => setName(e.target.value)} maxLength={MAX_COMMENT_NAME_CHARS} autoComplete="name" placeholder="Your name" style={NO_ZOOM_FONT}
+            className="mt-1 w-full rounded-lg border border-[color:var(--a-line)] bg-[color:var(--a-ground,transparent)] px-2 py-1 text-[15px]" />
+        </label>
       ) : null}
       {canShare ? (
         <fieldset className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[13px]">

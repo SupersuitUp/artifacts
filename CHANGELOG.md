@@ -3,6 +3,30 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.24.0
+
+**A reader is asked for their name when they comment, so the owner can credit the feedback.**
+Comments from readers without an account arrived as "a reader", with nothing to thank or follow up
+with.
+
+- The comment card shows `Your name, so <owner> can credit your feedback` above the share switch
+  when the reader is not signed in and is sharing with the owner. It is optional; a comment
+  without it still saves, as "a reader". The name is remembered on the device
+  (`localStorage` key `artifacts:comment-name`), so the next comment is already signed.
+- `CommentValue` gains `by?: string` (one line, at most 80 characters, trimmed; a blank one is
+  dropped). New export `MAX_COMMENT_NAME_CHARS`. A signed-in reader's account name always wins.
+- The shared thread shows the declared name where it used to show "a reader", and the publisher's
+  `/responses` (JSON and CSV) carries it in `name` for an anonymous row, so feeds that already read
+  `name` (an owner's comment notifications) credit the reader with no change of their own.
+- DETECTOR: open a page with `comments: anyone` while signed out and select text. No name field
+  in the card means the host is on 0.23.0 or earlier; a comment posted with `by` is refused as
+  "a comment is { anchor, body, version, parent? }" on those versions.
+- REMEDY: update the dependency. No route or front-matter change.
+- Tests: `comments.test.ts` (keeps, trims, drops blank, refuses long or multi-line names),
+  `state-view.test.ts` (declared name shown, account name wins, responses and CSV carry it, "a
+  reader" when none), `comment-card.test.tsx` (asked when signed out and sharing, remembered,
+  passed to save; not asked when signed in or for a personal note). `test:packed` green.
+
 ## 0.23.0
 
 **A checklist can keep its ticks in the cloud, shared by everyone on the page.** Two people

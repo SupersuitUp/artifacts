@@ -111,3 +111,24 @@ describe('SHARED_LIMIT', () => {
     expect(v.poll.tally!.signedIn.yes).toBe(n)
   })
 })
+
+describe('a declared name on an anonymous comment', () => {
+  const state = { writers: 'anyone' as const, visibility: 'shared' as const, slots: { comments: { shape: 'many' as const } } }
+  const anon = e({ id: 'c1', slot: 'comments', shape: 'many', readerKey: 'a:qq', writer: { name: null, anonymous: true }, value: { body: 'Nice', by: 'Ada Lovelace' } })
+  const signed = e({ id: 'c2', slot: 'comments', shape: 'many', readerKey: 'u:1', value: { body: 'Hm', by: 'Someone Else' } })
+  it('shows the name an anonymous reader declared, and the account name when there is one', () => {
+    const v = stateView(state, [anon, signed], null)
+    expect(v.comments.shared?.map((s) => s.name)).toEqual(['Ada Lovelace', 'Sam'])
+  })
+  it('hands the declared name to the publisher in responses and the CSV', () => {
+    const rows = responsesOf([anon])
+    expect(rows[0].name).toBe('Ada Lovelace')
+    expect(rows[0].anonymous).toBe(true)
+    expect(responsesCsv(rows)).toContain('Ada Lovelace')
+  })
+  it('still says a reader when nobody declared a name', () => {
+    const plain = e({ id: 'c3', slot: 'comments', shape: 'many', readerKey: 'a:rr', writer: { name: null, anonymous: true }, value: { body: 'x' } })
+    expect(stateView(state, [plain], null).comments.shared?.[0].name).toBe('a reader')
+    expect(responsesOf([plain])[0].name).toBe(null)
+  })
+})

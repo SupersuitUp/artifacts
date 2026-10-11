@@ -57,4 +57,34 @@ describe('CommentCard', () => {
     expect(onSave).toHaveBeenCalledWith('A thought', true)
     expect(document.body.textContent).toContain('that did not save; try again')
   })
+
+  it('asks a reader who is not signed in for their name, so the owner can credit them, and saves it with the comment', async () => {
+    const store = new Map<string, string>()
+    vi.stubGlobal('localStorage', { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => { store.set(k, v) } })
+    const onSave = vi.fn(async () => null)
+    await mount(<CommentCard ownerName="Robin Vale" mode="anyone" canShare signedIn={false} onSave={onSave} onCancel={() => {}} />)
+    const label = document.querySelector('[data-comment-name]')!
+    expect(label.textContent).toContain('Your name, so Robin Vale can credit your feedback')
+    const name = label.querySelector('input')!
+    const box = document.querySelector('textarea')!
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(name, ' Ada Lovelace ')
+      name.dispatchEvent(new Event('input', { bubbles: true }))
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(box, 'A thought')
+      box.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await act(async () => { document.querySelector<HTMLButtonElement>('[data-comment-save]')!.click() })
+    expect(onSave).toHaveBeenCalledWith('A thought', true, undefined, 'Ada Lovelace')
+    // Remembered on this device, so the next comment is already signed.
+    expect(store.get('artifacts:comment-name')).toBe('Ada Lovelace')
+    vi.unstubAllGlobals()
+  })
+
+  it('does not ask for a name when the reader is signed in, or when the note is just for them', async () => {
+    await mount(<CommentCard ownerName="Robin Vale" mode="anyone" canShare signedIn onSave={noop} onCancel={() => {}} />)
+    expect(document.querySelector('[data-comment-name]')).toBeNull()
+    await mount(<CommentCard ownerName="Robin Vale" mode="anyone" canShare signedIn={false} onSave={noop} onCancel={() => {}} />)
+    await act(async () => { document.querySelector<HTMLInputElement>('[data-comment-share="mine"]')!.click() })
+    expect(document.querySelector('[data-comment-name]')).toBeNull()
+  })
 })

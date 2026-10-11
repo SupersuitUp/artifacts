@@ -72,3 +72,22 @@ describe('validateComment', () => {
     expect(!missing.ok && missing.error).toMatch(/no comment/)
   })
 })
+
+describe('a declared name on a comment', () => {
+  const anchor = { kind: 'text', quote: 'a line', prefix: '', suffix: '' }
+  const base = { anchor, body: 'This reads well.', version: 1 }
+  const none = () => null
+  it('keeps the name a reader typed, trimmed, so the owner can credit them', () => {
+    const r = validateComment({ ...base, by: '  Ada Lovelace ' }, none)
+    expect(r.ok && r.value.by).toBe('Ada Lovelace')
+  })
+  it('drops a blank name rather than storing it', () => {
+    const r = validateComment({ ...base, by: '   ' }, none)
+    expect(r.ok && 'by' in r.value).toBe(false)
+  })
+  it('refuses a name that is not a short single line', () => {
+    expect(validateComment({ ...base, by: 'x'.repeat(81) }, none).ok).toBe(false)
+    expect(validateComment({ ...base, by: 'Ada\nLovelace' }, none).ok).toBe(false)
+    expect(validateComment({ ...base, by: 7 }, none).ok).toBe(false)
+  })
+})

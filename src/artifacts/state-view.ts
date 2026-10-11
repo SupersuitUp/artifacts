@@ -10,6 +10,12 @@ export type SlotView = { shape: Shape; visibility: Visibility; mine: unknown | {
 
 const byAt = (a: StateEntry, b: StateEntry) => a.at.localeCompare(b.at) || a.id.localeCompare(b.id)
 const firstWord = (name: string | null) => (name?.trim() ? name.trim().split(/\s+/)[0] : 'a reader')
+// The name an anonymous commenter typed into the comment box, so the owner can credit them. An
+// account name always wins, because the account is the stronger claim to who wrote it.
+const declared = (value: unknown): string | null => {
+  const by = value && typeof value === 'object' && !Array.isArray(value) ? (value as { by?: unknown }).by : undefined
+  return typeof by === 'string' && by.trim() ? by.trim() : null
+}
 
 // A `one` entry's raw id is `<page>__<slot>__<readerKey>`, and the reader key inside it (`u:<uid>`
 // or `a:<anonId>`) is a credential: whoever reads it can write as that reader by minting the same
@@ -48,7 +54,7 @@ export function stateView(state: StateConfig, entries: StateEntry[], readerKey: 
     if (visibility === 'shared')
       view.shared = here.slice(-SHARED_LIMIT).map((e) => ({
         id: def.shape === 'one' ? opaqueOneId(e.id) : e.id,
-        name: firstWord(e.writer.name), value: e.value, at: e.at, mine: e.readerKey === readerKey,
+        name: e.writer.name?.trim() ? firstWord(e.writer.name) : (declared(e.value) ?? 'a reader'), value: e.value, at: e.at, mine: e.readerKey === readerKey,
       }))
     out[slot] = view
   }
@@ -60,7 +66,7 @@ export type Response = { slot: string; id: string; value: unknown; at: string; e
 
 export function responsesOf(entries: StateEntry[]): Response[] {
   return entries.slice().sort(byAt).map((e) => ({
-    slot: e.slot, id: e.id, value: e.value, at: e.at, email: e.writer.email ?? null, name: e.writer.name, anonymous: e.writer.anonymous, reader: e.readerKey,
+    slot: e.slot, id: e.id, value: e.value, at: e.at, email: e.writer.email ?? null, name: e.writer.name ?? declared(e.value), anonymous: e.writer.anonymous, reader: e.readerKey,
   }))
 }
 

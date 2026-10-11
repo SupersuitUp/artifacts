@@ -30,6 +30,7 @@ export function mergeCommentsState(
 }
 
 export const MAX_COMMENT_CHARS = 4000
+export const MAX_COMMENT_NAME_CHARS = 80
 export const COMMENT_TRANSCRIPTS = ['browser', 'host', 'typed'] as const
 /** One shared comment or personal note. `parent` makes it a reply to a top-level comment (one
  *  level only). `audio` and `transcript` are filled by voice memos; a memo may have an empty body. */
@@ -40,6 +41,8 @@ export type CommentValue = {
   parent?: string
   audio?: string
   transcript?: (typeof COMMENT_TRANSCRIPTS)[number]
+  /** The name a reader typed so the owner can credit them. A signed-in reader's account name wins. */
+  by?: string
 }
 
 const ENTRY_ID = /^[A-Za-z0-9_-]{1,128}$/
@@ -53,8 +56,8 @@ const isMap = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 
 export function validateComment(
   v: unknown, existing: (id: string) => CommentValue | null,
 ): { ok: true; value: CommentValue } | { ok: false; error: string } {
-  if (!isMap(v) || Object.keys(v).some((k) => !['anchor', 'body', 'version', 'parent', 'audio', 'transcript'].includes(k)))
-    return { ok: false, error: 'a comment is { anchor, body, version, parent? }' }
+  if (!isMap(v) || Object.keys(v).some((k) => !['anchor', 'body', 'version', 'parent', 'audio', 'transcript', 'by'].includes(k)))
+    return { ok: false, error: 'a comment is { anchor, body, version, parent?, by? }' }
   const anchor = parseAnchor(v.anchor)
   if (!anchor) return { ok: false, error: 'a comment needs the place on the page it is pinned to' }
   if (v.audio !== undefined && (typeof v.audio !== 'string' || !AUDIO_PATH.test(v.audio))) return { ok: false, error: 'a comment\'s audio is the path it was uploaded to' }
@@ -73,5 +76,10 @@ export function validateComment(
   }
   if (v.audio !== undefined) value.audio = v.audio as string
   if (v.transcript !== undefined) value.transcript = v.transcript as CommentValue['transcript']
+  if (v.by !== undefined) {
+    if (typeof v.by !== 'string' || /[\r\n]/.test(v.by) || v.by.trim().length > MAX_COMMENT_NAME_CHARS)
+      return { ok: false, error: `a comment's name is one line of at most ${MAX_COMMENT_NAME_CHARS} characters` }
+    if (v.by.trim()) value.by = v.by.trim()
+  }
   return { ok: true, value }
 }

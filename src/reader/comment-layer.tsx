@@ -359,8 +359,8 @@ export function CommentLayer({
     m.uploaded?.scope === scope ? m.uploaded.path : host.upload(m.memo, scope)
   const LOST = 'The recording did not upload. Try again, or discard it and save the text.'
 
-  const saveNew = async (body: string, share: boolean, d: Draft, memo?: SavedMemo): Promise<string | null> => {
-    const value: CommentValue = { anchor: d.anchor, body, version, ...(memo?.transcript ? { transcript: memo.transcript } : {}) }
+  const saveNew = async (body: string, share: boolean, d: Draft, memo?: SavedMemo, by?: string): Promise<string | null> => {
+    const value: CommentValue = { anchor: d.anchor, body, version, ...(memo?.transcript ? { transcript: memo.transcript } : {}), ...(share && by ? { by } : {}) }
     const toDevice = !share && !(signedIn && onServer)
     if (memo && !toDevice) {
       const path = await memoPath(memo, share ? 'comment' : 'personal')
@@ -456,7 +456,7 @@ export function CommentLayer({
       {draft ? (
         <Floating x={draft.x} y={draft.y}>
           <CommentCard ownerName={ownerName} mode={comments} canShare={canShare} signedIn={signedIn && onServer} quote={draft.quote} accent={accent} signIn={signIn}
-            voice={host} onSave={(body, share, memo) => saveNew(body, share, draft, memo)} onCancel={() => setDraft(null)} />
+            voice={host} onSave={(body, share, memo, by) => saveNew(body, share, draft, memo, by)} onCancel={() => setDraft(null)} />
         </Floating>
       ) : null}
       {openItem && open ? (
