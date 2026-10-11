@@ -4,7 +4,10 @@
 // from the same rendered text this page shows (see lib/artifacts/narration.ts), so
 // the highlighter walks the DOM in reading order, wraps each word, and aligns that
 // sequence to the word timings by normalized token, resyncing within a short window
-// when the two disagree. Click a word to seek; the bar at the bottom plays and paces.
+// when the two disagree. Tap a word while it plays to jump there; tap one while it is paused and a
+// small bar offers to play from it, so reading and tapping never starts the audio by surprise. While
+// it plays the page follows the voice, until the reader scrolls on their own: then it leaves them
+// where they are and shows a button that brings them back to the voice.
 import { useEffect, useRef, useState } from 'react'
 import { nextRate, PlayerBar } from './player-bar.js'
 
@@ -134,6 +137,16 @@ function fmt(t: number) {
   return `${m}:${s.toString().padStart(2, '0')}`
 }
 
+const SCROLL_KEYS = new Set(['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Home', 'End', ' '])
+/** Whether a key press is the reader scrolling the page themselves. Space scrolls only outside a
+ *  field that takes text. */
+export function isUserScrollKey(key: string, target: EventTarget | null): boolean {
+  if (!SCROLL_KEYS.has(key)) return false
+  const el = target as HTMLElement | null
+  if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName ?? ''))) return false
+  return true
+}
+
 export function ArtifactReader({
   src,
   words,
@@ -160,6 +173,15 @@ export function ArtifactReader({
   const [t, setT] = useState(0)
   const [dur, setDur] = useState(0)
   const [rate, setRate] = useState(1)
+  // Whether the page follows the voice. A reader scrolling on their own turns it off; the button
+  // that appears, a word tapped while playing, or pressing play turns it back on.
+  const [following, setFollowing] = useState(true)
+  const followingRef = useRef(true)
+  const playingRef = useRef(false)
+  const follow = (on: boolean) => { followingRef.current = on; setFollowing(on) }
+  // The Play from here bar, beside the word a paused reader tapped, in page coordinates so it
+  // stays with the word when they scroll.
+  const [offer, setOffer] = useState<{ idx: number; top: number; left: number } | null>(null)
 
   useEffect(() => {
     const root = document.getElementById(rootId)
@@ -171,12 +193,48 @@ export function ArtifactReader({
       if (!el) return
       const idx = mapRef.current.indexOf(el)
       if (idx === -1 || !audioRef.current) return
-      audioRef.current.currentTime = words[idx].s
-      void audioRef.current.play()
+      if (playingRef.current) {
+        audioRef.current.currentTime = words[idx].s
+        follow(true)
+        setOffer(null)
+        return
+      }
+      const r = el.getBoundingClientRect()
+      setOffer({ idx, top: r.bottom + window.scrollY + 6, left: Math.max(8, r.left + window.scrollX) })
     }
     root.addEventListener('click', onClick)
     return () => root.removeEventListener('click', onClick)
   }, [rootId, words])
+
+  // The reader scrolling on their own, while it plays, stops the page following the voice.
+  useEffect(() => {
+    const mine = () => { if (playingRef.current && followingRef.current) follow(false) }
+    const onKey = (e: KeyboardEvent) => { if (isUserScrollKey(e.key, e.target)) mine() }
+    const onEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') setOffer(null) }
+    window.addEventListener('wheel', mine, { passive: true })
+    window.addEventListener('touchmove', mine, { passive: true })
+    window.addEventListener('keydown', onKey)
+    window.addEventListener('keydown', onEsc)
+    return () => {
+      window.removeEventListener('wheel', mine)
+      window.removeEventListener('touchmove', mine)
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('keydown', onEsc)
+    }
+  }, [])
+
+  const playFrom = (idx: number) => {
+    const a = audioRef.current
+    if (!a) return
+    a.currentTime = words[idx].s
+    follow(true)
+    setOffer(null)
+    void a.play()
+  }
+  const backToVoice = () => {
+    follow(true)
+    litRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  }
 
   useEffect(() => {
     const a = audioRef.current
@@ -191,7 +249,7 @@ export function ArtifactReader({
         litRef.current?.classList.remove('artifact-word-lit')
         el?.classList.add('artifact-word-lit')
         litRef.current = el
-        if (el && playing) {
+        if (el && playing && followingRef.current) {
           const r = el.getBoundingClientRect()
           if (r.top < 80 || r.bottom > window.innerHeight - 140) {
             el.scrollIntoView({ block: 'center', behavior: 'smooth' })
@@ -219,15 +277,34 @@ export function ArtifactReader({
         preload="metadata"
         onPlay={() => {
           startedRef.current = true
+          playingRef.current = true
           setPlaying(true)
+          setOffer(null)
+          follow(true)
         }}
         onSeeking={() => {
           startedRef.current = true
         }}
-        onPause={() => setPlaying(false)}
+        onPause={() => { playingRef.current = false; setPlaying(false) }}
         onLoadedMetadata={(e) => setDur((e.target as HTMLAudioElement).duration)}
         onRateChange={(e) => setRate((e.target as HTMLAudioElement).playbackRate)}
       />
+      {offer ? (
+        <div data-nospeak className="absolute z-50 flex items-center gap-1 rounded-full border px-1 py-1 text-sm shadow-lg"
+          style={{ top: offer.top, left: offer.left, background: ground, borderColor: accent }}>
+          <button type="button" data-play-from-here onClick={() => playFrom(offer.idx)} className="rounded-full px-3 py-1 font-medium" style={{ background: accent, color: ground }}>
+            ▶ Play from here
+          </button>
+          <button type="button" aria-label="Close" onClick={() => setOffer(null)} className="px-2 opacity-70">×</button>
+        </div>
+      ) : null}
+      {playing && !following ? (
+        <button type="button" data-follow-voice data-nospeak onClick={backToVoice}
+          className="fixed left-1/2 z-50 -translate-x-1/2 rounded-full px-4 py-2 text-sm font-medium shadow-lg"
+          style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 5.5rem)', background: accent, color: ground }}>
+          Back to the voice
+        </button>
+      ) : null}
       <PlayerBar
         playing={playing}
         onToggle={toggle}

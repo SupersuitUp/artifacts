@@ -3,6 +3,27 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.26.0
+
+**Read-along that leaves the reader in charge.** A tap on any word started the audio, and while it
+played the page scrolled back to the lit word every time it left the screen, pulling a reader who
+had scrolled ahead back to the voice.
+
+- A tap on a word while the audio is paused shows a small **Play from here** bar beside the word
+  (it moves with the page, closes with × or Escape); pressing it plays from that word. A tap while
+  it plays jumps straight there.
+- The page follows the voice until the reader scrolls on their own (wheel, touch, or a scrolling
+  key: arrows, Page Up/Down, Home, End, space outside a text field). It then stays where they are,
+  and a floating **Back to the voice** button scrolls back to the lit word and resumes following.
+  Pressing play, or tapping a word while it plays, also resumes following.
+- New export `isUserScrollKey`.
+- DETECTOR: on a narrated page, pause and tap a word. Audio starting at once means 0.25.0 or
+  earlier.
+- REMEDY: update the dependency. No config change.
+- Tests: `artifact-reader-controls.test.tsx` (offer when paused and play from the word; jump when
+  playing; scrolling while playing releases the page and the button brings it back; scrolling while
+  paused changes nothing; the scroll keys). `test:packed` green.
+
 ## 0.25.0
 
 **A page can play a Supersuit Session demo inline: the ```simulator block.** A book or guide that
