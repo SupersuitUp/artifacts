@@ -18,7 +18,7 @@ import type { Root, RootContent, PhrasingContent, Code, Nodes } from 'mdast'
 import type { StateConfig, Visibility } from './state.js'
 import { blockId } from './anchor.js'
 import { MAX_NOTE_CHARS, NOTES_SLOT, type Heading } from './notes-place.js'
-import { parseSimulatorFence } from './simulator.js'
+import { isEmbedKind, parseEmbedFence } from './simulator.js'
 import { CHECKLIST_SLOT, assignChecklistIds, parseChecklistFence, type ChecklistBlock, type ChecklistItem, type RawChecklistBlock } from './checklist.js'
 
 export { MAX_NOTE_CHARS, NOTES_SLOT, placeNotes, type Heading, type NoteValue, type PlacedNote } from './notes-place.js'
@@ -101,8 +101,8 @@ export function scanWidgets(body: string, offset: number):
     notes = w
   }
   for (const f of fences) {
-    if (f.lang !== 'simulator') continue
-    const r = parseSimulatorFence(f.value, (f.position?.start.line ?? 1) + offset)
+    if (!isEmbedKind(f.lang)) continue
+    const r = parseEmbedFence(f.lang, f.value, (f.position?.start.line ?? 1) + offset)
     if (!r.ok) return r
   }
   const lists = scanChecklists(fences, offset)

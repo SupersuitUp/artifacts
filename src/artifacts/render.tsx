@@ -18,7 +18,7 @@ import { blocksOf, checklistSyncs, checklistsOf, hasNotesWidget, headingsOf, typ
 import type { ChecklistBlock } from './checklist.js'
 import { HeadingNotes, NoteToggle, NotesEarlier, NotesProvider } from '../widgets/notes.js'
 import { Checklist } from '../widgets/checklist.js'
-import { parseSimulatorFence, simulatorSrc } from './simulator.js'
+import { embedSrc, parseEmbedFence, type EmbedKind } from './simulator.js'
 import { VideoAutoplay } from '../reader/video-autoplay.js'
 import { CodeCopy } from '../reader/code-copy.js'
 import { DefinitionLayer } from '../reader/definition-layer.js'
@@ -129,15 +129,17 @@ function InlineAudio({ src, label }: { src: string; label: string }) {
 
 type Positioned = { position?: { start: { offset?: number } } } | undefined
 type SimulatorCtx = { embed: string }
+type EmbedCtx = Partial<Record<EmbedKind, SimulatorCtx>>
 
-/** A ```simulator block: the demo in a frame when the host has one, its caption alone when it does
- *  not, and nothing when the block does not parse (a page published before validation existed). */
-function SimulatorFence({ source, ctx }: { source: string; ctx?: SimulatorCtx }) {
-  const r = parseSimulatorFence(source.replace(/\n$/, ''), 0)
+/** An embed block (```simulator, ```messages): the player in a frame when the host names one, its
+ *  caption alone when it does not, and nothing when the block does not parse (a page published
+ *  before validation existed). */
+function EmbedFence({ kind, source, ctx }: { kind: EmbedKind; source: string; ctx?: SimulatorCtx }) {
+  const r = parseEmbedFence(kind, source.replace(/\n$/, ''), 0)
   if (!r.ok) return null
-  const src = ctx ? simulatorSrc(ctx.embed, r.block.scenario) : null
+  const src = ctx ? embedSrc(kind, ctx.embed, r.block.value) : null
   return (
-    <figure data-artifact-simulator className="my-8">
+    <figure data-artifact-embed={kind} {...(kind === 'simulator' ? { 'data-artifact-simulator': '' } : {})} className="my-8">
       {src ? (
         <iframe src={src} title={r.block.caption} loading="lazy" allow="microphone; autoplay; fullscreen"
           className="block w-full rounded-xl border border-[color:var(--a-line)]" style={{ height: r.block.height, border: 0 }} />
@@ -206,7 +208,7 @@ function ChecklistFence({ line, ctx }: { line: number; ctx: ChecklistCtx }) {
   )
 }
 
-function baseComponents(block: BlockAttr, figure?: FigureFor, checklists?: ChecklistCtx, simulator?: SimulatorCtx): Components {
+function baseComponents(block: BlockAttr, figure?: FigureFor, checklists?: ChecklistCtx, embeds?: EmbedCtx): Components {
   return {
   p: ({ node, children }) => {
     // An image alone in its paragraph that the pack draws itself replaces the paragraph, so the
@@ -278,7 +280,7 @@ function baseComponents(block: BlockAttr, figure?: FigureFor, checklists?: Check
     // A notes fence is the widget's place on the page. Without notes enabled (the host keeps no
     // answers) it draws nothing: its settings are not prose and never shown as code.
     if (lang === 'notes') return null
-    if (lang === 'simulator') return <SimulatorFence source={textOf(children)} ctx={simulator} />
+    if (lang === 'simulator' || lang === 'messages') return <EmbedFence kind={lang} source={textOf(children)} ctx={embeds?.[lang]} />
     if (!className) {
       return <code className="rounded bg-[color:var(--a-surface-strong)] px-1.5 py-0.5 text-[0.9em] text-[color:var(--a-strong)]">{children}</code>
     }
@@ -288,7 +290,7 @@ function baseComponents(block: BlockAttr, figure?: FigureFor, checklists?: Check
     // A links fence renders its own block; do not wrap it in <pre>.
     const inner = Array.isArray(children) ? children[0] : children
     const cls = (inner as { props?: { className?: string } })?.props?.className ?? ''
-    if (/language-(links|notes|checklist|simulator)/.test(cls)) return <>{children}</>
+    if (/language-(links|notes|checklist|simulator|messages)/.test(cls)) return <>{children}</>
     return (
       <pre
         {...block(node)}
@@ -345,7 +347,7 @@ const HEADING_CLASS: Record<number, string> = {
 
 /** Components for any page: every heading gets its slug as an id, the one headingsOf derived,
  *  so a contents link and a note both land on it. */
-function pageComponents(headings: Heading[], block: BlockAttr, figure?: FigureFor, checklists?: ChecklistCtx, simulator?: SimulatorCtx): Components {
+function pageComponents(headings: Heading[], block: BlockAttr, figure?: FigureFor, checklists?: ChecklistCtx, embeds?: EmbedCtx): Components {
   const byLine = new Map(headings.map((h) => [h.line, h]))
   const heading = (depth: 1 | 2 | 3 | 4 | 5 | 6): Components['h1'] =>
     function Heading({ node, children }) {
@@ -353,14 +355,14 @@ function pageComponents(headings: Heading[], block: BlockAttr, figure?: FigureFo
       const h = byLine.get(node?.position?.start.line ?? -1)
       return <Tag id={h?.slug} {...block(node)} className={HEADING_CLASS[depth]}>{children}</Tag>
     }
-  return { ...baseComponents(block, figure, checklists, simulator), h1: heading(1), h2: heading(2), h3: heading(3), h4: heading(4), h5: heading(5), h6: heading(6) }
+  return { ...baseComponents(block, figure, checklists, embeds), h1: heading(1), h2: heading(2), h3: heading(3), h4: heading(4), h5: heading(5), h6: heading(6) }
 }
 
 /** Components for a page with a notes block: every heading gets its slug as an id, a note
  *  control, and its notes after it. The heading is found by its source line, so the slug is the
  *  one headingsOf derived, the same one a note stores. */
-function notesComponents(headings: Heading[], block: BlockAttr, figure?: FigureFor, checklists?: ChecklistCtx, simulator?: SimulatorCtx): Components {
-  const components = baseComponents(block, figure, checklists, simulator)
+function notesComponents(headings: Heading[], block: BlockAttr, figure?: FigureFor, checklists?: ChecklistCtx, embeds?: EmbedCtx): Components {
+  const components = baseComponents(block, figure, checklists, embeds)
   const byLine = new Map(headings.map((h) => [h.line, h]))
   const heading = (depth: 1 | 2 | 3 | 4 | 5 | 6): Components['h1'] =>
     function NotedHeading({ node, children }) {
@@ -469,6 +471,7 @@ export function ArtifactMarkdown({
   Section,
   figure,
   simulator,
+  messages,
 }: {
   markdown: string
   /** The page a ```checklist keeps its ticks under, and whether its Send can reach the owner
@@ -485,8 +488,11 @@ export function ArtifactMarkdown({
   definitions?: Definition[]
   /** The host's Supersuit Session demo, for ```simulator blocks. Without it a block shows its caption only. */
   simulator?: SimulatorCtx
+  /** The host's Messages phone, for ```messages blocks. Without it a block shows its caption only. */
+  messages?: SimulatorCtx
 }) {
   const on = !!notes && hasNotesWidget(markdown)
+  const embeds: EmbedCtx = { simulator, messages }
   const headings = headingsOf(markdown)
   const blocks = blocksOf(markdown)
   const block: BlockAttr = (node) => {
@@ -502,7 +508,7 @@ export function ArtifactMarkdown({
     // page whose checklists sync, that same slot is the shared set, so it turns sync on instead.
     ? { byLine: lists, artifactId: checklist?.artifactId, send: !!checklist?.send, sync: !!checklist?.send && checklistSyncs(lists.values()), owner: checklist?.owner, accent: checklist?.accent }
     : undefined
-  const components = on ? notesComponents(headings, block, figure, checklists, simulator) : pageComponents(headings, block, figure, checklists, simulator)
+  const components = on ? notesComponents(headings, block, figure, checklists, embeds) : pageComponents(headings, block, figure, checklists, embeds)
   if (outline.length) components.section = sectionComponent(Section!, outline, block)
   const body = (
     <ReactMarkdown remarkPlugins={plugins} components={components} urlTransform={artifactUrlTransform}>

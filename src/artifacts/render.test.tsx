@@ -181,3 +181,18 @@ describe('the simulator block', () => {
   })
 })
 
+describe('the messages block', () => {
+  const md = '```messages\nchat: fritz\ncaption: Fritz, in his own words.\n```\n'
+  it('plays the host\'s Messages phone inline, open on the chat', () => {
+    const out = renderToStaticMarkup(<ArtifactMarkdown markdown={md} messages={{ embed: 'https://example.com/messages/embed' }} />)
+    expect(out).toContain('src="https://example.com/messages/embed?chat=fritz"')
+    expect(out).toContain('Fritz, in his own words.')
+    expect(out).not.toContain('<pre')
+  })
+  it('shows only the caption on a host with no Messages page', () => {
+    const out = html(md)
+    expect(out).not.toContain('<iframe')
+    expect(out).not.toContain('<pre')
+  })
+})
+

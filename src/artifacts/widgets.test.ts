@@ -119,3 +119,10 @@ describe('scanWidgets and the simulator block', () => {
   })
 })
 
+describe('scanWidgets and the messages block', () => {
+  it('refuses a messages block with no caption, naming the line', () => {
+    const r = scanWidgets('```messages\nchat: fritz\n```\n', 4)
+    expect(!r.ok && r.error).toMatch(/^line 5: .*caption/)
+  })
+})
+

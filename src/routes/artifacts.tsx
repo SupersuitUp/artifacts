@@ -64,6 +64,9 @@ export type ArtifactRoutesConfig = {
    *  https://example.com/simulator/embed), for ```simulator blocks. Without it a block shows its
    *  caption only. No default: this package points at nobody's service. */
   simulatorEmbed?: string
+  /** The embed page of this host's Messages phone (an https URL), for ```messages blocks: a
+   *  `chat=<id>` opens one thread. Without it a block shows its caption only. No default. */
+  messagesEmbed?: string
   /** Read at request time, so a rotated key needs no rebuild. */
   publishKey: () => string | undefined
   /** Verifies publisher passes (`p1`, see artifacts/publisher.ts): a signed, hour-long stand-in
@@ -510,7 +513,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
             </div>
           )}
         >
-          <ArtifactMarkdown markdown={v.markdown} simulator={config.simulatorEmbed ? { embed: config.simulatorEmbed } : undefined} definitions={a.definitions} checklist={{ artifactId: a.id, accent: brand.accent }} Section={pack.Section} figure={pack.figure} />
+          <ArtifactMarkdown markdown={v.markdown} simulator={config.simulatorEmbed ? { embed: config.simulatorEmbed } : undefined} messages={config.messagesEmbed ? { embed: config.messagesEmbed } : undefined} definitions={a.definitions} checklist={{ artifactId: a.id, accent: brand.accent }} Section={pack.Section} figure={pack.figure} />
         </Framed>
       </>
     )
@@ -597,7 +600,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
                   checklist={{ artifactId: a.id, send: !!config.state && !!a.state && Object.hasOwn(a.state.slots, CHECKLIST_SLOT), owner, accent: brand.accent }}
                   Section={pack.Section}
                   figure={pack.figure}
-                  simulator={config.simulatorEmbed ? { embed: config.simulatorEmbed } : undefined}
+                  simulator={config.simulatorEmbed ? { embed: config.simulatorEmbed } : undefined} messages={config.messagesEmbed ? { embed: config.messagesEmbed } : undefined}
                 />
               </Framed>
             )

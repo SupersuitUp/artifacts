@@ -3,6 +3,29 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.27.0
+
+**A page can play a Messages-app phone of real threads inline: the ```messages block.** The
+second embedded player after ```simulator, so both now run through one embed mechanism.
+
+```messages
+chat: fritz            # optional: open on one chat; without it the chat list
+caption: Fritz, in his own words.
+height: 760px          # optional, default 760px
+```
+
+- The HOST names the player: new `ArtifactRoutesConfig.messagesEmbed` (an https embed page). The
+  block draws as a lazy frame on `<embed>?chat=<id>`, with the caption under it; a host without it
+  draws the caption alone, never the block as code. Malformed blocks are refused at publish.
+- `simulator` and `messages` share `parseEmbedFence` and `embedSrc` (new exports, with
+  `EMBED_KINDS`, `EmbedBlock`, `EmbedKind`); `parseSimulatorFence` and `simulatorSrc` keep working.
+  `ArtifactMarkdown` takes `messages?: { embed }`.
+- DETECTOR: a page with a ```messages block showing `chat:` as code means 0.26.0 or earlier, or no
+  `messagesEmbed`.
+- REMEDY: update the dependency and set `messagesEmbed`.
+- Tests: `simulator.test.ts` (messages parse, optional chat, refusals, src with and without a chat),
+  `render.test.tsx`, `widgets.test.ts`. `test:packed` green.
+
 ## 0.26.0
 
 **Read-along that leaves the reader in charge.** A tap on any word started the audio, and while it
