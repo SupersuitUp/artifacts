@@ -121,7 +121,7 @@ jobs:
       # of this file so the public repo does not list its hosts.
       # HOSTS_DISPATCH_TOKEN (a repository SECRET): a fine-grained token with "Contents: read and
       # write" on those repositories only (the permission repository_dispatch requires). Absent,
-      # this step says so and passes: each host's daily check still picks the version up.
+      # this step says so and passes: each host's scheduled check (hourly on the reference host) still picks the version up.
       - name: Notify consuming hosts
         if: github.event_name == 'push' || inputs.dry_run == false
         env:

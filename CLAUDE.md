@@ -38,7 +38,7 @@ every repo named in the `CONSUMING_HOSTS` repository variable (space-separated `
 out of the source so this public repo does not list its hosts), using the `HOSTS_DISPATCH_TOKEN`
 secret. Each host's own workflow
 bumps the dependency, runs its tests and build, and pushes only a green result. Hosts also check
-npm daily, so a missing token delays an update and loses nothing. Adding a host is one word in
+npm on a schedule (hourly on the reference host), so a missing token delays an update by up to an hour and loses nothing. Adding a host is one word in
 `CONSUMING_HOSTS` plus that host's workflow.
 
 ## What must never land in this repo
