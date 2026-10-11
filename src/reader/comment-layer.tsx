@@ -110,6 +110,9 @@ export function CommentLayer({
   const personalUrl = `/api/artifacts/${artifactId}/personal`
   const [mounted, setMounted] = useState(false)
   const [shared, setShared] = useState<Item[]>([])
+  // Whether the shared comments have arrived, so a link to one this reader cannot see can say so.
+  const [loaded, setLoaded] = useState(false)
+  const [missing, setMissing] = useState(false)
   const [serverNotes, setServerNotes] = useState<Item[]>([])
   const [device, setDevice] = useState<Item[]>([])
   const [onServer, setOnServer] = useState(signedIn)
@@ -151,8 +154,8 @@ export function CommentLayer({
     refreshDevice()
     let live = true
     if (comments !== 'off') {
-      void call(stateUrl).then((r) => { if (live && r.status === 200) setShared(sharedFrom(r.body)) })
-    }
+      void call(stateUrl).then((r) => { if (!live) return; if (r.status === 200) setShared(sharedFrom(r.body)); setLoaded(true) })
+    } else setLoaded(true)
     if (signedIn) {
       void (async () => {
         const r = await call(personalUrl)
@@ -325,12 +328,16 @@ export function CommentLayer({
   }, [mounted, rootId, tops, tick]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Show the comment the address names once it has loaded: a reply is shown in its parent's thread.
-  // Held until the comments arrive; an id that never arrives (deleted, or not this reader's to see)
-  // simply does nothing.
+  // Held until the comments arrive; an id that is not among them (deleted, or not this reader's to
+  // see) says so in a line, rather than leaving the reader wondering why nothing happened.
   useEffect(() => {
     if (!target || !mounted) return
     const item = items.find((i) => i.id === target)
-    if (!item) return
+    if (!item) {
+      if (loaded) { setMissing(true); setTarget(null) }
+      return
+    }
+    setMissing(false)
     const parent = item.value.parent ? items.find((i) => i.id === item.value.parent) : undefined
     const id = (parent ?? item).id
     setTarget(null)
@@ -344,7 +351,7 @@ export function CommentLayer({
       setHighlight(id)
       setScrollTo(`[data-comment-earlier-id="${id}"]`)
     }
-  }, [target, mounted, items, layout])
+  }, [target, mounted, items, layout, loaded])
 
   // Effects run after the DOM is committed, so the pin or list item drawn for the target is there.
   useEffect(() => {
@@ -432,6 +439,12 @@ export function CommentLayer({
   const count = tops.length
   const overlay: ReactNode = mounted ? (
     <div data-comment-ui data-nospeak className="font-sans" style={theme as CSSProperties}>
+      {missing ? (
+        <div data-comment-missing role="status" className="fixed left-1/2 top-4 z-50 flex -translate-x-1/2 items-center gap-2 rounded-full border border-[color:var(--a-line-strong)] bg-[color:var(--a-surface)] px-4 py-2 text-sm text-[color:var(--a-strong)] shadow-lg">
+          <span>That comment can't be shown to you. Comments on this page are visible to its owner and admins{signedIn ? '' : '; sign in if that is you'}.</span>
+          <button type="button" aria-label="Close" onClick={() => setMissing(false)} className="opacity-70">×</button>
+        </div>
+      ) : null}
       {showPins ? layout.placed.map(({ item, left, top, box }) => (
         <div key={item.id}>
           {box ? (

@@ -70,6 +70,9 @@ export type StateRoutesContext = {
   /** The page owner's sign-in email. Signed in as them, a page's comments show every entry with
    *  full names, whatever `comments_visible:` says. */
   ownerEmail?: string
+  /** The page's admins' sign-in emails. Like the owner they read every comment with names, so a
+   *  link to any comment opens for them. */
+  admins?: readonly string[]
   /** A signed URL to play a comment's recording. Called only for `comments/` paths, and only for
    *  comments the asker is already being shown. Without it a recording has no play control. */
   audioUrl?: (id: string, path: string) => Promise<string>
@@ -107,7 +110,10 @@ export function createStateRoutes(ctx: StateRoutesContext) {
   }
 
   const ownerEmail = ctx.ownerEmail?.trim().toLowerCase()
-  const isOwner = (r: Reader | null) => !!r && !!ownerEmail && r.email === ownerEmail
+  const admins = new Set((ctx.admins ?? []).map((e) => e.trim().toLowerCase()))
+  // The owner and the page's admins read every comment, with names.
+  const isOwner = (r: Reader | null) => !!r && ((!!ownerEmail && r.email.trim().toLowerCase() === ownerEmail) || admins.has(r.email.trim().toLowerCase()))
+  const declared = (v: unknown) => { const by = (v as { by?: unknown } | null)?.by; return typeof by === 'string' && by.trim() ? by.trim() : null }
   /** Comments are on for this page: the slot exists because `comments:` put it there. */
   const commentsOn = (a: ArtifactRecord) => !!a.comments && a.comments !== 'off' && Object.hasOwn(a.state!.slots, COMMENTS_SLOT)
 
@@ -133,7 +139,7 @@ export function createStateRoutes(ctx: StateRoutesContext) {
     if (owner && commentsOn(a)) {
       slots[COMMENTS_SLOT].shared = entries.filter((e) => e.slot === COMMENTS_SLOT)
         .sort((x, y) => x.at.localeCompare(y.at) || x.id.localeCompare(y.id))
-        .map((e) => ({ id: e.id, name: e.writer.name?.trim() || 'a reader', value: e.value, at: e.at, mine: e.readerKey === readerKey }))
+        .map((e) => ({ id: e.id, name: e.writer.name?.trim() || declared(e.value) || 'a reader', value: e.value, at: e.at, mine: e.readerKey === readerKey }))
     }
     if (commentsOn(a) && slots[COMMENTS_SLOT]) {
       const v = slots[COMMENTS_SLOT]

@@ -181,7 +181,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
   const stateRoutes = createStateRoutes({
     store, state: config.state, readers: config.readers, readerSecret, publishKey: config.publishKey,
     publisherSecret: config.publisherSecret, publisherHost: config.publisherHost, pageUrl, signInOrigin, siteUrl,
-    clientIp: config.clientIp, ownerEmail: config.ownerEmail, audioUrl,
+    clientIp: config.clientIp, ownerEmail: config.ownerEmail, admins: config.admins, audioUrl,
   })
   const personalRoutes = createPersonalRoutes({ store, personal: config.personal, readers: config.readers, readerSecret, pageUrl, signInOrigin, siteUrl, audioUrl })
   const voiceRoutes = createVoiceRoutes({
@@ -613,7 +613,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
           comments={mode}
           canShare={mode !== 'off' && (reader !== null || effectiveWriters(a.state!, a.access, COMMENTS_SLOT) === 'anyone')}
           signedIn={reader !== null}
-          isOwner={!!reader && !!ownerEmail && reader.email === ownerEmail}
+          isOwner={!!reader && ((!!ownerEmail && reader.email.trim().toLowerCase() === ownerEmail.trim().toLowerCase()) || (config.admins ?? []).some((e) => e.trim().toLowerCase() === reader.email.trim().toLowerCase()))}
           version={a.version ?? (a.versions?.length ?? 0) + 1}
           accent={brand.accent}
           ground={brand.ground}

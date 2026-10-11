@@ -282,7 +282,7 @@ describe('deep link', () => {
     expect(document.querySelector('[data-comment-thread]')).toBeNull()
   })
 
-  it('a hashchange after load does the same, and an unknown id does nothing', async () => {
+  it('a hashchange after load does the same, and an id this reader cannot see says so', async () => {
     stubFetch({ shared: SHARED })
     await mount({ comments: 'anyone', canShare: true })
     expect(document.querySelector('[data-comment-thread]')).toBeNull()
@@ -291,6 +291,7 @@ describe('deep link', () => {
     await settle()
     expect(document.querySelector('[data-comment-thread]')).toBeNull()
     expect(scrolled).toEqual([])
+    expect(document.querySelector('[data-comment-missing]')?.textContent).toMatch(/can't be shown/)
     hash('#comment-s1')
     await act(async () => { window.dispatchEvent(new HashChangeEvent('hashchange')) })
     await settle()

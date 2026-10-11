@@ -57,13 +57,14 @@ function build(as: Reader | null = null, keepsAnswers = true) {
   const routes = createArtifactRoutes({
     readCookie: async (name) => (name === GRANT_COOKIE && as ? mintGrant(SECRET, as) : undefined),
     store: fakeStore(), state: keepsAnswers ? state : undefined, readers: fakeReaders(), brand: freedomDefault, siteUrl: 'https://artifacts.example.com', publishKey: () => 'k',
-    readerSecret: () => SECRET, signInOrigin: 'https://accounts.example.com', ownerEmail: 'Owner@Example.com',
+    readerSecret: () => SECRET, signInOrigin: 'https://accounts.example.com', ownerEmail: 'Owner@Example.com', admins: ['Admin@Example.com'],
   })
   return { routes, state }
 }
 
 const owner: Reader = { uid: 'u0', email: 'owner@example.com', name: 'Olive Owner', member: true }
 const sam: Reader = { uid: 'u3', email: 'sam@example.com', name: 'Sam Reader', member: false }
+const admin: Reader = { uid: 'u9', email: 'admin@example.com', name: 'Ada Admin', member: true }
 const jo: Reader = { uid: 'u5', email: 'jo@example.com', name: 'Jo Other', member: true }
 const grant = (r: Reader) => `${GRANT_COOKIE}=${mintGrant(SECRET, r)}`
 
@@ -217,6 +218,21 @@ describe('the owner', () => {
     expect(asSam.owner).toBeUndefined()
     expect(asSam.slots.comments.shared).toBeUndefined()
     expect(asSam.slots.comments.mine.map((e) => e.value.body)).toEqual(['From Sam'])
+  })
+
+  it('an admin, like the owner, sees every comment with names, so a link to one opens', async () => {
+    const { routes } = build()
+    await routes.STATE_POST(post('cmt23456', comment('From Sam'), grant(sam)), params('cmt23456'))
+    const asAdmin = (await (await routes.STATE_GET(get('cmt23456', grant(admin)), params('cmt23456'))).json()) as Body
+    expect(asAdmin.owner).toBe(true)
+    expect(asAdmin.slots.comments.shared!.map((e) => [e.name, e.value.body])).toEqual([['Sam Reader', 'From Sam']])
+  })
+
+  it('the owner sees the name an anonymous reader declared, not "a reader"', async () => {
+    const { routes } = build()
+    await routes.STATE_POST(post('cmt23456', comment('Signed', { by: 'Ada Lovelace' })), params('cmt23456'))
+    const asOwner = (await (await routes.STATE_GET(get('cmt23456', grant(owner)), params('cmt23456'))).json()) as Body
+    expect(asOwner.slots.comments.shared!.map((e) => e.name)).toEqual(['Ada Lovelace'])
   })
 
   it('/responses carries the comments slot for the publisher', async () => {

@@ -3,6 +3,26 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.28.0
+
+**A link to a comment opens for the page's admins, and says so when it cannot.** On an owner-only
+page (`comments_visible: owner`, the default) the state API showed every comment to exactly one
+person, `ownerEmail`. An admin opening a comment's link (the link in every comment notification)
+got the page with nothing to scroll to, and nothing said why.
+
+- `StateRoutesContext.admins` (passed from `ArtifactRoutesConfig.admins`, which version history
+  already used): admins, like the owner, read every comment with names and see the owner panel.
+- The owner's view names an anonymous commenter by the name they declared (0.24.0's `by`),
+  where it said "a reader".
+- A `#comment-<id>` link to a comment this reader cannot see now shows a closable line: "That
+  comment can't be shown to you. Comments on this page are visible to its owner and admins", with
+  "sign in if that is you" when signed out. It used to do nothing.
+- DETECTOR: as an admin who is not `ownerEmail`, open a comment notification's link on an
+  owner-only page. No pin and no thread means 0.27.0 or earlier.
+- REMEDY: update the dependency; a host that sets `admins` needs no other change.
+- Tests: `comments.test.tsx` (an admin sees every comment with names; the owner sees a declared
+  name), `comment-layer.test.tsx` (an unseeable link says so). `test:packed` green.
+
 ## 0.27.0
 
 **A page can play a Messages-app phone of real threads inline: the ```messages block.** The
