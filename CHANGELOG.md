@@ -3,6 +3,20 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.31.1
+
+**Play from here stays inside the page card, not only the screen.** 0.30.2 kept the bar inside
+the screen, but the company host draws the page in a rounded card that clips its content, so the
+bar's right end was still cut off at the card's edge.
+
+- The bar is bounded by every ancestor that clips (any overflow other than visible) as well as the
+  screen.
+- DETECTOR: at iPhone width on the company host, pause and tap a word at the right edge. A pill
+  whose right end is cut off means 0.30.2.
+- REMEDY: update the dependency.
+- Tests: `artifact-reader-controls.test.tsx` (a clipping card 10 to 380px keeps the bar's right edge
+  at 372px or less).
+
 ## 0.31.0
 
 **The owner and admins change a page's share and comment settings from the page menu, and a later

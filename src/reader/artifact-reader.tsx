@@ -191,10 +191,20 @@ export function ArtifactReader({
   useLayoutEffect(() => {
     const el = offerRef.current
     if (!offer || !el || offer.nudged) return
-    const vw = document.documentElement.clientWidth || window.innerWidth
+    // Inside the screen AND inside whatever box clips the bar (a host's rounded page card).
+    let lo = 0
+    let hi = document.documentElement.clientWidth || window.innerWidth
+    for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) {
+      const o = getComputedStyle(p)
+      if (o.overflowX !== 'visible' || o.overflow !== 'visible') {
+        const b = p.getBoundingClientRect()
+        if (b.width > 0) { lo = Math.max(lo, b.left); hi = Math.min(hi, b.right) }
+      }
+    }
+    const vw = hi
     const r = el.getBoundingClientRect()
     // No layout to measure (a server render, a test DOM): leave the placement as computed.
-    const shift = r.width === 0 ? 0 : r.right > vw - 8 ? vw - 8 - r.right : r.left < 8 ? 8 - r.left : 0
+    const shift = r.width === 0 ? 0 : r.right > vw - 8 ? vw - 8 - r.right : r.left < lo + 8 ? lo + 8 - r.left : 0
     // Once per tap: measured again, an element with no layout would move forever.
     setOffer({ ...offer, left: offer.left + (Math.abs(shift) >= 1 ? shift : 0), nudged: true })
   }, [offer])
