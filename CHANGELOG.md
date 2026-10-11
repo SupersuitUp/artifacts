@@ -3,6 +3,25 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.32.0
+
+**The page's owner and the hub's admins always get past a locked page's door** (Gary, 2026-10-11).
+Before, an admin who set a page to "only the list" without being on it landed on the door at their
+next reload. `decide()` takes a fourth argument, `staff`, which opens the page with
+`why: 'staff'`; the page, the agreement, the reading heartbeat and the state API all pass it.
+
+**Play from here stays inside the page's text column.** 0.31.1 bounded the bar by clipping
+ancestors, but the company host's card does not clip that way, so the pill still ran 2px past the
+card's edge at iPhone width. It is now also bounded by the narration root, the page as the reader
+sees it.
+
+- DETECTOR: as a hub admin not on a list-only page's list, open it: the door means 0.31.1. At iPhone
+  width on the company host, tap a word at the right edge: a pill past the card's edge means 0.31.1.
+- REMEDY: update the dependency. A host passing `admins` or `ownerEmail` needs nothing else.
+- Tests: `reader.test.ts` (staff opens signed in, never signed out), `gated.test.tsx` (an admin and
+  the owner read a list-only page they are not on; anyone else is still refused),
+  `artifact-reader-controls.test.tsx` (the bar stays 8px inside the text column).
+
 ## 0.31.1
 
 **Play from here stays inside the page card, not only the screen.** 0.30.2 kept the bar inside

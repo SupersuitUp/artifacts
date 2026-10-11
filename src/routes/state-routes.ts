@@ -100,7 +100,7 @@ export function createStateRoutes(ctx: StateRoutesContext) {
     if (a.access) {
       if (!ctx.readers) return { error: json({ error: 'this page is closed' }, 403) }
       if (!reader) return { error: json({ error: 'sign in to answer', signIn }, 401) }
-      if (!decide(a.access, reader, await ctx.readers.allowList(id)).open) return { error: json({ error: 'this page is not open to you' }, 403) }
+      if (!decide(a.access, reader, await ctx.readers.allowList(id), isOwner(reader)).open) return { error: json({ error: 'this page is not open to you' }, 403) }
       // The page shows its body only after the agreement, so its answers wait for it too.
       if (!(await ctx.readers.acknowledged(id, reader.email))) return { error: json({ error: 'accept the agreement first' }, 403) }
     }

@@ -201,13 +201,16 @@ export function ArtifactReader({
         if (b.width > 0) { lo = Math.max(lo, b.left); hi = Math.min(hi, b.right) }
       }
     }
+    // And inside the page's own text column, which is what a reader sees as the page.
+    const col = document.getElementById(rootId)?.getBoundingClientRect()
+    if (col && col.width > 0) { lo = Math.max(lo, col.left); hi = Math.min(hi, col.right) }
     const vw = hi
     const r = el.getBoundingClientRect()
     // No layout to measure (a server render, a test DOM): leave the placement as computed.
     const shift = r.width === 0 ? 0 : r.right > vw - 8 ? vw - 8 - r.right : r.left < lo + 8 ? lo + 8 - r.left : 0
     // Once per tap: measured again, an element with no layout would move forever.
     setOffer({ ...offer, left: offer.left + (Math.abs(shift) >= 1 ? shift : 0), nudged: true })
-  }, [offer])
+  }, [offer, rootId])
 
   useEffect(() => {
     const root = document.getElementById(rootId)

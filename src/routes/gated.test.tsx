@@ -23,8 +23,9 @@ const outsider: Reader = { uid: 'u2', email: 'friend@example.com', name: 'Friend
 const listed: Reader = { uid: 'u3', email: 'priya@example.com', name: null, member: false }
 
 let readers: ReadersStore
-function routesWith(cookie?: string) {
+function routesWith(cookie?: string, extra: Record<string, unknown> = {}) {
   return createArtifactRoutes({
+    ...extra,
     store, brand: freedomDefault, siteUrl: 'https://artifacts.example.com', publishKey: () => 'k',
     readers, readerSecret: () => SECRET, owner: 'Example Co', readCookie: async () => cookie,
     signInOrigin: 'https://accounts.example.com',
@@ -99,6 +100,14 @@ describe('a gated page', () => {
     expect(html).not.toContain('the secret body')
     expect(html).toContain('friend@example.com')
     expect(readers.flag).toHaveBeenCalledWith(expect.objectContaining({ artifactId: 'abc23456', kind: 'refused', reader: expect.objectContaining({ email: 'friend@example.com' }) }))
+  })
+  it('the hub\'s admins and the owner always get in, though not on the list', async () => {
+    const asAdmin = renderToStaticMarkup(await routesWith(mintGrant(SECRET, outsider), { admins: ['Friend@Example.com'] }).Page({ params: Promise.resolve({ id: 'abc23456' }) }))
+    expect(asAdmin).toContain('the secret body')
+    const asOwner = renderToStaticMarkup(await routesWith(mintGrant(SECRET, outsider), { ownerEmail: 'friend@example.com' }).Page({ params: Promise.resolve({ id: 'abc23456' }) }))
+    expect(asOwner).toContain('the secret body')
+    // Anyone else at the same address-less door is still refused.
+    expect(await page(mintGrant(SECRET, outsider))).not.toContain('the secret body')
   })
   it('without a reader record the page fails closed', async () => {
     const r = createArtifactRoutes({ store, brand: freedomDefault, siteUrl: 'https://a', publishKey: () => 'k', readerSecret: () => SECRET, readCookie: async () => mintGrant(SECRET, member) })

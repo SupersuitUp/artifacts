@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { createHmac } from 'node:crypto'
-import { mintPass, verifyPass, mintGrant, verifyGrant, decide, firstName, safeReturnPath, signInUrl, MEMBER_REASON, LISTED_REASON, type Reader } from './reader.js'
+import { mintPass, verifyPass, mintGrant, verifyGrant, decide, firstName, safeReturnPath, signInUrl, MEMBER_REASON, LISTED_REASON, type Reader, STAFF_REASON } from './reader.js'
 
 const jordan: Reader = { uid: 'uid1', email: 'jordan@example.com', name: 'Jordan Lee', member: true }
 
@@ -40,6 +40,10 @@ describe('decide', () => {
     expect(decide('invite', member, []).open).toBe(false)
     expect(decide('freedom', stranger, []).open).toBe(false)
     expect(decide('invite', stranger, [{ email: 'X@example.com ' }])).toEqual({ open: true, why: 'listed', reason: LISTED_REASON })
+  })
+  it('staff (owner or hub admin) always opens, signed in; never signed out', () => {
+    expect(decide('invite', stranger, [], true)).toEqual({ open: true, why: 'staff', reason: STAFF_REASON })
+    expect(decide('invite', null, [], true).open).toBe(false)
   })
   it("a listed person's own reason wins over membership", () => {
     const d = decide('freedom', member, [{ email: 'm@example.com', reason: 'Sam wanted your read before anyone else' }])

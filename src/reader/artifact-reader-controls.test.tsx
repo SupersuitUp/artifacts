@@ -84,6 +84,23 @@ describe('tapping a word', () => {
       expect(bar.getBoundingClientRect().right).toBeLessThanOrEqual(380 - 8)
     } finally { HTMLElement.prototype.getBoundingClientRect = real; card.style.overflow = '' }
   })
+  it('a bar is kept inside the page\'s text column, whatever clips it', async () => {
+    Object.defineProperty(document.documentElement, 'clientWidth', { configurable: true, value: 390 })
+    const page = document.getElementById('page')!
+    page.getBoundingClientRect = () => ({ left: 10, right: 380, top: 0, bottom: 2000, width: 370, height: 2000, x: 10, y: 0, toJSON: () => ({}) }) as DOMRect
+    const real = HTMLElement.prototype.getBoundingClientRect
+    HTMLElement.prototype.getBoundingClientRect = function (this: HTMLElement) {
+      if (!this.hasAttribute('data-play-offer')) return real.call(this)
+      const left = parseFloat(this.style.left)
+      return { left, right: left + parseFloat(this.style.width), top: 0, bottom: 32, width: parseFloat(this.style.width), height: 32, x: left, y: 0, toJSON: () => ({}) } as DOMRect
+    }
+    try {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 })
+      word(2).getBoundingClientRect = () => ({ left: 330, right: 380, top: 100, bottom: 120, width: 50, height: 20, x: 330, y: 100, toJSON: () => ({}) }) as DOMRect
+      await click(word(2))
+      expect(document.querySelector<HTMLElement>('[data-play-offer]')!.getBoundingClientRect().right).toBeLessThanOrEqual(380 - 8)
+    } finally { HTMLElement.prototype.getBoundingClientRect = real }
+  })
   it('while playing, jumps straight to the word with no bar in between', async () => {
     await act(async () => { void audio.play() })
     played.mockReset()

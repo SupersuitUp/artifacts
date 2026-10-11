@@ -102,17 +102,22 @@ export type AllowEntry = { email: string; name?: string; reason?: string; addedA
 export type Decision =
   | { open: true; why: 'listed'; reason: string }
   | { open: true; why: 'member'; reason: string }
+  | { open: true; why: 'staff'; reason: string }
   | { open: false; why: 'signed-out' }
   | { open: false; why: 'not-allowed'; reader: Reader }
 
 export const MEMBER_REASON = 'you are a Freedom user'
 export const LISTED_REASON = 'you were given access to it by name'
+export const STAFF_REASON = 'you are its owner or an admin of this hub'
 
 /** Whether this reader may open a page with this access level. The allowlist opens both
  *  levels; `freedom` also opens to any active Freedom account. A listed person's own reason
  *  wins over the membership one, because it is the truer account of why they are reading. */
-export function decide(access: Access, reader: Reader | null, allow: AllowEntry[]): Decision {
+/** `staff`: the reader is the page's owner or one of the hub's admins, who always get in, so an
+ *  admin who narrows a page to its list can never lock themselves out of it. */
+export function decide(access: Access, reader: Reader | null, allow: AllowEntry[], staff = false): Decision {
   if (!reader) return { open: false, why: 'signed-out' }
+  if (staff) return { open: true, why: 'staff', reason: STAFF_REASON }
   const listed = allow.find((a) => a.email.trim().toLowerCase() === reader.email)
   if (listed) return { open: true, why: 'listed', reason: listed.reason?.trim() || LISTED_REASON }
   if (access === 'freedom' && reader.member) return { open: true, why: 'member', reason: MEMBER_REASON }

@@ -464,7 +464,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     // Only a host that signs readers in can know one; the read never fails the page.
     const reader = readerSecret() ? verifyGrant(readerSecret(), await readCookie(GRANT_COOKIE).catch(() => undefined)) : null
     const allow = config.readers && reader ? await config.readers.allowList(id) : []
-    const d = config.readers ? decide(a.access!, reader, allow) : ({ open: false, why: 'signed-out' } as const)
+    const d = config.readers ? decide(a.access!, reader, allow, isAdmin(reader)) : ({ open: false, why: 'signed-out' } as const)
     const header = (
       <div className="mx-auto max-w-2xl px-6 pt-24 pb-8 text-center sm:pt-28">
         <Kicker to={a.to} brand={brand} />
@@ -780,7 +780,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     const reader = verifyGrant(readerSecret(), request.cookies.get(GRANT_COOKIE)?.value)
     const a = await store.get(id)
     if (!reader || !a?.access) return back
-    if (!decide(a.access, reader, await config.readers.allowList(id)).open) return back
+    if (!decide(a.access, reader, await config.readers.allowList(id), isAdmin(reader)).open) return back
     await config.readers.acknowledge({ artifactId: id, reader, text: ackText(owner), country: request.headers.get('x-vercel-ip-country') ?? undefined })
     return back
   }
@@ -802,7 +802,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     const a = await store.get(id)
     if (!a?.access) return new NextResponse(null, { status: 404 })
     const allow = await config.readers.allowList(id)
-    if (!decide(a.access, reader, allow).open) return new NextResponse(null, { status: 403 })
+    if (!decide(a.access, reader, allow, isAdmin(reader)).open) return new NextResponse(null, { status: 403 })
     const country = request.headers.get('x-vercel-ip-country') ?? undefined
     if (b.kind === 'beat') {
       const add = Math.max(0, Math.min(60, Math.round(Number(b.active) || 0)))
