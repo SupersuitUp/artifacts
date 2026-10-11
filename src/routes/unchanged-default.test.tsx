@@ -1,6 +1,8 @@
 // A pack that uses none of the 0.16.0 extension points renders every page byte for byte as it did
 // before they existed. The golden was rendered by 0.15.0 (the release before them) from this same
 // file; regenerate it only on purpose, with WRITE_GOLDEN=1, and say why in the commit.
+// Regenerated on purpose in 0.30.0: the History control left the version line for the page menu,
+// whose hidden server marker (role, items, the version list) is the only other difference.
 import { describe, it, expect, vi } from 'vitest'
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 vi.mock('next/navigation', () => ({

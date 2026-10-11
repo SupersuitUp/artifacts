@@ -36,7 +36,7 @@ for (const bad of paths.filter((p) => /\.test\.|^src\/|^test\//.test(p))) fail(`
 if (!paths.includes('fonts/Newsreader-600.ttf')) fail('tarball has no fonts/Newsreader-600.ttf')
 const reader = readFileSync(join(dest, 'lib/reader/artifact-reader.js'), 'utf8')
 if (!/^['"]use client['"]/.test(reader)) fail("compiled reader lost its 'use client' directive")
-for (const f of ['player-bar.js', 'comment-layer.js', 'comment-card.js']) {
+for (const f of ['player-bar.js', 'comment-layer.js', 'comment-card.js', 'page-menu.js', 'version-history.js']) {
   if (!/^['"]use client['"]/.test(readFileSync(join(dest, 'lib/reader', f), 'utf8'))) fail(`compiled ${f} lost its 'use client' directive`)
 }
 // GUARD: nothing the package ships may speak with the browser's own voice.
@@ -80,6 +80,9 @@ try {
   // Version history: the page names its version and carries the History control; a past version
   // renders under its banner at its own URL; a version that does not exist is a 404.
   if (!html.includes('Version 2') || !html.includes('data-version-history') || !html.includes('First draft')) fail('the page has no version line or history')
+  // The page menu (0.30.0): its server marker names the role and the items, and carries the
+  // version list for readers with scripts off.
+  if (!html.includes('data-page-menu-for="visitor"') || !html.includes('data-page-menu-items="share history"')) fail('the page has no page menu')
   const v1 = await fetch(`${base}/abc23456/v/1`)
   const v1html = await v1.text()
   if (v1.status !== 200 || !v1html.includes('the first body') || !v1html.includes('You are reading version 1 of 2')) fail(`version 1 answered ${v1.status}`)
@@ -147,7 +150,7 @@ try {
   const pr = await fetch(`${base}/api/artifacts/cmt23456/personal`)
   if (pr.status !== 401 || (await pr.json()).device !== true) fail(`personal notes for a signed-out reader answered ${pr.status}, not 401 device`)
 
-  console.log('check-packed: fixture builds; page, version history, share card, publish, state routes, the notes and checklist widgets, comments and the comments feed answer correctly')
+  console.log('check-packed: fixture builds; page, page menu, version history, share card, publish, state routes, the notes and checklist widgets, comments and the comments feed answer correctly')
 } finally {
   server.kill()
 }

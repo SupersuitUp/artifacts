@@ -114,10 +114,46 @@ hostname and pick by the `host` header.
 body. The response carries the page's id and URL. Posting a file whose front matter carries
 that `id:` republishes it in place, keeping every earlier version.
 
+## The page menu
+
+Every page, past version and door carries one small round **⋯** button in the top right corner
+(`aria-label="Page menu"`), the same on every host. Tapping it opens a short menu: a sheet from
+the bottom on a phone, a popover under the button on a desk. A tap outside, Escape, or choosing an
+item closes it. It paints with the page's own theme variables, so it follows the pack and the
+light or dark mode.
+
+The first line says who the reader is to this page, and the items depend on it. **An item a role
+cannot use is absent, never greyed out.**
+
+| Role | Role line | Items |
+|---|---|---|
+| Visitor (signed out) | Not signed in | Share, Show / Hide comments, Sign in |
+| Reader (signed in) | Signed in as Dana | Share, Show / Hide comments, Sign out |
+| Shut out (at a gated page's door) | Signed in as Dana · not on this page's list | Share, Sign out |
+| Owner (`ownerEmail`) | Signed in as Robin · owner of this page | Share, Show / Hide comments, Version history, Copy the markdown, Sign out |
+| Admin (`admins`) | Signed in as Casey · admin of this hub | the owner's items |
+
+- **Share** opens the phone's own share sheet where there is one, and otherwise copies the link and
+  says "Link copied". Public and `access: freedom` pages show it to everyone; `access: invite` pages
+  show it with the line "Only people on the list can open it."; a password page shows it to the
+  owner and admins only, with the password in the link (`?key=`), since only they hold it.
+- **Show / Hide comments** appears only where shared comments are on, and is the same switch as
+  the comment panel's own toggle: moving either moves both.
+- **Sign in** needs `signInOrigin` and returns to the exact address, hash included. **Sign out** is
+  this host's `/api/reader/leave` (the `LEAVE` handler).
+- **Version history** is for whoever `history` lets see past versions (the owner and admins by
+  default) and opens the panel described below.
+- **Copy the markdown** copies the page as published (an `id`, `title`, `summary`, `subtitle` and
+  `to` front matter, then the body), ready to paste into a session and republish onto the same page.
+
+The server decides every item and hands the browser only what this reader may use: the markdown
+source, a share link carrying a password, and the version list are never in a page rendered for
+anyone else. `PageMenu`, `roleLine` and `menuItems` are exported from `/reader`.
+
 ## Version history
 
-Every page names its version under the summary, "Version 4 · Updated <minute> · History", and
-History opens a panel listing every version newest first: its number, the minute it went live in
+Every page names its version under the summary, "Version 4 · Updated <minute>", and the page
+menu's **Version history** opens a panel listing every version newest first: its number, the minute it went live in
 the reader's own time zone, and its change note. The panel is drawn over the page (a sheet on a
 phone, a side panel on a desk), so opening it moves no text. Each past version is readable at
 `/<id>/v/<n>`, read-only, under a banner naming it and linking the current page, behind exactly
@@ -125,7 +161,7 @@ the same password or confidential door as the page itself. A version that does n
 404; on a shut page the door comes first, so it never says which versions exist.
 
 **Past versions are for admins by default (0.21.0).** An earlier draft can hold what the current
-one was edited to remove, so only the page's admins see the History control or open
+one was edited to remove, so only the page's admins see Version history in the page menu or open
 `/<id>/v/<n>`: the reader signed in as `ownerEmail` or any address in `admins` (case does not
 matter). Everyone else still sees "Version N · Updated <minute>", and a past version is a 404 to
 them. With neither configured, nobody does. `history: 'everyone'` in the config restores the old

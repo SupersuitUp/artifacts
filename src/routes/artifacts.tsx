@@ -27,10 +27,10 @@ import { ArtifactReader, type WordTiming } from '../reader/artifact-reader.js'
 import { CommentLayer } from '../reader/comment-layer.js'
 import { ReaderWatch } from '../reader/reader-watch.js'
 import { UpdatedTime } from '../reader/updated-time.js'
-import { VersionHistory } from '../reader/version-history.js'
+import { PageMenu, type PageRole } from '../reader/page-menu.js'
 import {
   ACCESS_LEVELS, GRANT_COOKIE, GRANT_TTL_SECONDS, decide, firstName, mintGrant, safeReturnPath, signInUrl, verifyGrant, verifyPass,
-  type Access, type Reader,
+  type Access, type AllowEntry, type Reader,
 } from '../artifacts/reader.js'
 import { FLAG_KINDS, summarize, type FlagKind, type ReadersStore } from '../artifacts/readers-store.js'
 import { readSecondsFor, wordCount, type ReaderEvent } from '../artifacts/read-alerts.js'
@@ -168,6 +168,13 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
   /** Whether this reader may see a page's past versions (config `history`). */
   const seesHistory = (reader: Reader | null) => config.history === 'everyone' || (!!reader && admins.has(reader.email.trim().toLowerCase()))
   const readerSecret = () => config.readerSecret?.()
+  /** Who this reader is to this host's pages: the page menu's role. Owner and admins share a menu. */
+  const roleOf = (reader: Reader | null): PageRole => {
+    if (!reader) return 'visitor'
+    const email = reader.email.trim().toLowerCase()
+    return email === ownerEmail ? 'owner' : admins.has(email) ? 'admin' : 'reader'
+  }
+  const isAdmin = (reader: Reader | null) => roleOf(reader) === 'owner' || roleOf(reader) === 'admin'
   const signOutUrl = (id: string) => `/api/reader/leave?to=${encodeURIComponent(pagePath(id))}`
   // Signing out alone cannot change the account: the authority still holds the Google session
   // and vouches for it again on the next sign-in. This leaves AND sends them to choose one.
@@ -236,6 +243,41 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
       }
     }
     return { pages, readers: count }
+  }
+
+  /** The page menu for one reader on one page. Everything an item needs is decided here, and only
+   *  what this reader may use is passed: the markdown source and the history list never reach a
+   *  reader who may not have them, so the browser has nothing to hide.
+   *  - Share: public and `freedom` pages for everyone; `invite` pages too, with the line that only
+   *    the list can open it; a password page only for the owner and admins, with the key in the
+   *    link, since only they hold it.
+   *  - Version history: whoever `history` lets see past versions (admins by default).
+   *  - Copy the markdown: the owner and admins. */
+  function Menu({ a, reader, shutOut, allow, comments, history, viewing, source }: {
+    a: Rec; reader: Reader | null; shutOut?: boolean; allow?: AllowEntry[]
+    comments?: boolean; history?: VersionEntry[] | null; viewing?: number; source?: string | null
+  }) {
+    const role = roleOf(reader)
+    const admin = isAdmin(reader)
+    const name = reader ? (firstName(reader, allow ?? []) ?? reader.email) : null
+    const share = a.access
+      ? { url: pageUrl(a.id), title: a.title, ...(a.access === 'invite' ? { note: 'Only people on the list can open it.' } : {}) }
+      : a.password
+        ? (admin ? { url: `${pageUrl(a.id)}?key=${encodeURIComponent(a.password)}`, title: a.title, note: 'The link carries the password.' } : null)
+        : { url: pageUrl(a.id), title: a.title }
+    return (
+      <PageMenu
+        role={role}
+        name={name}
+        shutOut={shutOut}
+        share={share}
+        comments={!!comments}
+        signIn={!reader && signInOrigin ? signInUrl(signInOrigin, pageUrl(a.id)) : null}
+        signOut={reader ? signOutUrl(a.id) : null}
+        history={history && history.length > 1 && seesHistory(reader) && viewing ? { items: history, base: pagePath(a.id), viewing } : null}
+        markdown={admin && source ? source : null}
+      />
+    )
   }
 
   /** The kicker over every title: the pack's line, then who the page is for. Never spoken: the
@@ -330,9 +372,13 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
       ...(a.state || config.personal ? [`/api/artifacts/${id}`] : key !== undefined && cookie !== keyHash(id, a.password) ? [`/api/artifacts/${id}`] : []),
     ]
     const remember = paths.length ? paths.map((p) => `document.cookie=${JSON.stringify(unlockLine(p))}`).join(';') : null
+    // Who is reading, when they happen to be signed in: their comments follow them, and the menu
+    // says who they are. Only a host that signs readers in can know one; the read never fails the page.
+    const reader = readerSecret() ? verifyGrant(readerSecret(), await readCookie(GRANT_COOKIE).catch(() => undefined)) : null
     if (!open) {
       return (
         <BrandGround pack={pack} mode={a.theme}>
+          <Menu a={a} reader={reader} />
           <div className="mx-auto max-w-2xl px-6 pt-24 pb-8 text-center sm:pt-28">
             <Kicker to={a.to} brand={brand} />
             <h1 className="text-4xl sm:text-5xl" style={{ fontFamily: brand.type.display, color: brand.ink }}>
@@ -349,9 +395,6 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
         </BrandGround>
       )
     }
-    // Who is reading an open page, when they happen to be signed in: their comments follow them.
-    // Only a host that signs readers in can know one; the read never fails the page.
-    const reader = readerSecret() ? verifyGrant(readerSecret(), await readCookie(GRANT_COOKIE).catch(() => undefined)) : null
     const page = await render(true, reader)
     if (n === null) void store.bumpViews(id)
     return (
@@ -395,6 +438,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
       }
       return (
         <BrandGround pack={pack} mode={a.theme}>
+          <Menu a={a} reader={reader} shutOut={d.why === 'not-allowed'} />
           {header}
           {d.why === 'not-allowed'
             ? <NotAllowedDoor brand={brand} reader={d.reader} signOutUrl={switchUrl(id)} />
@@ -407,6 +451,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     if (config.readers && !(await config.readers.acknowledged(id, r.email))) {
       return (
         <BrandGround pack={pack} mode={a.theme}>
+          <Menu a={a} reader={r} allow={allow} />
           {header}
           <AckDoor brand={brand} name={firstName(r, allow)} email={r.email} owner={owner} pageId={id} signOutUrl={switchUrl(id)} />
         </BrandGround>
@@ -436,19 +481,23 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     return store.history(id).catch(() => null)
   }
 
-  /** "Version N · Updated <minute> · History": the line under the summary. */
-  function VersionLine({ a, n, at, history, reader }: { a: Rec; n: number; at: string; history: VersionEntry[] | null; reader: Reader | null }) {
+  /** "Version N · Updated <minute>": the line under the summary. The way into the history is the
+   *  page menu's Version history (0.30.0), for whoever `history` lets see it. */
+  function VersionLine({ n, at }: { n: number; at: string }) {
     return (
       <p data-nospeak className="mt-4 text-xs opacity-60">
         {`Version ${n} · Updated `}<UpdatedTime iso={at} />
-        {history && history.length > 1 && seesHistory(reader) ? (
-          <>
-            {' · '}
-            <VersionHistory items={history} base={pagePath(a.id)} viewing={n} />
-          </>
-        ) : null}
       </p>
     )
+  }
+
+  /** The source of one version as published: its front matter's identifying lines, then the body,
+   *  so it pastes into a session and republishes onto the same page. Quoted as JSON strings, which
+   *  are valid YAML. */
+  function sourceOf(id: string, m: { title: string; subtitle?: string; summary: string; to?: string }, markdown: string): string {
+    const lines = [`id: ${id}`, `title: ${JSON.stringify(m.title)}`, ...(m.subtitle ? [`subtitle: ${JSON.stringify(m.subtitle)}`] : []),
+      `summary: ${JSON.stringify(m.summary)}`, ...(m.to ? [`to: ${JSON.stringify(m.to)}`] : [])]
+    return `---\n${lines.join('\n')}\n---\n\n${markdown}`
   }
 
   /** The title block and the body, in the pack's Article when it has one. Without one this is
@@ -481,6 +530,8 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     const toc = showToc(v.markdown, a.toc) ? tocOf(v.markdown) : []
     return (
       <>
+        <Menu a={a} reader={reader} history={history} viewing={n}
+          source={isAdmin(reader) ? sourceOf(a.id, { title, subtitle: v.subtitle, summary, to: v.to }, v.markdown) : null} />
         {toc.length ? <TocRail items={toc} /> : null}
         <div data-nospeak className={`mx-auto max-w-2xl px-6 ${top ? 'pt-20 sm:pt-24' : 'pt-8'}`}>
           <p data-version-banner role="status" className="rounded-lg border px-4 py-3 text-sm" style={{ borderColor: brand.accent }}>
@@ -494,7 +545,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
           cover={pack.Cover ? (
             <pack.Cover
               title={title} subtitle={v.subtitle} summary={summary} to={v.to} markdown={v.markdown}
-              kicker={<Kicker to={v.to} brand={brand} />} meta={<VersionLine a={a} n={n} at={v.at} history={history} reader={reader} />}
+              kicker={<Kicker to={v.to} brand={brand} />} meta={<VersionLine n={n} at={v.at} />}
               version={n} updatedAt={v.at} createdAt={a.createdAt}
             />
           ) : (
@@ -509,7 +560,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
                 </p>
               ) : null}
               <p className="mx-auto mt-6 max-w-xl text-lg italic opacity-80">{summary}</p>
-              <VersionLine a={a} n={n} at={v.at} history={history} reader={reader} />
+              <VersionLine n={n} at={v.at} />
             </div>
           )}
         >
@@ -534,15 +585,19 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     const toc = showToc(a.markdown, a.toc) ? tocOf(a.markdown) : []
     // Shared comments need the page to take them AND a host that keeps answers; personal notes need neither.
     const mode: CommentsMode = config.state && a.state && a.comments && a.comments !== 'off' && a.state.slots[COMMENTS_SLOT] ? a.comments : 'off'
+    const history = await historyOf(a.id)
+    const current = a.version ?? (a.versions?.length ?? 0) + 1
     return (
       <>
+        <Menu a={a} reader={reader} comments={mode !== 'off'} history={history} viewing={current}
+          source={isAdmin(reader) ? sourceOf(a.id, a, a.markdown) : null} />
         {toc.length ? <TocRail items={toc} /> : null}
         <div id="artifact-narration-root">
           {await (async () => {
             const n = a.version ?? (a.versions?.length ?? 0) + 1
             const meta = (
               <>
-                <VersionLine a={a} n={n} at={a.updatedAt} history={await historyOf(a.id)} reader={reader} />
+                <VersionLine n={n} at={a.updatedAt} />
                 {/* An open page has no banner, so this is the only place a signed-in reader learns
                     which account they are in and how to get out of it. A gated page's banner says it. */}
                 {top && reader ? (
@@ -613,7 +668,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
           comments={mode}
           canShare={mode !== 'off' && (reader !== null || effectiveWriters(a.state!, a.access, COMMENTS_SLOT) === 'anyone')}
           signedIn={reader !== null}
-          isOwner={!!reader && ((!!ownerEmail && reader.email.trim().toLowerCase() === ownerEmail.trim().toLowerCase()) || (config.admins ?? []).some((e) => e.trim().toLowerCase() === reader.email.trim().toLowerCase()))}
+          isOwner={isAdmin(reader)}
           version={a.version ?? (a.versions?.length ?? 0) + 1}
           accent={brand.accent}
           ground={brand.ground}

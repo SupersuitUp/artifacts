@@ -3,6 +3,41 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.30.0
+
+**Every page has a page menu: one small "⋯" button, top right, whose items depend on who you are
+to the page.** Release 1 of the approved design. Things that floated around the page on their own
+(the History link, the comments on/off switch, sign in) now also have one always-findable home.
+
+- A 36px round button fixed top right on every page, past version and door, themed with the
+  page's variables, labelled "Page menu". It opens a sheet on a phone and a popover on a desk;
+  a tap outside or Escape closes it.
+- First line, the role: "Not signed in", "Signed in as Dana", "… · not on this page's list" at a
+  gated door, "… · owner of this page" (`ownerEmail`), "… · admin of this hub" (`admins`).
+- Items, absent (never greyed) when a role cannot use them: **Share** (the phone's share sheet,
+  else copy with "Link copied"; on `invite` pages with "Only people on the list can open it."; on
+  password pages for the owner and admins only, the link carrying `?key=`), **Show / Hide
+  comments** (only where shared comments are on, kept in sync with the comment panel's own toggle),
+  **Sign in** (back to the exact address, hash included) / **Sign out**, **Version history**
+  (whoever `history` allows, admins by default), **Copy the markdown** (owner and admins: the
+  published front matter and body, ready to republish).
+- The History control left the "Version N · Updated" line, which stays for everyone; the version
+  list stays in the server markup, hidden, for readers with scripts off.
+- The server passes the menu only what this reader may use: the markdown source, a keyed share
+  link and the version list never reach a page rendered for anyone else.
+- New exports from `/reader`: `PageMenu`, `roleLine`, `menuItems`, `HistoryPanel`, `VersionList`,
+  `VersionHistory`, and the page bridge (`requestPins`, `announcePins`, `signInBack`).
+- DETECTOR: open any page. No round "⋯" button in the top right means 0.29.0 or earlier.
+- REMEDY: update the dependency. No config change; set `ownerEmail` and `admins` for the owner and
+  admin items, `signInOrigin` for Sign in.
+- Tests: `reader/page-menu.test.tsx` (role line per role, items per role, share copies on a desk
+  and uses the sheet on a phone, a refused or hung share/clipboard still answers, invite note,
+  copy markdown, sign-in returns with the hash, history panel, closing, two-way sync with the
+  comment layer), `routes/page-menu.test.tsx` (role and items per role and access level, password
+  share only for admins, the markdown source and version list never handed to non-admins). The
+  0.15.0 golden was regenerated on purpose: the History control moved into the menu marker.
+  `test:packed` green, with the menu marker checked in the built fixture.
+
 ## 0.29.0
 
 **The "comment can't be shown" notice is a readable card with a way in.** 0.28.0 drew it as a pill

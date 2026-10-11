@@ -23,6 +23,7 @@
 // overlay is portalled onto document.body so its coordinates are page coordinates.
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
+import { PINS_SET, announcePins, signInBack } from './page-bridge.js'
 import { MAX_QUOTE_CHARS, textAnchorFrom, type Anchor } from '../artifacts/anchor.js'
 import { COMMENTS_SLOT, type CommentValue, type CommentsMode } from '../artifacts/comments.js'
 import type { PersonalNote } from '../artifacts/personal-store.js'
@@ -43,15 +44,6 @@ const isValue = (v: unknown): v is CommentValue =>
   !!v && typeof v === 'object' && typeof (v as CommentValue).body === 'string' && !!(v as CommentValue).anchor && typeof (v as CommentValue).anchor === 'object'
 const LONG_PRESS_MS = 400
 const HASH = /^#comment-([A-Za-z0-9_-]{1,128})$/
-/** The sign-in link, returning to this exact address, hash included, so a reader who signs in to
- *  see a linked comment lands on it. */
-function signInBack(signIn: string): string {
-  try {
-    const u = new URL(signIn)
-    u.searchParams.set('to', window.location.href)
-    return u.toString()
-  } catch { return signIn }
-}
 
 /** The entry id a `#comment-<id>` hash names, or null. */
 const commentHashId = (hash: string): string | null => HASH.exec(hash)?.[1] ?? null
@@ -336,6 +328,15 @@ export function CommentLayer({
     return { placed, earlier }
     // `tick` re-measures after a resize.
   }, [mounted, rootId, tops, tick]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The page menu's Show / Hide comments drives the same switch as the panel's toggle, and hears
+  // back whichever one moved it, so the two never disagree.
+  useEffect(() => {
+    const onSet = (e: Event) => setShowPins((e as CustomEvent<boolean>).detail === true)
+    window.addEventListener(PINS_SET, onSet)
+    return () => window.removeEventListener(PINS_SET, onSet)
+  }, [])
+  useEffect(() => { announcePins(showPins) }, [showPins])
 
   // Show the comment the address names once it has loaded: a reply is shown in its parent's thread.
   // Held until the comments arrive; an id that is not among them (deleted, or not this reader's to

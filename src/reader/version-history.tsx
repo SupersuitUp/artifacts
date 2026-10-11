@@ -1,6 +1,7 @@
 'use client'
 
-// The page's history, opened from the "Version N" line under the summary. The list renders
+// The page's history, opened from the page menu ("Version history"), or from the standalone
+// History control a host may still place itself. The list renders
 // through a portal on document.body, OUTSIDE the text flow, like the definition layer, so opening
 // it cannot reflow a word of the page: on a phone it is a sheet pinned to the bottom, above the
 // narration bar; on a desk it is a panel pinned to the right of the window. Escape, the close
@@ -28,44 +29,89 @@ export function VersionHistory({ items, base, viewing }: {
   viewing: number
 }) {
   const [open, setOpen] = useState(false)
-  const [phone, setPhone] = useState(false)
-  const [bottom, setBottom] = useState(MARGIN)
-  const [vars, setVars] = useState<Record<string, string>>({})
-  const [zone, setZone] = useState('UTC')
   const button = useRef<HTMLButtonElement | null>(null)
-  const panel = useRef<HTMLDivElement | null>(null)
-
-  const measure = useCallback(() => {
-    const el = button.current
-    if (!el) return
-    const cs = getComputedStyle(el)
-    setVars({ ...Object.fromEntries(VARS.map((v) => [v, cs.getPropertyValue(v).trim()]).filter(([, x]) => x)), fontFamily: cs.fontFamily })
-    const isPhone = window.matchMedia ? window.matchMedia(PHONE).matches : window.innerWidth < 640
-    setPhone(isPhone)
-    const bar = document.querySelector('[data-artifact-player]')?.getBoundingClientRect()
-    setBottom((bar && bar.top < window.innerHeight ? window.innerHeight - bar.top : 0) + MARGIN)
-  }, [])
-
   const close = useCallback(() => {
     setOpen(false)
     button.current?.focus()
   }, [])
+  return (
+    <>
+      <button
+        ref={button}
+        type="button"
+        data-version-history
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+        style={{ font: 'inherit', color: 'inherit', background: 'none', border: 0, padding: 0, cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: '0.2em' }}
+      >
+        History
+      </button>
+      {/* The list is also in the server markup, hidden, so the notes are there before any script
+          runs and a reader with scripts off can still find every version. */}
+      <VersionList items={items} base={base} />
+      {open ? <HistoryPanel items={items} base={base} viewing={viewing} anchor={button} onClose={close} onOutside={() => setOpen(false)} /> : null}
+    </>
+  )
+}
+
+/** Every version as plain links, hidden: server markup a reader with scripts off can still use. */
+export function VersionList({ items, base, marker }: { items: HistoryItem[]; base: string; marker?: boolean }) {
+  return (
+    <span hidden data-version-list {...(marker ? { 'data-version-history': '' } : {})}>
+      {items.map((v) => (
+        <a key={v.version} href={v.current ? base : `${base}/v/${v.version}`}>
+          {`Version ${v.version}${v.note ? `: ${v.note}` : ''}`}
+        </a>
+      ))}
+    </span>
+  )
+}
+
+/** The open list, portalled onto document.body. `anchor` is the control that opened it: its theme
+ *  variables are carried onto the panel, and a tap on it is not a tap outside. */
+export function HistoryPanel({ items, base, viewing, anchor, onClose, onOutside }: {
+  items: HistoryItem[]
+  base: string
+  viewing: number
+  anchor: { current: HTMLElement | null }
+  /** Escape or the close button: closes and hands focus back. */
+  onClose: () => void
+  /** A tap outside the panel and the anchor. */
+  onOutside: () => void
+}) {
+  const [phone, setPhone] = useState(false)
+  const [bottom, setBottom] = useState(MARGIN)
+  const [vars, setVars] = useState<Record<string, string>>({})
+  const [zone, setZone] = useState('UTC')
+  const panel = useRef<HTMLDivElement | null>(null)
+
+  const measure = useCallback(() => {
+    const el = anchor.current
+    if (el) {
+      const cs = getComputedStyle(el)
+      setVars({ ...Object.fromEntries(VARS.map((v) => [v, cs.getPropertyValue(v).trim()]).filter(([, x]) => x)), fontFamily: cs.fontFamily })
+    }
+    const isPhone = window.matchMedia ? window.matchMedia(PHONE).matches : window.innerWidth < 640
+    setPhone(isPhone)
+    const bar = document.querySelector('[data-artifact-player]')?.getBoundingClientRect()
+    setBottom((bar && bar.top < window.innerHeight ? window.innerHeight - bar.top : 0) + MARGIN)
+  }, [anchor])
 
   useEffect(() => {
     setZone(Intl.DateTimeFormat().resolvedOptions().timeZone)
   }, [])
 
   useEffect(() => {
-    if (!open) return
     measure()
     panel.current?.focus()
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') close()
+      if (e.key === 'Escape') onClose()
     }
     const onDown = (e: PointerEvent) => {
       const t = e.target as Node
-      if (panel.current?.contains(t) || button.current?.contains(t)) return
-      setOpen(false)
+      if (panel.current?.contains(t) || anchor.current?.contains(t)) return
+      onOutside()
     }
     document.addEventListener('keydown', onKey)
     document.addEventListener('pointerdown', onDown)
@@ -75,7 +121,7 @@ export function VersionHistory({ items, base, viewing }: {
       document.removeEventListener('pointerdown', onDown)
       window.removeEventListener('resize', measure)
     }
-  }, [open, measure, close])
+  }, [measure, onClose, onOutside, anchor])
 
   const style: CSSProperties = {
     ...(vars as CSSProperties),
@@ -98,68 +144,43 @@ export function VersionHistory({ items, base, viewing }: {
       : { position: 'fixed', top: 80, right: 24, width: 380, maxHeight: 'calc(100vh - 120px)' }),
   }
 
-  return (
-    <>
-      <button
-        ref={button}
-        type="button"
-        data-version-history
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
-        style={{ font: 'inherit', color: 'inherit', background: 'none', border: 0, padding: 0, cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: '0.2em' }}
-      >
-        History
-      </button>
-      {/* The list is also in the server markup, hidden, so the notes are there before any script
-          runs and a reader with scripts off can still find every version. */}
-      <span hidden data-version-list>
-        {items.map((v) => (
-          <a key={v.version} href={v.current ? base : `${base}/v/${v.version}`}>
-            {`Version ${v.version}${v.note ? `: ${v.note}` : ''}`}
-          </a>
-        ))}
-      </span>
-      {open && typeof document !== 'undefined'
-        ? createPortal(
-            <div ref={panel} data-version-panel role="dialog" aria-label="Version history" tabIndex={-1} style={style}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px 8px' }}>
-                <span style={{ fontSize: 11, fontWeight: 500, letterSpacing: '0.2em', textTransform: 'uppercase', opacity: 0.6 }}>
-                  Version history
+  if (typeof document === 'undefined') return null
+  return createPortal(
+    <div ref={panel} data-version-panel role="dialog" aria-label="Version history" tabIndex={-1} style={style}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px 8px' }}>
+        <span style={{ fontSize: 11, fontWeight: 500, letterSpacing: '0.2em', textTransform: 'uppercase', opacity: 0.6 }}>
+          Version history
+        </span>
+        <button type="button" aria-label="Close" onClick={onClose}
+          style={{ font: 'inherit', fontSize: 20, lineHeight: 1, color: 'inherit', background: 'none', border: 0, padding: 4, cursor: 'pointer', opacity: 0.6 }}>
+          ×
+        </button>
+      </div>
+      <ol style={{ listStyle: 'none', margin: 0, padding: '0 8px 10px' }}>
+        {items.map((v) => {
+          const here = v.version === viewing
+          return (
+            <li key={v.version}>
+              <a
+                href={v.current ? base : `${base}/v/${v.version}`}
+                aria-current={here ? 'page' : undefined}
+                style={{
+                  display: 'block', padding: '10px 10px', borderRadius: 8, color: 'inherit', textDecoration: 'none',
+                  background: here ? 'color-mix(in srgb, var(--a-accent, #888) 14%, transparent)' : undefined,
+                }}
+              >
+                <span style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
+                  <strong style={{ fontWeight: 600 }}>{`Version ${v.version}`}</strong>
+                  {v.current ? <span style={{ fontSize: 12, color: 'var(--a-accent)' }}>current</span> : null}
+                  <time dateTime={v.at} style={{ fontSize: 12, opacity: 0.6 }}>{formatUpdated(v.at, zone)}</time>
                 </span>
-                <button type="button" aria-label="Close" onClick={close}
-                  style={{ font: 'inherit', fontSize: 20, lineHeight: 1, color: 'inherit', background: 'none', border: 0, padding: 4, cursor: 'pointer', opacity: 0.6 }}>
-                  ×
-                </button>
-              </div>
-              <ol style={{ listStyle: 'none', margin: 0, padding: '0 8px 10px' }}>
-                {items.map((v) => {
-                  const here = v.version === viewing
-                  return (
-                    <li key={v.version}>
-                      <a
-                        href={v.current ? base : `${base}/v/${v.version}`}
-                        aria-current={here ? 'page' : undefined}
-                        style={{
-                          display: 'block', padding: '10px 10px', borderRadius: 8, color: 'inherit', textDecoration: 'none',
-                          background: here ? 'color-mix(in srgb, var(--a-accent, #888) 14%, transparent)' : undefined,
-                        }}
-                      >
-                        <span style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
-                          <strong style={{ fontWeight: 600 }}>{`Version ${v.version}`}</strong>
-                          {v.current ? <span style={{ fontSize: 12, color: 'var(--a-accent)' }}>current</span> : null}
-                          <time dateTime={v.at} style={{ fontSize: 12, opacity: 0.6 }}>{formatUpdated(v.at, zone)}</time>
-                        </span>
-                        {v.note ? <span style={{ display: 'block', marginTop: 2, fontSize: 14, opacity: 0.85 }}>{v.note}</span> : null}
-                      </a>
-                    </li>
-                  )
-                })}
-              </ol>
-            </div>,
-            document.body,
+                {v.note ? <span style={{ display: 'block', marginTop: 2, fontSize: 14, opacity: 0.85 }}>{v.note}</span> : null}
+              </a>
+            </li>
           )
-        : null}
-    </>
+        })}
+      </ol>
+    </div>,
+    document.body,
   )
 }
