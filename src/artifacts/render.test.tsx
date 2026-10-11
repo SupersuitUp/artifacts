@@ -162,3 +162,22 @@ describe('block ids (data-block), what a region comment is pinned to', () => {
     expect(ids('New.\n\nSame.\n\nSame.').slice(1)).toEqual(two)
   })
 })
+
+describe('the simulator block', () => {
+  const md = '```simulator\nscenario: diane-meeting-prep\ncaption: Step into the hour before the meeting.\n```\n'
+  it('plays the demo inline when the host names its embed page', () => {
+    const out = renderToStaticMarkup(<ArtifactMarkdown markdown={md} simulator={{ embed: 'https://example.com/simulator/embed' }} />)
+    expect(out).toContain('<iframe')
+    expect(out).toContain('src="https://example.com/simulator/embed?scenario=diane-meeting-prep&amp;timeline=off"')
+    expect(out).toContain('loading="lazy"')
+    expect(out).toContain('Step into the hour before the meeting.')
+    expect(out).not.toContain('<pre')
+  })
+  it('on a host with no demo, shows the caption and never the block as code', () => {
+    const out = html(md)
+    expect(out).not.toContain('<iframe')
+    expect(out).not.toContain('<pre')
+    expect(out).toContain('Step into the hour before the meeting.')
+  })
+})
+

@@ -107,3 +107,15 @@ describe('placeNotes', () => {
     expect(r.bySlug.sales.map((x) => x.id)).toEqual(['e'])
   })
 })
+
+describe('scanWidgets and the simulator block', () => {
+  it('refuses a malformed simulator block at publish, naming the line the author sees', () => {
+    const r = scanWidgets('# T\n\n```simulator\nscenario: a\n```\n', 10)
+    expect(r.ok).toBe(false)
+    expect(!r.ok && r.error).toMatch(/^line 13: .*caption/)
+  })
+  it('passes a well-formed one', () => {
+    expect(scanWidgets('```simulator\nscenario: a\ncaption: Play it.\n```\n', 0).ok).toBe(true)
+  })
+})
+

@@ -60,6 +60,10 @@ export type ArtifactRoutesConfig = {
   packFor?: (artifact: ArtifactRecord) => BrandPack | undefined
   /** The host that serves a 200, e.g. https://artifacts.example.com. No trailing slash. */
   siteUrl: string
+  /** The embed page of this host's Supersuit Session demo (an https URL, e.g.
+   *  https://example.com/simulator/embed), for ```simulator blocks. Without it a block shows its
+   *  caption only. No default: this package points at nobody's service. */
+  simulatorEmbed?: string
   /** Read at request time, so a rotated key needs no rebuild. */
   publishKey: () => string | undefined
   /** Verifies publisher passes (`p1`, see artifacts/publisher.ts): a signed, hour-long stand-in
@@ -506,7 +510,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
             </div>
           )}
         >
-          <ArtifactMarkdown markdown={v.markdown} definitions={a.definitions} checklist={{ artifactId: a.id, accent: brand.accent }} Section={pack.Section} figure={pack.figure} />
+          <ArtifactMarkdown markdown={v.markdown} simulator={config.simulatorEmbed ? { embed: config.simulatorEmbed } : undefined} definitions={a.definitions} checklist={{ artifactId: a.id, accent: brand.accent }} Section={pack.Section} figure={pack.figure} />
         </Framed>
       </>
     )
@@ -593,6 +597,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
                   checklist={{ artifactId: a.id, send: !!config.state && !!a.state && Object.hasOwn(a.state.slots, CHECKLIST_SLOT), owner, accent: brand.accent }}
                   Section={pack.Section}
                   figure={pack.figure}
+                  simulator={config.simulatorEmbed ? { embed: config.simulatorEmbed } : undefined}
                 />
               </Framed>
             )

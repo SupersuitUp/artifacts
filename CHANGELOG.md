@@ -3,6 +3,33 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.25.0
+
+**A page can play a Supersuit Session demo inline: the ```simulator block.** A book or guide that
+wanted to show a session had to send readers away to another site.
+
+```simulator
+scenario: diane-meeting-prep
+caption: Step into the hour before Diane's first meeting. Press Start.
+height: 760px            # optional, default 720px
+```
+
+- Same syntax as the Superskills book's reader, so one block works in both. `scenario` is
+  lowercase letters, digits and dashes; `caption` is required; `height` is `NNNpx`. A malformed
+  block is refused at publish with the line, like a checklist.
+- The HOST names the demo: new `ArtifactRoutesConfig.simulatorEmbed` (an https embed page, e.g.
+  `https://example.com/simulator/embed`). The block draws as a lazy-loaded frame on
+  `<embed>?scenario=<id>&timeline=off`, with the caption under it. No default: a host without a
+  demo draws the caption alone, never the block's source as code.
+- New exports `parseSimulatorFence`, `simulatorSrc`, `SimulatorBlock`; `ArtifactMarkdown` takes
+  `simulator?: { embed }`.
+- DETECTOR: publish a page with a ```simulator block. A code block showing `scenario:` means the
+  host is on 0.24.0 or earlier, or has not set `simulatorEmbed`.
+- REMEDY: update the dependency and set `simulatorEmbed` in the host's routes config.
+- Tests: `simulator.test.ts` (parse, defaults, refusals with lines, https-only embed),
+  `widgets.test.ts` (refused at publish, passes when well formed), `render.test.tsx` (frame when the
+  host names a demo, caption only when not, never a code block). `test:packed` green.
+
 ## 0.24.0
 
 **A reader is asked for their name when they comment, so the owner can credit the feedback.**
