@@ -14,7 +14,7 @@ import remarkParse from 'remark-parse'
 import { unified } from 'unified'
 import type { Root, RootContent } from 'mdast'
 import type { FigureProps, SectionOutline, SectionProps } from '../brand/pack.js'
-import { blocksOf, checklistsOf, hasNotesWidget, headingsOf, type Heading } from './widgets.js'
+import { blocksOf, checklistSyncs, checklistsOf, hasNotesWidget, headingsOf, type Heading } from './widgets.js'
 import type { ChecklistBlock } from './checklist.js'
 import { HeadingNotes, NoteToggle, NotesEarlier, NotesProvider } from '../widgets/notes.js'
 import { Checklist } from '../widgets/checklist.js'
@@ -144,7 +144,7 @@ function soleImage(node: unknown): { src: string; alt: string } | null {
 
 /** What the page's checklists need to draw: every fence by its opening line, and the page they
  *  keep ticks under. */
-type ChecklistCtx = { byLine: Map<number, ChecklistBlock>; artifactId?: string; send: boolean; owner?: string; accent?: string }
+type ChecklistCtx = { byLine: Map<number, ChecklistBlock>; artifactId?: string; send: boolean; sync: boolean; owner?: string; accent?: string }
 
 // Item text and descriptions: the page's own safe link, inline code and emphasis, nothing that
 // would break out of a list row (no images, headings, tables, fences or rules).
@@ -178,7 +178,8 @@ function ChecklistFence({ line, ctx }: { line: number; ctx: ChecklistCtx }) {
     <Checklist
       items={c.items.map((it) => ({ id: it.id, title: checklistMarkdown(it.text, true), description: it.description ? checklistMarkdown(it.description, false) : null }))}
       artifactId={ctx.artifactId}
-      send={ctx.send && ctx.artifactId ? c.send : undefined}
+      send={ctx.send && ctx.artifactId && !ctx.sync ? c.send : undefined}
+      sync={ctx.sync && !!ctx.artifactId}
       owner={ctx.owner}
       accent={ctx.accent}
     />
@@ -449,7 +450,8 @@ export function ArtifactMarkdown({
 }: {
   markdown: string
   /** The page a ```checklist keeps its ticks under, and whether its Send can reach the owner
-   *  (a host that keeps answers, on a page that declares the slot). Without it a checklist still
+   *  (a host that keeps answers, on a page that declares the slot). On a page whose checklists
+   *  `sync`, the same `send` turns on the shared, page-wide set. Without it a checklist still
    *  draws and ticks, for the visit only. */
   checklist?: { artifactId: string; send?: boolean; owner?: string; accent?: string }
   /** The pack's section component (BrandPack.Section): each top-level section is drawn through it. */
@@ -472,7 +474,9 @@ export function ArtifactMarkdown({
   const plugins = [remarkGfm, ...(defined ? [remarkDefinitions(defined)] : []), ...(outline.length ? [remarkSections(outline[0].depth)] : [])]
   const lists = /^ {0,3}(`{3,}|~{3,})\s*checklist\b/m.test(markdown) ? checklistsOf(markdown) : null
   const checklists: ChecklistCtx | undefined = lists
-    ? { byLine: lists, artifactId: checklist?.artifactId, send: !!checklist?.send, owner: checklist?.owner, accent: checklist?.accent }
+    // `send` from the host means it keeps answers and the page declared the `checklist` slot; on a
+    // page whose checklists sync, that same slot is the shared set, so it turns sync on instead.
+    ? { byLine: lists, artifactId: checklist?.artifactId, send: !!checklist?.send, sync: !!checklist?.send && checklistSyncs(lists.values()), owner: checklist?.owner, accent: checklist?.accent }
     : undefined
   const components = on ? notesComponents(headings, block, figure, checklists) : pageComponents(headings, block, figure, checklists)
   if (outline.length) components.section = sectionComponent(Section!, outline, block)

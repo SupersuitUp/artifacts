@@ -27,7 +27,7 @@ Firestore), and optionally `@google-cloud/storage >= 7` for uploaded files.
 | `BrandGround`, `BrandMark` | The pack's page backdrop and mark, for your own pages (a home, a 404) |
 | `parseArtifactSource` | The front-matter contract, as a parser you can call before publishing (widget fences included) |
 | `headingsOf`, `scanWidgets`, `placeNotes` | The notes widget's pure parts: heading slugs, fence validation, where each note shows |
-| `checklistsOf`, `parseChecklistFence`, `checklistStorageKey` | The checklist widget's pure parts: the fence grammar, every item's id, where a tick is kept |
+| `checklistsOf`, `parseChecklistFence`, `checklistStorageKey`, `checklistAnswerIds`, `checklistSyncs` | The checklist widget's pure parts: the fence grammar, every item's id, where a tick is kept |
 | `mintPass`, `verifyPass` | The reader pass, for the sign-in side (see below) |
 | `mintPublisherPass`, `verifyPublisherPass` | The publisher pass: an hour-long stand-in for the publish key, for one person on one host (see below) |
 | `ARTIFACT_PUBLIC_PREFIXES` (`/gate`) | Paths to leave open if you mount artifacts inside a gated site |
@@ -410,7 +410,7 @@ response carries the no-answers warning.
 This version draws two widgets, **checklist** and **notes**. Poll and form are coming: a fence
 named `poll` or `form` is refused at publish until then, so a page never ships a code block that
 turns into a live widget on a later update. A checklist needs no state store unless it offers
-Send.
+Send or syncs.
 
 ### Checklist
 
@@ -423,6 +423,7 @@ stays escaped and no author script ever runs.
 
 ```checklist
 send: anyone            # optional: signed-in | anyone; adds a Send button, see below
+                        # or sync: signed-in | anyone; one shared set for every reader, see below
 - Update macOS {#update}
   Apple menu > System Settings > General > Software Update.
   Restart and check again until it says you're up to date.
@@ -456,7 +457,8 @@ send: anyone            # optional: signed-in | anyone; adds a Send button, see 
   username" is one tap into the reader's own Messages.
 - Refused at publish, naming the line in the file: an indented line before the first item, an
   unindented line after one, an empty item, a bad or repeated `{#id}`, a name after `checklist`,
-  any setting but `send`, a checklist with no items, and a second checklist with `send`.
+  any setting but `send` or `sync`, a checklist with no items, a second checklist with `send`,
+  `send` and `sync` on one page, and two checklists that say `sync` differently.
 
 **Send** (`send: signed-in` or `send: anyone`) adds a "Send my progress to <owner>" button under
 the list. It writes `{ done: [item ids] }` to the page's `checklist` slot, shape `one` and
@@ -465,6 +467,21 @@ the list. It writes `{ done: [item ids] }` to the page's `checklist` slot, shape
 and the rate limit, as `writers: anyone` does). The slot is the widget's own: a page may not
 declare a `checklist` slot in `state:`. The server takes only ids of that checklist, each once. On a
 host with no state store the button is not drawn; the ticks still work.
+
+**Sync** (`sync: anyone` or `sync: signed-in`) makes the ticks the PAGE's: one set every reader
+sees and, as `sync:` names, may change. Two people on a call ticking the same list see each
+other's ticks within a few seconds. One block saying `sync` is enough: every checklist on the page
+then shares the one set, because item ids are page-wide, and two blocks that both say it must say
+the same thing. The page declares its `checklist` slot `shared` (shape `one`), each tick updates
+the screen at once and, after a short pause, posts the whole page-wide `{ done: [ids] }`, and the
+newest set by server time is the page's. The widget reads it on load and every four seconds while
+the tab is visible, and says where it stands after the count: "Synced", "Saving…", or what went
+wrong. The server takes only ids of checklists on the page. `anyone` works for anonymous readers
+(the anonymous cookie and rate limit, as `writers: anyone`), on a password page once it is
+unlocked. **Concurrency is last-write-wins on the whole set**: two readers ticking different items
+inside the same couple of seconds can lose one tick. A page cannot both sync and send. On a host
+with no state store, or where the first read fails, the list falls back to the reader's own
+`localStorage` exactly as an unsynced one.
 
 ### Notes
 

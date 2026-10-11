@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { parseChecklistFence, assignChecklistIds, checkChecklistValue, checklistStorageKey, CHECKLIST_SLOT } from './checklist.js'
-import { scanWidgets, checklistsOf, checklistSendIds } from './widgets.js'
+import { scanWidgets, checklistsOf, checklistSendIds, checklistAnswerIds } from './widgets.js'
 import { parseArtifactSource } from './front-matter.js'
 
 const page = (body: string, fm = '') => `---\ntitle: Prep\nsummary: S\n${fm}---\n${body}`
@@ -99,5 +99,50 @@ describe('checkChecklistValue', () => {
     expect(checkChecklistValue({ done: ['a'], note: 'x' }, ids)).toBe('a checklist answer is { done: [item ids] }')
     expect(checkChecklistValue(['a'], ids)).toBe('a checklist answer is { done: [item ids] }')
     expect(checkChecklistValue({ done: 'a' }, ids)).toBe('a checklist answer is { done: [item ids] }')
+  })
+})
+
+describe('a checklist that syncs', () => {
+  const two = (a = 'sync: anyone', b = '') => [
+    '```checklist', ...(a ? [a] : []), '- One {#q-a-1}', '- Two {#q-a-2}', '```', '',
+    '```checklist', ...(b ? [b] : []), '- Three {#q-b-1}', '```',
+  ].join('\n')
+
+  it('reads sync: anyone and sync: signed-in, and refuses any other value or send beside it', () => {
+    for (const v of ['anyone', 'signed-in'] as const) {
+      const r = parseChecklistFence(`sync: ${v}\n- A`, 1)
+      expect(r.ok && r.block.sync).toBe(v)
+    }
+    const bad = parseChecklistFence('sync: everyone\n- A', 1)
+    expect(!bad.ok && bad.error).toBe('line 2: checklist sync must be signed-in or anyone')
+    const both = parseChecklistFence('send: anyone\nsync: anyone\n- A', 1)
+    expect(!both.ok && both.error).toMatch(/send or sync, not both/)
+  })
+
+  it('one block saying sync makes every checklist on the page answer as one shared set', () => {
+    const md = two()
+    expect(checklistAnswerIds(md)).toEqual(['q-a-1', 'q-a-2', 'q-b-1'])
+    const p = parseArtifactSource(page(md))
+    expect(p.ok && p.meta.state?.slots[CHECKLIST_SLOT]).toEqual({ shape: 'one', visibility: 'shared', writers: 'anyone' })
+    // The server's check takes ids from every block, and still refuses an id no block draws.
+    const ids = checklistAnswerIds(md)!
+    expect(checkChecklistValue({ done: ['q-a-2', 'q-b-1'] }, ids)).toBeNull()
+    expect(checkChecklistValue({ done: ['q-b-1', 'q-c-9'] }, ids)).toBe('a checklist answer names only items on this page')
+  })
+
+  it('refuses blocks that disagree on who may tick, and send on a page that syncs', () => {
+    const p = parseArtifactSource(page(two('sync: anyone', 'sync: signed-in')))
+    expect(!p.ok && p.error).toMatch(/a page's ticks are one set/)
+    const s = parseArtifactSource(page(two('sync: anyone', 'send: anyone')))
+    expect(!s.ok && s.error).toMatch(/syncs? takes no send/)
+    const s2 = parseArtifactSource(page(two('send: anyone', 'sync: anyone')))
+    expect(!s2.ok && s2.error).toMatch(/takes no send/)
+    // Both saying the same thing is fine.
+    expect(parseArtifactSource(page(two('sync: anyone', 'sync: anyone'))).ok).toBe(true)
+  })
+
+  it('a page with send and no sync still answers with that one block\'s ids', () => {
+    expect(checklistAnswerIds(two('send: anyone'))).toEqual(['q-a-1', 'q-a-2'])
+    expect(checklistAnswerIds(two(''))).toBeNull()
   })
 })

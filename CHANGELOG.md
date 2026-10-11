@@ -3,6 +3,35 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.23.0
+
+**A checklist can keep its ticks in the cloud, shared by everyone on the page.** Two people
+walking one list on a call each saw only their own browser's ticks: 0.22.0 kept ticks in
+`localStorage`, and Send hands one reader's set to the owner rather than to the other reader.
+
+- New fence setting `sync: anyone | signed-in` (who may tick). One block saying it makes every
+  checklist on the page one shared set, kept in the page's `checklist` slot declared `shared`
+  (shape one). Blocks that disagree on `sync`, and `send` on a page that syncs, are refused.
+- The server checks a synced set against every checklist item on the page (the 0.22.0 check took
+  only the first block with `send`). New exports `checklistAnswerIds`, `checklistSyncs`.
+- The widget holds one store per page, shared by all its blocks: reads the newest shared set on
+  load, posts the whole page-wide set 400ms after a tick, polls every 4s while the tab is visible,
+  and shows "Synced" / "Saving…" / the error after the count. Last write wins on the whole set.
+  A host with no state store (501), a page with no slot (404) or a failed first read falls back
+  to `localStorage` exactly as before.
+- No route change: the route's existing `checklist.send` (host keeps answers, page declares the
+  slot) turns sync on for a page whose checklists sync.
+- DETECTOR: publish a page whose checklist says `sync: anyone`. "the checklist block has an unknown
+  setting: sync" means the host is on 0.22.0 or earlier.
+- REMEDY: bump. Pages without `sync` render and behave exactly as before.
+- Tests: the grammar accepts and refuses `sync`; multi-block ids validated server-side (an id from
+  the second block accepted, an id no block draws refused); disagreeing blocks and send-with-sync
+  refused; the slot declared shared; an anonymous reader on an unlocked password page posts and a
+  second browser reads the set, then the reverse; the widget reads the newest shared set into
+  every block with one request, posts the page-wide set after a tick, takes another reader's
+  untick on the next poll, and falls back to storage on 501. Picking the newest set and checking
+  ids page-wide were each broken on purpose and went red.
+
 ## 0.22.0
 
 **A page can carry a checklist a reader ticks off and comes back to.** A per-person Mac setup

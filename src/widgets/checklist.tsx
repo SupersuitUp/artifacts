@@ -8,8 +8,13 @@
 // The item text and description arrive already drawn on the server, as markdown with raw HTML
 // escaped, so this file draws no author content itself. Everything here is data-nospeak: the
 // narrator reads the prose, never the checklist.
-import { useCallback, useEffect, useState, type ReactNode } from 'react'
+//
+// With `sync`, the ticks are the page's, not the reader's: every checklist block on the page reads
+// and writes one shared set through ./checklist-sync.ts, and falls back to the localStorage path
+// below when the host keeps no answers.
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { CHECKLIST_SLOT, checklistStorageKey, type SendWriters } from '../artifacts/checklist.js'
+import { SERVER_SYNC_SNAPSHOT, syncStoreFor, type SyncSnapshot } from './checklist-sync.js'
 
 export type ChecklistViewItem = { id: string; title: ReactNode; description: ReactNode | null }
 
@@ -32,12 +37,32 @@ function writeTick(key: string | null, on: boolean) {
   }
 }
 
+const noopSubscribe = () => () => {}
+const nullSnapshot = () => null
+const serverSnapshot = () => SERVER_SYNC_SNAPSHOT
+
+const SYNC_WORDS = { loading: 'Connecting…', synced: 'Synced', saving: 'Saving…' } as const
+
+/** The quiet word after the count: where the shared set stands. */
+function SyncLabel({ s, color }: { s: SyncSnapshot; color: string }) {
+  const words = s.status === 'error' ? (s.message ?? 'not saved') : s.status === 'sign-in' ? null : SYNC_WORDS[s.status as keyof typeof SYNC_WORDS]
+  return (
+    <span data-checklist-sync={s.status} className="normal-case tracking-normal opacity-70">
+      {' · '}
+      {s.status === 'sign-in'
+        ? (s.signIn ? <a href={s.signIn} className="underline" style={{ color }}>Sign in to tick</a> : 'Ticking is open to signed-in readers')
+        : words}
+    </span>
+  )
+}
+
 type SendState = { status: 'idle' | 'busy' | 'sent' | 'error' | 'sign-in'; message?: string; signIn?: string | null }
 
 export function Checklist({
   items,
   artifactId,
   send,
+  sync,
   owner,
   accent,
 }: {
@@ -46,23 +71,44 @@ export function Checklist({
   artifactId?: string
   /** Who may press Send, when the page offers it and the host keeps answers. */
   send?: SendWriters
+  /** The page's ticks are one shared set the host keeps (a page whose checklists `sync`). */
+  sync?: boolean
   owner?: string
   accent?: string
 }) {
   const key = useCallback((id: string) => (artifactId ? checklistStorageKey(artifactId, id) : null), [artifactId])
-  const [done, setDone] = useState<Record<string, boolean>>({})
+  const [local, setDone] = useState<Record<string, boolean>>({})
   const [sent, setSent] = useState<SendState>({ status: 'idle' })
+  const store = useMemo(() => (sync && artifactId ? syncStoreFor(artifactId) : null), [sync, artifactId])
+  const shared = useSyncExternalStore<SyncSnapshot | null>(
+    store ? store.subscribe : noopSubscribe,
+    store ? store.snapshot : nullSnapshot,
+    store ? serverSnapshot : nullSnapshot,
+  )
 
   // Read after mount, never during render: the server has no storage, and reading it while
   // hydrating would draw a page that disagrees with the server's.
   const ids = items.map((it) => it.id).join('\n')
   useEffect(() => {
+    if (store) return
     const next: Record<string, boolean> = {}
     for (const id of ids.split('\n')) if (readTick(key(id))) next[id] = true
     setDone(next)
-  }, [ids, key])
+  }, [ids, key, store])
+
+  // A synced block hands the page's store the ids it draws; the store reads and polls while any
+  // block on the page is mounted.
+  useEffect(() => {
+    if (!store) return
+    const block = {}
+    store.register(block, ids.split('\n'))
+    return () => store.unregister(block)
+  }, [store, ids])
+
+  const done: Record<string, boolean> = shared ? Object.fromEntries([...shared.done].map((id) => [id, true])) : local
 
   const toggle = (id: string) => {
+    if (store) return store.toggle(id)
     setDone((d) => {
       const on = !d[id]
       writeTick(key(id), on)
@@ -106,6 +152,7 @@ export function Checklist({
         style={{ color }}
       >
         {`${count} of ${items.length} done`}
+        {shared && shared.status !== 'local' ? <SyncLabel s={shared} color={color} /> : null}
       </p>
       <ul className="m-0 list-none p-0">
         {items.map((it) => {

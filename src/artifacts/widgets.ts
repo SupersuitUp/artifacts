@@ -112,6 +112,11 @@ function scanChecklists(fences: Code[], offset: number): { ok: true; checklists:
     const c = parseChecklistFence(f.value, line, f.meta)
     if (!c.ok) return c
     if (c.block.send && lists.some((l) => l.send)) return { ok: false, error: `line ${line}: a page takes at most one checklist with send` }
+    const synced = lists.find((l) => l.sync)
+    if (c.block.sync && synced && synced.sync !== c.block.sync)
+      return { ok: false, error: `line ${line}: this checklist says sync: ${c.block.sync} and the one on line ${synced.line} says sync: ${synced.sync}; a page's ticks are one set, so say it one way` }
+    if ((c.block.sync && lists.some((l) => l.send)) || (c.block.send && synced))
+      return { ok: false, error: `line ${line}: a page whose checklists sync takes no send; the synced ticks already reach the owner` }
     lists.push(c.block)
   }
   const ids = assignChecklistIds(lists)
@@ -132,24 +137,47 @@ export function checklistsOf(markdown: string): Map<number, ChecklistBlock> {
   return new Map(r.ok ? r.checklists.map((c) => [c.line, c]) : [])
 }
 
-/** The item ids of the page's checklist that offers Send, or null when none does. The state
- *  route asks, to check what a Send may name. */
+/** The item ids of the page's checklist that offers Send, or null when none does. */
 export function checklistSendIds(markdown: string): string[] | null {
   const r = scanChecklists(fencesOf(markdown), 0)
   const c = r.ok ? r.checklists.find((l) => l.send) : undefined
   return c ? c.items.map((i: ChecklistItem) => i.id) : null
 }
 
+/** Does any checklist on this page sync? Then every checklist on it shares one set of ticks. */
+export function checklistSyncs(checklists: Iterable<ChecklistBlock>): boolean {
+  for (const c of checklists) if (c.sync) return true
+  return false
+}
+
+/** The ids an answer in the `checklist` slot may name, or null when the page takes none: on a page
+ *  that syncs, every item of every checklist on it (ids are page-wide); else the items of the
+ *  checklist that offers Send. The state route asks, so a synced set can never carry an id the
+ *  page does not draw. */
+export function checklistAnswerIds(markdown: string): string[] | null {
+  const r = scanChecklists(fencesOf(markdown), 0)
+  if (!r.ok) return null
+  if (checklistSyncs(r.checklists)) return r.checklists.flatMap((c) => c.items.map((i) => i.id))
+  const c = r.checklists.find((l) => l.send)
+  return c ? c.items.map((i: ChecklistItem) => i.id) : null
+}
+
 /** A checklist with `send` declares its own slot, `checklist`, shape one, private, written by
- *  whoever `send:` names; the owner reads it through /responses. Like `comments:`, the slot is
- *  the widget's own, so state: may not declare one by that name. */
+ *  whoever `send:` names; the owner reads it through /responses. A page whose checklists `sync`
+ *  declares the same slot SHARED instead, so every reader is shown every reader's set and the
+ *  widget takes the newest as the page's. Like `comments:`, the slot is the widget's own, so
+ *  state: may not declare one by that name. */
 export function mergeChecklistState(state: StateConfig | undefined, checklists: ChecklistBlock[]): { ok: true; state: StateConfig | undefined } | { ok: false; error: string } {
-  const c = checklists.find((l) => l.send)
+  const c = checklists.find((l) => l.sync) ?? checklists.find((l) => l.send)
   if (!c) return { ok: true, state }
+  const what = c.sync ? 'sync' : 'send'
   if (state && Object.hasOwn(state.slots, CHECKLIST_SLOT))
-    return { ok: false, error: `line ${c.line}: the checklist's send writes to slot "${CHECKLIST_SLOT}", and state: declares a slot by that name; rename that slot` }
+    return { ok: false, error: `line ${c.line}: the checklist's ${what} writes to slot "${CHECKLIST_SLOT}", and state: declares a slot by that name; rename that slot` }
   const base: StateConfig = state ?? { writers: 'signed-in', visibility: 'private', slots: {} }
-  return { ok: true, state: { ...base, slots: { ...base.slots, [CHECKLIST_SLOT]: { shape: 'one', visibility: 'private', writers: c.send! } } } }
+  const slot = c.sync
+    ? { shape: 'one' as const, visibility: 'shared' as const, writers: c.sync }
+    : { shape: 'one' as const, visibility: 'private' as const, writers: c.send! }
+  return { ok: true, state: { ...base, slots: { ...base.slots, [CHECKLIST_SLOT]: slot } } }
 }
 
 /** A widget declares its own slot. The notes block adds `notes: { shape: many }` to the page's

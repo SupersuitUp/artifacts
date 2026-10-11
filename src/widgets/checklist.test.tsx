@@ -167,4 +167,67 @@ describe('the checklist in a browser', () => {
     await act(async () => { el.querySelector<HTMLButtonElement>('[data-checklist-send]')!.click() })
     expect(el.querySelector('a[href="https://accounts.example.com/in"]')!.textContent).toBe('Sign in to send')
   })
+
+  describe('on a page whose checklists sync', () => {
+    const SYNC_MD = '```checklist\nsync: anyone\n- A {#a}\n- B {#b}\n```\n\nBetween.\n\n```checklist\n- C {#c}\n```'
+    const answer = (sets: { done: string[]; at: string }[]) => new Response(JSON.stringify({
+      reader: null, canWrite: false,
+      slots: { checklist: { shape: 'one', visibility: 'shared', mine: null, shared: sets.map((x, i) => ({ id: `e${i}`, name: 'a reader', value: { done: x.done }, at: x.at, mine: false })) } },
+    }), { status: 200, headers: { 'content-type': 'application/json' } })
+    const counts = () => [...el.querySelectorAll('[data-checklist-count]')].map((n) => n.textContent)
+    const status = () => el.querySelector('[data-checklist-sync]')?.getAttribute('data-checklist-sync')
+    beforeEach(() => { vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] }) })
+    afterEach(() => { vi.useRealTimers() })
+
+    it('reads the newest shared set for every block on the page, and shows Synced', async () => {
+      const fetchMock = vi.fn(() => Promise.resolve(answer([{ done: ['a'], at: '2026-10-10T01:00:00.000Z' }, { done: ['b', 'c'], at: '2026-10-10T02:00:00.000Z' }])))
+      vi.stubGlobal('fetch', fetchMock)
+      await mount(SYNC_MD, { artifactId: 'abc23456', send: true })
+      await act(async () => {})
+      expect(box('a').checked).toBe(false)
+      expect(box('b').checked).toBe(true)
+      expect(box('c').checked).toBe(true)
+      expect(counts()).toEqual(['1 of 2 done · Synced', '1 of 1 done · Synced'])
+      // One page, one store: both blocks are fed by a single read.
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+    })
+
+    it('a tick shows at once and posts the WHOLE page-wide set; a poll brings in another reader\'s ticks', async () => {
+      const fetchMock = vi.fn((_u: string, init?: RequestInit) => Promise.resolve(init?.method === 'POST'
+        ? answer([{ done: JSON.parse(init.body as string).value.done, at: '2026-10-10T03:00:00.000Z' }])
+        : answer([{ done: ['c'], at: '2026-10-10T02:00:00.000Z' }])))
+      vi.stubGlobal('fetch', fetchMock)
+      await mount(SYNC_MD, { artifactId: 'abc23456', send: true })
+      await act(async () => {})
+      await act(async () => { box('a').click() })
+      expect(box('a').checked).toBe(true)
+      expect(status()).toBe('saving')
+      await act(async () => { await vi.advanceTimersByTimeAsync(500) })
+      const posts = fetchMock.mock.calls.filter((c) => (c[1] as RequestInit | undefined)?.method === 'POST')
+      expect(posts).toHaveLength(1)
+      expect(JSON.parse((posts[0][1] as RequestInit).body as string)).toEqual({ slot: 'checklist', op: 'set', value: { done: ['c', 'a'] } })
+      expect(status()).toBe('synced')
+      // The other reader unticks everything; the next poll shows it.
+      fetchMock.mockImplementation(() => Promise.resolve(answer([{ done: [], at: '2026-10-10T04:00:00.000Z' }])))
+      await act(async () => { await vi.advanceTimersByTimeAsync(4100) })
+      expect(box('a').checked).toBe(false)
+      expect(box('c').checked).toBe(false)
+      expect(counts()).toEqual(['0 of 2 done · Synced', '0 of 1 done · Synced'])
+    })
+
+    it('falls back to this browser\'s storage, exactly as today, when the host keeps no answers', async () => {
+      localStorage.setItem(KEY('b'), '1')
+      const fetchMock = vi.fn(() => Promise.resolve(new Response(JSON.stringify({ error: 'this host keeps no answers' }), { status: 501 })))
+      vi.stubGlobal('fetch', fetchMock)
+      await mount(SYNC_MD, { artifactId: 'abc23456', send: true })
+      await act(async () => {})
+      expect(box('b').checked).toBe(true)
+      expect(counts()).toEqual(['1 of 2 done', '0 of 1 done'])
+      await act(async () => { box('c').click() })
+      expect(localStorage.getItem(KEY('c'))).toBe('1')
+      await act(async () => { await vi.advanceTimersByTimeAsync(5000) })
+      // No poll, no post: one read found nothing to sync with, and it stopped there.
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+    })
+  })
 })

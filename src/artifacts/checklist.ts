@@ -4,6 +4,7 @@
 //
 // ```checklist
 // send: anyone                      # optional: signed-in | anyone (who may press Send)
+// sync: anyone                      # optional: signed-in | anyone (who may tick a shared set)
 // - Update macOS {#update}
 //   Apple menu > System Settings > General > Software Update.
 // - [ ] Sign in with your personal Apple Account
@@ -13,6 +14,11 @@
 // `{#id}` at the end of the line when there is one, else a slug of its text. Indented lines under
 // an item are its description, drawn as markdown with raw HTML escaped like the rest of the page.
 // Ticks belong to the reader: `[x]` is accepted and ticks nothing.
+//
+// `sync:` makes the ticks the PAGE's instead of the reader's: one page-wide set, kept by the host in
+// the shared `checklist` slot, that every reader sees and (as `sync:` names) may change. One block
+// saying it is enough; every checklist on the page then shares the one set, because item ids are
+// page-wide. A page cannot both sync and send: a synced set already reaches the owner.
 
 export const CHECKLIST_SLOT = 'checklist'
 export const MAX_CHECKLIST_ITEMS = 200
@@ -25,7 +31,7 @@ export const CHECKLIST_ID = /^[\p{Ll}\p{Lo}\p{Lm}\p{N}_-]{1,64}$/u
 
 export type SendWriters = 'signed-in' | 'anyone'
 export type ChecklistItem = { id: string; text: string; description: string; line: number }
-export type ChecklistBlock = { line: number; send?: SendWriters; items: ChecklistItem[] }
+export type ChecklistBlock = { line: number; send?: SendWriters; sync?: SendWriters; items: ChecklistItem[] }
 /** What a Send stores in the page's `checklist` slot: the ids the reader had ticked. */
 export type ChecklistValue = { done: string[] }
 /** A block as written, before ids are made unique across the page. */
@@ -49,6 +55,7 @@ export function parseChecklistFence(value: string, line: number, meta?: string |
   const rows = value ? value.split('\n') : []
   const items: RawChecklistItem[] = []
   let send: SendWriters | undefined
+  let sync: SendWriters | undefined
   let desc: string[] | null = null
   const close = () => {
     if (desc && items.length) items[items.length - 1].description = desc.join('\n').replace(/^\n+|\n+$/g, '')
@@ -85,13 +92,15 @@ export function parseChecklistFence(value: string, line: number, meta?: string |
     if (items.length) return { ok: false, error: `line ${at}: a checklist item starts with "- ", and its description under it is indented` }
     const s = /^([A-Za-z_-]+)\s*:\s*([^#]*?)\s*(#.*)?$/.exec(row.trim())
     if (!s) return { ok: false, error: `line ${at}: the checklist block takes settings like "send: anyone", then items starting with "- "` }
-    if (s[1] !== 'send') return { ok: false, error: `line ${at}: the checklist block has an unknown setting: ${s[1]}` }
-    if (s[2] !== 'signed-in' && s[2] !== 'anyone') return { ok: false, error: `line ${at}: checklist send must be signed-in or anyone` }
-    send = s[2]
+    if (s[1] !== 'send' && s[1] !== 'sync') return { ok: false, error: `line ${at}: the checklist block has an unknown setting: ${s[1]}` }
+    if (s[2] !== 'signed-in' && s[2] !== 'anyone') return { ok: false, error: `line ${at}: checklist ${s[1]} must be signed-in or anyone` }
+    if (s[1] === 'send') send = s[2]
+    else sync = s[2]
   }
+  if (send && sync) return { ok: false, error: `line ${line}: a checklist takes send or sync, not both; a synced list already reaches the owner` }
   close()
   if (!items.length) return { ok: false, error: `line ${line}: a checklist needs at least one item starting with "- "` }
-  return { ok: true, block: { line, ...(send ? { send } : {}), items } }
+  return { ok: true, block: { line, ...(send ? { send } : {}), ...(sync ? { sync } : {}), items } }
 }
 
 /** Gives every item on the page its final id. An explicit `{#id}` is kept as written and must be
@@ -109,6 +118,7 @@ export function assignChecklistIds(blocks: RawChecklistBlock[]):
   const out: ChecklistBlock[] = blocks.map((b) => ({
     line: b.line,
     ...(b.send ? { send: b.send } : {}),
+    ...(b.sync ? { sync: b.sync } : {}),
     items: b.items.map(({ explicit, ...it }) => {
       if (explicit) return it
       const base = slug(it.text)
@@ -121,8 +131,8 @@ export function assignChecklistIds(blocks: RawChecklistBlock[]):
   return { ok: true, blocks: out }
 }
 
-/** The server's check on a Send, on a page whose checklist offers one: every id is an item of
- *  that checklist, once. The browser sends exactly this; anything else is refused. */
+/** The server's check on a Send or a synced set: every id is an item of that checklist (of any
+ *  checklist on the page, when it syncs), once. The browser sends exactly this; anything else is refused. */
 export function checkChecklistValue(v: unknown, ids: readonly string[]): string | null {
   if (!v || typeof v !== 'object' || Array.isArray(v) || Object.keys(v).some((k) => k !== 'done')) return 'a checklist answer is { done: [item ids] }'
   const done = (v as { done?: unknown }).done

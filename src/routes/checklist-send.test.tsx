@@ -7,6 +7,7 @@ import { createArtifactRoutes } from './artifacts.js'
 import { freedomDefault } from '../brand/pack.js'
 import { parseArtifactSource } from '../artifacts/front-matter.js'
 import { createMemoryStateStore } from '../artifacts/state-store.js'
+import { unlockCookieName, keyHash } from '../artifacts/unlock.js'
 import type { ArtifactRecord, ArtifactStore } from '../artifacts/store.js'
 
 // A checklist's Send is the state API's `checklist` slot, declared by the fence: the page draws
@@ -66,5 +67,53 @@ describe('a checklist with send', () => {
     const rows = (await read.json()).responses as { slot: string; value: unknown }[]
     expect(rows.length).toBeGreaterThan(0)
     expect(rows.map((x) => [x.slot, x.value])).toEqual([['checklist', { done: ['install-chrome'] }]])
+  })
+})
+
+// A page whose checklists sync: every block's ticks are one shared set in the `checklist` slot, so
+// what one reader posts, every other reader is shown, on a password page as much as an open one.
+describe('a checklist that syncs', () => {
+  const SYNCED = { ...record('syn23456', '---\ntitle: Prep\nsummary: S\n---\n## One\n\n```checklist\nsync: anyone\n- First {#q-a-1}\n- Second {#q-a-2}\n```\n\n## Two\n\n```checklist\n- Third {#q-b-1}\n```\n'), password: 'sesame' }
+  RECORDS.syn23456 = SYNCED
+  const unlock = `${unlockCookieName('syn23456')}=${keyHash('syn23456', 'sesame')}`
+  const req = (method: 'GET' | 'POST', cookie: string, body?: unknown, ip = '203.0.113.30') => new NextRequest('https://artifacts.example.com/api/artifacts/syn23456/state', {
+    method, ...(body ? { body: JSON.stringify(body) } : {}), headers: { 'content-type': 'application/json', 'x-forwarded-for': ip, cookie },
+  })
+  const anonOf = (res: Response) => /artifact_anon=([A-Za-z0-9]{24})/.exec(res.headers.get('set-cookie') ?? '')?.[1]
+  const latest = (body: { slots: Record<string, { shared?: { value: { done: string[] }; at: string }[] }> }) =>
+    [...(body.slots.checklist.shared ?? [])].sort((x, y) => x.at.localeCompare(y.at)).pop()?.value.done
+
+  it('the page draws every block, with no Send, and declares the slot shared', async () => {
+    const open = { ...SYNCED, id: 'sym23456', password: undefined }
+    RECORDS.sym23456 = open
+    const out = renderToStaticMarkup(await build().Page(params('sym23456')))
+    expect([...out.matchAll(/data-checklist-item="([^"]+)"/g)].map((m) => m[1])).toEqual(['q-a-1', 'q-a-2', 'q-b-1'])
+    expect(out).not.toContain('data-checklist-send')
+    expect(open.state?.slots.checklist).toEqual({ shape: 'one', visibility: 'shared', writers: 'anyone' })
+  })
+
+  it('an anonymous reader on an unlocked page ticks items across blocks, and a second reader sees the set', async () => {
+    const r = build()
+    expect((await r.STATE_POST(req('POST', '', { slot: 'checklist', op: 'set', value: { done: ['q-a-1'] } }), params('syn23456'))).status).toBe(403)
+    const a = await r.STATE_POST(req('POST', unlock, { slot: 'checklist', op: 'set', value: { done: ['q-a-2', 'q-b-1'] } }), params('syn23456'))
+    expect(a.status).toBe(200)
+    const anonA = anonOf(a)
+    expect(anonA).toBeTruthy()
+    // Another reader, another browser: no anon cookie of theirs yet, and they are shown A's set.
+    const b = await r.STATE_GET(req('GET', unlock, undefined, '198.51.100.7'), params('syn23456'))
+    expect(b.status).toBe(200)
+    expect(latest(await b.json())).toEqual(['q-a-2', 'q-b-1'])
+    // B unticks one; the newest set is now B's, and A is shown it.
+    const bw = await r.STATE_POST(req('POST', unlock, { slot: 'checklist', op: 'set', value: { done: ['q-b-1'] } }, '198.51.100.7'), params('syn23456'))
+    expect(bw.status).toBe(200)
+    const back = await r.STATE_GET(req('GET', `${unlock}; artifact_anon=${anonA}`), params('syn23456'))
+    expect(latest(await back.json())).toEqual(['q-b-1'])
+  })
+
+  it('refuses an id no checklist on the page draws', async () => {
+    const r = build()
+    const bad = await r.STATE_POST(req('POST', unlock, { slot: 'checklist', op: 'set', value: { done: ['q-a-1', 'q-z-9'] } }), params('syn23456'))
+    expect(bad.status).toBe(400)
+    expect((await bad.json()).error).toBe('a checklist answer names only items on this page')
   })
 })
