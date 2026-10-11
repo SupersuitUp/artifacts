@@ -8,7 +8,7 @@
 // small bar offers to play from it, so reading and tapping never starts the audio by surprise. While
 // it plays the page follows the voice, until the reader scrolls on their own: then it leaves them
 // where they are and shows a button that brings them back to the voice.
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { nextRate, PlayerBar } from './player-bar.js'
 
 export type WordTiming = { w: string; s: number; e: number }
@@ -184,7 +184,20 @@ export function ArtifactReader({
   const follow = (on: boolean) => { followingRef.current = on; setFollowing(on) }
   // The Play from here bar, beside the word a paused reader tapped, in page coordinates so it
   // stays with the word when they scroll.
-  const [offer, setOffer] = useState<{ idx: number; top: number; left: number } | null>(null)
+  const [offer, setOffer] = useState<{ idx: number; top: number; left: number; nudged?: boolean } | null>(null)
+  const offerRef = useRef<HTMLDivElement>(null)
+  // The bar is placed in its container's coordinates, which on a host that insets the page are not
+  // the screen's; measure where it actually landed and nudge it back inside the screen.
+  useLayoutEffect(() => {
+    const el = offerRef.current
+    if (!offer || !el || offer.nudged) return
+    const vw = document.documentElement.clientWidth || window.innerWidth
+    const r = el.getBoundingClientRect()
+    // No layout to measure (a server render, a test DOM): leave the placement as computed.
+    const shift = r.width === 0 ? 0 : r.right > vw - 8 ? vw - 8 - r.right : r.left < 8 ? 8 - r.left : 0
+    // Once per tap: measured again, an element with no layout would move forever.
+    setOffer({ ...offer, left: offer.left + (Math.abs(shift) >= 1 ? shift : 0), nudged: true })
+  }, [offer])
 
   useEffect(() => {
     const root = document.getElementById(rootId)
@@ -295,7 +308,7 @@ export function ArtifactReader({
         onRateChange={(e) => setRate((e.target as HTMLAudioElement).playbackRate)}
       />
       {offer ? (
-        <div data-nospeak data-play-offer className="absolute z-50 flex items-center rounded-full font-sans text-[13px] leading-none shadow-lg"
+        <div ref={offerRef} data-nospeak data-play-offer className="absolute z-50 flex items-center rounded-full font-sans text-[13px] leading-none shadow-lg"
           style={{ top: offer.top, left: offer.left, width: OFFER_WIDTH, whiteSpace: 'nowrap', background: accent, color: ground }}>
           <button type="button" data-play-from-here onClick={() => playFrom(offer.idx)}
             className="flex flex-1 items-center gap-1.5 rounded-l-full py-2 pl-3 pr-1 font-medium">

@@ -3,6 +3,20 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.30.2
+
+**Play from here is kept inside the screen on a host that insets the page.** 0.30.1 clamped the
+bar in page coordinates, but it is placed in its container's, so on the company host (whose card is
+inset from the screen edge) a word near the right edge still pushed the pill past it.
+
+- After it renders, the bar measures where it actually landed and moves back inside the screen, once
+  per tap.
+- DETECTOR: at iPhone width on a host with an inset card, pause and tap a word at the right edge.
+  The pill running off the screen means 0.30.1.
+- REMEDY: update the dependency.
+- Tests: `artifact-reader-controls.test.tsx` (a bar landing 30px right of its placement is moved
+  inside a 390px screen). Checked on the live page at iPhone size with Playwright.
+
 ## 0.30.1
 
 **Play from here is one compact pill that stays on screen.** A word tapped near the right edge put
