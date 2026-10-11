@@ -1,7 +1,21 @@
-import { createArtifactRoutes, createMemoryPersonalStore, createMemoryStateStore, freedomDefault, type ArtifactRecord, type ArtifactStore } from '@supersuit/artifacts'
+import { applySettingsPatch, createArtifactRoutes, createMemoryPersonalStore, createMemoryStateStore, freedomDefault, type AllowEntry, type ArtifactRecord, type ArtifactStore, type ReadersStore } from '@supersuit/artifacts'
 
-const store: ArtifactStore = {
-  get: async (id): Promise<ArtifactRecord | null> => (id === 'abc23456'
+/** Signs the fixture's admin in: check-packed (and a headless browser) mint a grant with it. Not a secret. */
+export const FIXTURE_READER_SECRET = 'fixture-reader-secret'
+// The settings the page menu's sheets change (0.31.0), kept per page for the life of the server.
+// On globalThis: Next bundles this module once per route, and the page must see what the
+// settings route wrote.
+const shared = ((globalThis as { __fixtureSettings?: { settings: Map<string, Partial<ArtifactRecord>>; list: AllowEntry[] } }).__fixtureSettings ??=
+  { settings: new Map(), list: [{ email: 'dana@example.com', name: 'Dana Ruiz' }] })
+const settings = shared.settings
+const readers: ReadersStore = {
+  allowList: async () => shared.list,
+  allow: async (_id, add, remove) => { shared.list = [...shared.list.filter((e) => !remove.includes(e.email)), ...add]; return shared.list },
+  touchSession: async () => {}, flag: async () => {}, sessions: async () => [], flags: async () => [],
+  acknowledged: async () => true, acknowledge: async () => {}, acks: async () => [],
+}
+
+const records: ArtifactStore['get'] = async (id): Promise<ArtifactRecord | null> => (id === 'abc23456'
     ? {
         id, title: 'Fixture', summary: 'S', template: 'document', markdown: '# hi\n\nThe harness runs, and the harness reads.',
         definitions: [{ term: 'harness', text: 'The agent loop.' }],
@@ -28,7 +42,17 @@ const store: ArtifactStore = {
               createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z', version: 1, views: 0,
               state: { writers: 'signed-in', visibility: 'private', slots: { checklist: { shape: 'one', visibility: 'private', writers: 'anyone' } } },
             }
-          : null),
+          : null)
+const store: ArtifactStore = {
+  get: async (id) => { const a = await records(id); return a ? { ...a, ...settings.get(id) } : null },
+  setSettings: async (id, patch) => {
+    const a = await store.get(id)
+    if (!a) return null
+    const r = applySettingsPatch(a, patch)
+    if (!r.ok) throw new Error(r.error)
+    settings.set(id, { ...settings.get(id), ...r.live })
+    return store.get(id)
+  },
   save: async () => ({ id: 'abc23456', version: 1, created: true }),
   delete: async () => true,
   bumpViews: async () => {},
@@ -41,10 +65,14 @@ const store: ArtifactStore = {
         : null),
 }
 export const artifacts = createArtifactRoutes({
-  store, brand: freedomDefault, siteUrl: 'http://localhost', publishKey: () => 'k',
+  store, brand: freedomDefault, siteUrl: process.env.FIXTURE_SITE_URL ?? 'http://localhost', publishKey: () => 'k',
   state: createMemoryStateStore(),
   personal: createMemoryPersonalStore(),
   // The fixture signs nobody in, so it cannot be an admin: 'everyone' lets it prove the History
   // panel and the /v/<n> page render from the tarball. Who sees them is proven in versions.test.tsx.
   history: 'everyone',
+  // One signed-in admin, so the page menu's settings sheets can be proven from the tarball.
+  readers,
+  readerSecret: () => FIXTURE_READER_SECRET,
+  ownerEmail: 'owner@example.com',
 })

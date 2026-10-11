@@ -5,7 +5,8 @@
 // that role. Items a role cannot use are absent, never greyed out.
 //
 // Release 1 (0.30.0): Share, Show / Hide comments, Sign in / Sign out, Version history and Copy
-// the markdown. The server decides every item (routes/artifacts.tsx) and passes only what this
+// the markdown. Release 2 (0.31.0): Share settings and Comment settings for the owner and the
+// hub's admins, each opening a sheet (settings-sheet.tsx) that changes the page without a republish. The server decides every item (routes/artifacts.tsx) and passes only what this
 // reader may have: the markdown source and the history list never reach a reader who may not use
 // them, so nothing here has to hide anything.
 //
@@ -19,6 +20,7 @@ import { createPortal } from 'react-dom'
 import { themeVarsAround } from './theme-vars.js'
 import { HistoryPanel, VersionList, type HistoryItem } from './version-history.js'
 import { PINS_STATE, requestPins, signInBack } from './page-bridge.js'
+import { REOPEN_KEY, SettingsSheet, type PageSettings, type SheetKind } from './settings-sheet.js'
 
 export type PageRole = 'visitor' | 'reader' | 'owner' | 'admin'
 
@@ -40,6 +42,9 @@ export type PageMenuProps = {
   history: { items: HistoryItem[]; base: string; viewing: number } | null
   /** The published source, for the owner and admins only. */
   markdown: string | null
+  /** The page's share and comment settings, for the owner and admins only; null for everyone
+   *  else, so nobody else's page carries the list or the key. */
+  settings?: PageSettings | null
 }
 
 /** The menu's first line: who this reader is to this page. */
@@ -51,10 +56,12 @@ export function roleLine(role: PageRole, name: string | null, shutOut = false): 
 }
 
 /** The items this reader gets, in order. Exported so the server markup and tests can name them. */
-export function menuItems(p: Pick<PageMenuProps, 'share' | 'comments' | 'signIn' | 'signOut' | 'history' | 'markdown'>): string[] {
+export function menuItems(p: Pick<PageMenuProps, 'share' | 'comments' | 'signIn' | 'signOut' | 'history' | 'markdown' | 'settings'>): string[] {
   return [
     p.share ? 'share' : null,
     p.comments ? 'comments' : null,
+    p.settings ? 'share-settings' : null,
+    p.settings && p.settings.comments !== null ? 'comment-settings' : null,
     p.history ? 'history' : null,
     p.markdown !== null ? 'markdown' : null,
     p.signOut ? 'sign-out' : p.signIn ? 'sign-in' : null,
@@ -93,7 +100,7 @@ async function copyText(text: string): Promise<boolean> {
 }
 
 export function PageMenu(props: PageMenuProps) {
-  const { role, name, shutOut, share, comments, signIn, signOut, history, markdown } = props
+  const { role, name, shutOut, share, comments, signIn, signOut, history, markdown, settings } = props
   const items = menuItems(props)
   const [mounted, setMounted] = useState(false)
   const [open, setOpen] = useState(false)
@@ -102,6 +109,7 @@ export function PageMenu(props: PageMenuProps) {
   const [pins, setPins] = useState(true)
   const [said, setSaid] = useState<string | null>(null)
   const [historyOpen, setHistoryOpen] = useState(false)
+  const [sheet, setSheet] = useState<{ kind: SheetKind; saved: boolean } | null>(null)
   const marker = useRef<HTMLSpanElement | null>(null)
   const button = useRef<HTMLButtonElement | null>(null)
   const menu = useRef<HTMLDivElement | null>(null)
@@ -111,6 +119,14 @@ export function PageMenu(props: PageMenuProps) {
     setMounted(true)
     const onPins = (e: Event) => setPins((e as CustomEvent<boolean>).detail === true)
     window.addEventListener(PINS_STATE, onPins)
+    // A settings save reloads the page; open the sheet it came from again, saying it saved.
+    if (settings) {
+      try {
+        const kind = window.sessionStorage.getItem(REOPEN_KEY)
+        window.sessionStorage.removeItem(REOPEN_KEY)
+        if (kind === 'share' || kind === 'comments') { setPhone(isPhone()); setSheet({ kind, saved: true }) }
+      } catch { /* no storage: the page itself shows what changed */ }
+    }
     return () => window.removeEventListener(PINS_STATE, onPins)
   }, [])
 
@@ -163,6 +179,10 @@ export function PageMenu(props: PageMenuProps) {
     requestPins(!pins)
     setPins(!pins)
     close()
+  }
+  const onSheet = (kind: SheetKind) => {
+    setOpen(false)
+    setSheet({ kind, saved: false })
   }
   const onHistory = () => {
     setOpen(false)
@@ -229,6 +249,16 @@ export function PageMenu(props: PageMenuProps) {
               {pins ? 'Hide comments' : 'Show comments'}
             </button>
           ) : null}
+          {settings ? (
+            <button type="button" role="menuitem" data-page-menu-item="share-settings" aria-haspopup="dialog" onClick={() => onSheet('share')} style={itemStyle}>
+              Share settings
+            </button>
+          ) : null}
+          {settings && settings.comments !== null ? (
+            <button type="button" role="menuitem" data-page-menu-item="comment-settings" aria-haspopup="dialog" onClick={() => onSheet('comments')} style={itemStyle}>
+              Comment settings
+            </button>
+          ) : null}
           {history ? (
             <button type="button" role="menuitem" data-page-menu-item="history" aria-haspopup="dialog" onClick={onHistory} style={itemStyle}>
               Version history
@@ -246,6 +276,10 @@ export function PageMenu(props: PageMenuProps) {
           ) : null}
           <span role="status" aria-live="polite" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>{said ?? ''}</span>
         </div>
+      ) : null}
+      {sheet && settings ? (
+        <SettingsSheet kind={sheet.kind} settings={settings} saved={sheet.saved} phone={phone} vars={vars} onCopy={copyText}
+          onClose={() => { setSheet(null); button.current?.focus() }} />
       ) : null}
       {historyOpen && history ? (
         <HistoryPanel items={history.items} base={history.base} viewing={history.viewing} anchor={button}

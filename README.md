@@ -76,6 +76,7 @@ The rest, each exporting the named handler(s) from `artifacts`:
 | `app/api/artifacts/[id]/route.ts` | `GET`, `DELETE` |
 | `app/api/artifacts/[id]/assets/[name]/route.ts` | `PUT` = `PUT_ASSET` |
 | `app/api/artifacts/[id]/access/route.ts` | `GET`, `POST` = `ACCESS` |
+| `app/api/artifacts/[id]/settings/route.ts` | `GET`, `POST` = `SETTINGS` (see [Share settings and Comment settings](#share-settings-and-comment-settings)) |
 | `app/api/artifacts/[id]/reads/route.ts` | `GET` = `READS` |
 | `app/api/artifacts/[id]/versions/route.ts` | `GET`, `POST` = `VERSIONS` |
 | `app/api/reader/enter/route.ts` | `GET` = `ENTER` |
@@ -130,7 +131,7 @@ cannot use is absent, never greyed out.**
 | Visitor (signed out) | Not signed in | Share, Show / Hide comments, Sign in |
 | Reader (signed in) | Signed in as Dana | Share, Show / Hide comments, Sign out |
 | Shut out (at a gated page's door) | Signed in as Dana · not on this page's list | Share, Sign out |
-| Owner (`ownerEmail`) | Signed in as Robin · owner of this page | Share, Show / Hide comments, Version history, Copy the markdown, Sign out |
+| Owner (`ownerEmail`) | Signed in as Robin · owner of this page | Share, Show / Hide comments, Share settings, Comment settings, Version history, Copy the markdown, Sign out |
 | Admin (`admins`) | Signed in as Casey · admin of this hub | the owner's items |
 
 - **Share** opens the phone's own share sheet where there is one, and otherwise copies the link and
@@ -149,6 +150,46 @@ cannot use is absent, never greyed out.**
 The server decides every item and hands the browser only what this reader may use: the markdown
 source, a share link carrying a password, and the version list are never in a page rendered for
 anyone else. `PageMenu`, `roleLine` and `menuItems` are exported from `/reader`.
+
+### Share settings and Comment settings
+
+The owner and the hub's admins change a page's settings from the menu, with no republish. Each item
+opens a sheet (from the bottom on a phone, under the button on a desk):
+
+- **Share settings.** Who can open it: anyone with the link, any Freedom account (plus the list),
+  or only the list. The list itself: add or remove an email. On a page open to anyone, a password
+  on or off (on makes a 12-character key). The link to send, with a Copy button: on a password page
+  it carries the key. Under them, read-only lines: what a stranger with the bare URL sees and what
+  search engines are told. A host that knows more (its robots.txt, who its sign-in admits) passes
+  `shareFacts: (artifact) => [{ label, text }]`, whose rows replace those two.
+- **Comment settings.** Who can comment (anyone, signed-in readers, nobody) and who can read the
+  comments (the owner and admins, or every reader). A gated page takes comments only from
+  signed-in readers it is open to, whatever is chosen; the sheet says so.
+
+A save that changes how the page renders reloads it and reopens the sheet saying "Saved"; adding or
+removing someone on the list changes nothing on the page and does not.
+
+The sheets need a store with `setSettings` (`createArtifactStore` has it). The gated levels and the
+list need `readers`; Comment settings need `state`. Without them those parts are absent.
+
+Both talk to `GET|POST /api/artifacts/<id>/settings` (`SETTINGS`):
+
+- **Who:** a reader whose grant names `ownerEmail` or one of `admins`. Signed out is 401, anyone
+  else 403, before the page is looked up. The publish key is not accepted here.
+- **CSRF:** a POST is refused (403) when its `Origin` is another site or `Sec-Fetch-Site` is not
+  `same-origin`, and (415) unless it is `application/json`, which a cross-site form cannot send.
+- **Body**, every field optional: `{ "access": "public"|"freedom"|"invite", "password": "on"|"off",
+  "comments": "off"|"anyone"|"signed-in", "commentsVisible": "owner"|"readers", "add": [{ "email",
+  "name"? }], "remove": ["email"] }`. Unknown fields and bad values are 400 and change nothing.
+- **Answer:** the settings as the sheets show them.
+
+**Settings changed on the page win.** The record keeps what the file said about `access:`,
+`password:`, `comments:` and `comments_visible:` at its last publish (`declared`). A republish
+changes one of them only when the file's line differs from what it said the time before: republish
+the same file and an admin's change stands; edit the line and the file wins. Dropping a line counts
+as a change for the password and comments (as before, it takes the password off and comments back to
+off), and never for `access:`, which a file that names none leaves alone. A page last published
+before 0.31.0 has no `declared` and takes its file on its next publish, as every publish did.
 
 ## Version history
 
@@ -240,7 +281,9 @@ on a defined word opens its definition instead of seeking.
 `password: <string>` shuts the body behind a door. The title, summary and unfurl stay, so the
 link still reads as itself in a thread. It opens on `?key=<password>` in the URL, or on the
 cookie that first open sets, which holds a hash bound to the page id: it names no password and
-opens no other page. Republishing without the line takes the door down.
+opens no other page. Republishing without the line takes the door down. The owner and admins can
+also turn it on or off from the page menu (Share settings); a republish of the same file leaves
+their change alone.
 
 ## A confidential page (`access:`)
 

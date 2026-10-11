@@ -15,6 +15,7 @@
 import { execFileSync, spawn, spawnSync } from 'node:child_process'
 import { mkdirSync, rmSync, readFileSync, existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 const root = resolve(import.meta.dirname, '..')
 const fixture = join(root, 'test/fixture')
@@ -36,7 +37,7 @@ for (const bad of paths.filter((p) => /\.test\.|^src\/|^test\//.test(p))) fail(`
 if (!paths.includes('fonts/Newsreader-600.ttf')) fail('tarball has no fonts/Newsreader-600.ttf')
 const reader = readFileSync(join(dest, 'lib/reader/artifact-reader.js'), 'utf8')
 if (!/^['"]use client['"]/.test(reader)) fail("compiled reader lost its 'use client' directive")
-for (const f of ['player-bar.js', 'comment-layer.js', 'comment-card.js', 'page-menu.js', 'version-history.js']) {
+for (const f of ['player-bar.js', 'comment-layer.js', 'comment-card.js', 'page-menu.js', 'version-history.js', 'settings-sheet.js']) {
   if (!/^['"]use client['"]/.test(readFileSync(join(dest, 'lib/reader', f), 'utf8'))) fail(`compiled ${f} lost its 'use client' directive`)
 }
 // GUARD: nothing the package ships may speak with the browser's own voice.
@@ -150,7 +151,32 @@ try {
   const pr = await fetch(`${base}/api/artifacts/cmt23456/personal`)
   if (pr.status !== 401 || (await pr.json()).device !== true) fail(`personal notes for a signed-out reader answered ${pr.status}, not 401 device`)
 
-  console.log('check-packed: fixture builds; page, page menu, version history, share card, publish, state routes, the notes and checklist widgets, comments and the comments feed answer correctly')
+  // Share and comment settings (0.31.0): refused signed out and to a reader; for the fixture's
+  // owner, the menu offers both sheets, the endpoint reads and changes a setting, and the page
+  // reflects it at once with no republish.
+  const { mintGrant, GRANT_COOKIE } = await import(pathToFileURL(join(dest, 'lib/artifacts/reader.js')).href)
+  const grant = (email) => `${GRANT_COOKIE}=${mintGrant('fixture-reader-secret', { uid: email, email, name: 'Fixture', member: true })}`
+  const ownerCookie = grant('owner@example.com')
+  const sNo = await fetch(`${base}/api/artifacts/abc23456/settings`)
+  if (sNo.status !== 401) fail(`settings signed out answered ${sNo.status}, not 401`)
+  const sReader = await fetch(`${base}/api/artifacts/abc23456/settings`, { headers: { cookie: grant('dana@example.com') } })
+  if (sReader.status !== 403) fail(`settings for a reader answered ${sReader.status}, not 403`)
+  const ownerHtml = await (await fetch(`${base}/abc23456`, { headers: { cookie: ownerCookie } })).text()
+  if (!ownerHtml.includes('data-page-menu-for="owner"') || !ownerHtml.includes('share-settings comment-settings')) fail('the owner\'s page menu has no settings items')
+  const readerHtml = await (await fetch(`${base}/abc23456`, { headers: { cookie: grant('dana@example.com') } })).text()
+  if (readerHtml.includes('share-settings') || readerHtml.includes('dana@example.com</')) fail('a reader\'s page carries the settings')
+  const sw = await fetch(`${base}/api/artifacts/abc23456/settings`, { method: 'POST', headers: { cookie: ownerCookie, origin: 'http://localhost', 'content-type': 'application/json' }, body: JSON.stringify({ password: 'on' }) })
+  const sb = await sw.json()
+  if (sw.status !== 200 || sb.password !== true || !/\?key=[a-z2-9]{12}$/.test(sb.link)) fail(`a settings change answered ${sw.status} ${JSON.stringify(sb)}`)
+  const locked = await (await fetch(`${base}/abc23456`)).text()
+  if (!/<form[^>]*method="get"/.test(locked) || locked.includes('data-defined-term')) fail('the password set from the menu did not shut the page')
+  const foreign = await fetch(`${base}/api/artifacts/abc23456/settings`, { method: 'POST', headers: { cookie: ownerCookie, origin: 'https://evil.example.net', 'content-type': 'application/json' }, body: JSON.stringify({ password: 'off' }) })
+  if (foreign.status !== 403) fail(`a cross-origin settings change answered ${foreign.status}, not 403`)
+  const off = await fetch(`${base}/api/artifacts/abc23456/settings`, { method: 'POST', headers: { cookie: ownerCookie, origin: 'http://localhost', 'content-type': 'application/json' }, body: JSON.stringify({ password: 'off' }) })
+  if (off.status !== 200 || (await off.json()).password !== false) fail('the password could not be taken off again')
+  if (!(await (await fetch(`${base}/abc23456`)).text()).includes('data-defined-term')) fail('the page did not open again when the password came off')
+
+  console.log('check-packed: fixture builds; page, page menu, version history, share card, publish, state routes, the notes and checklist widgets, comments, the comments feed and the settings sheets answer correctly')
 } finally {
   server.kill()
 }

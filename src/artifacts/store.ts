@@ -15,6 +15,7 @@ import type { StateConfig } from './state.js'
 import type { ThemeMode } from '../brand/theme.js'
 import type { Definition } from './definitions.js'
 import type { CommentsMode, CommentsVisible } from './comments.js'
+import { applySettingsPatch, settleOnPublish, type DeclaredSettings, type SettingsPatch } from './settings.js'
 
 export type ArtifactRecord = {
   id: string
@@ -41,6 +42,10 @@ export type ArtifactRecord = {
   /** Who may leave shared comments; absent is off. Personal notes need nothing. */
   comments?: CommentsMode
   commentsVisible?: CommentsVisible
+  /** What the file said about access, password and comments at its last publish (0.31.0), so a
+   *  republish changes a setting only when the file's line changed: settings changed on the page
+   *  win (artifacts/settings.ts). Absent on pages last published before 0.31.0. */
+  declared?: DeclaredSettings
   markdown: string
   createdAt: string
   updatedAt: string
@@ -96,6 +101,9 @@ export interface ArtifactStore {
   bumpViews(id: string): Promise<void>
   /** Set who may read a page without republishing it; 'public' opens it. False if no such page. */
   setAccess?(id: string, access: Access | 'public'): Promise<boolean>
+  /** Change a page's share and comment settings from the page, without a new version. Null when
+   *  no such page; throws an Error whose message a person can read when the change cannot apply. */
+  setSettings?(id: string, patch: SettingsPatch): Promise<ArtifactRecord | null>
   /** Every version, newest first, current included, without bodies. Null when no such page. */
   history?(id: string): Promise<VersionEntry[] | null>
   /** One version by number, current included. Null when the page or the version does not exist. */
@@ -118,6 +126,18 @@ export function createArtifactStore(db: Firestore, collection = 'artifacts'): Ar
       if (!(await ref.get()).exists) return false
       await ref.update({ access: access === 'public' ? FieldValue.delete() : access })
       return true
+    },
+    setSettings: async (id, patch) => {
+      const a = await getArtifact(col, id)
+      if (!a) return null
+      const r = applySettingsPatch(a, patch)
+      if (!r.ok) throw new Error(r.error)
+      const v = r.live
+      const or = <T,>(x: T | undefined) => (x === undefined ? FieldValue.delete() : x)
+      await col().doc(id).update({
+        access: or(v.access), password: or(v.password), comments: or(v.comments), commentsVisible: or(v.commentsVisible), state: or(v.state),
+      })
+      return getArtifact(col, id)
     },
     history: (id) => historyOf(col, id),
     version: (id, n) => versionOf(col, id, n),
@@ -206,15 +226,10 @@ async function saveArtifact(col: Col, input: SaveInput): Promise<SaveResult> {
     ...(input.meta.narration ? { narration: input.meta.narration } : {}),
     ...(input.meta.timings ? { timings: input.meta.timings } : {}),
     ...(input.meta.narrationHash ? { narrationHash: input.meta.narrationHash } : {}),
-    ...(input.meta.password ? { password: input.meta.password } : {}),
-    ...(input.meta.access && input.meta.access !== 'public' ? { access: input.meta.access } : {}),
-    ...(input.meta.state ? { state: input.meta.state } : {}),
     ...(input.meta.theme ? { theme: input.meta.theme } : {}),
     ...(input.meta.pack ? { pack: input.meta.pack } : {}),
     ...(input.meta.toc !== undefined ? { toc: input.meta.toc } : {}),
     ...(input.meta.definitions?.length ? { definitions: input.meta.definitions } : {}),
-    ...(input.meta.comments ? { comments: input.meta.comments } : {}),
-    ...(input.meta.commentsVisible ? { commentsVisible: input.meta.commentsVisible } : {}),
   }
   if (input.id) {
     const existing = await getArtifact(col, input.id)
@@ -241,28 +256,26 @@ async function saveArtifact(col: Col, input: SaveInput): Promise<SaveResult> {
       })
     }
     const next = fresh ? current + 1 : current
-    // An update merges, so a password the file no longer carries has to be cleared on purpose:
-    // otherwise removing the line from the file would leave the door up on the live page.
-    const password = input.meta.password ? {} : { password: FieldValue.delete() }
+    // Access, the password and the comment settings: the file's line stands only where it changed
+    // since the last publish, so a setting changed on the page is never undone by a republish of
+    // an unchanged file (settings.ts). An update merges, so anything that settles to absent is
+    // cleared on purpose: removing the password line takes the door down, `access: public` opens.
+    const live = settleOnPublish(existing, input.meta)
+    const or = <T,>(x: T | undefined) => (x === undefined ? FieldValue.delete() : x)
+    const settings = {
+      access: or(live.access), password: or(live.password), state: or(live.state),
+      comments: or(live.comments), commentsVisible: or(live.commentsVisible), declared: live.declared,
+    }
     // A subtitle the file no longer carries is gone from the page, like any other content.
     const subtitle = input.meta.subtitle ? {} : { subtitle: FieldValue.delete() }
     // Who it is for is a label on the content, never an access control: absent clears it.
     const to = input.meta.to ? {} : { to: FieldValue.delete() }
-    // Access is the opposite of password on purpose: absent leaves it alone, and only an explicit
-    // `access: public` opens the page. Reopening a confidential page must never be a side effect.
-    const access = input.meta.access === 'public' ? { access: FieldValue.delete() } : {}
-    // Content, like the body: a republish that no longer declares state removes the slots.
-    const state = input.meta.state ? {} : { state: FieldValue.delete() }
     // How the page looks is content too: a line the file no longer carries goes back to the default.
     const look = {
       ...(input.meta.theme ? {} : { theme: FieldValue.delete() }),
       ...(input.meta.pack ? {} : { pack: FieldValue.delete() }),
       ...(input.meta.toc !== undefined ? {} : { toc: FieldValue.delete() }),
       ...(input.meta.definitions?.length ? {} : { definitions: FieldValue.delete() }),
-      // Comments are not an access control, so a line the file no longer carries goes back to
-      // off / owner. The comments already left are kept, like every answer.
-      ...(input.meta.comments ? {} : { comments: FieldValue.delete() }),
-      ...(input.meta.commentsVisible ? {} : { commentsVisible: FieldValue.delete() }),
     }
     // `voice: none` is the page declaring it has no audio. An update merges, so the recording it
     // had would otherwise survive every republish; clear it on purpose, and the player goes with it.
@@ -270,7 +283,7 @@ async function saveArtifact(col: Col, input: SaveInput): Promise<SaveResult> {
       ? { voice: FieldValue.delete(), narration: FieldValue.delete(), timings: FieldValue.delete(), narrationHash: FieldValue.delete() }
       : {}
     await ref.update({
-      ...fields, ...password, ...subtitle, ...to, ...access, ...state, ...look, ...audio, markdown: input.markdown, version: next,
+      ...fields, ...settings, ...subtitle, ...to, ...look, ...audio, markdown: input.markdown, version: next,
       // `updatedAt` is when this version went live; finishing its own publish does not move it.
       ...(fresh || input.markdown !== existing.markdown ? { updatedAt: now } : {}),
       note: nextNote ?? FieldValue.delete(),
@@ -279,9 +292,16 @@ async function saveArtifact(col: Col, input: SaveInput): Promise<SaveResult> {
     return { id: input.id, version: next, created: false }
   }
   const id = newArtifactId()
+  const live = settleOnPublish(null, input.meta)
   const rec: ArtifactRecord = {
     id,
     ...fields,
+    ...(live.access ? { access: live.access } : {}),
+    ...(live.password ? { password: live.password } : {}),
+    ...(live.state ? { state: live.state } : {}),
+    ...(live.comments ? { comments: live.comments } : {}),
+    ...(live.commentsVisible ? { commentsVisible: live.commentsVisible } : {}),
+    declared: live.declared,
     markdown: input.markdown,
     createdAt: now,
     updatedAt: now,

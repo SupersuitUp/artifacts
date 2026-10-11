@@ -28,6 +28,10 @@ import { CommentLayer } from '../reader/comment-layer.js'
 import { ReaderWatch } from '../reader/reader-watch.js'
 import { UpdatedTime } from '../reader/updated-time.js'
 import { PageMenu, type PageRole } from '../reader/page-menu.js'
+import type { PageSettings, SettingsFact } from '../reader/settings-sheet.js'
+import { COMMENTS_MODES } from '../artifacts/comments.js'
+import { newPageKey, type SettingsPatch } from '../artifacts/settings.js'
+import { unlockedUrl } from '../artifacts/unlock.js'
 import {
   ACCESS_LEVELS, GRANT_COOKIE, GRANT_TTL_SECONDS, decide, firstName, mintGrant, safeReturnPath, signInUrl, verifyGrant, verifyPass,
   type Access, type AllowEntry, type Reader,
@@ -124,6 +128,12 @@ export type ArtifactRoutesConfig = {
    *  event into the alerts worth sending). Awaited, and anything it throws is swallowed: a broken
    *  sink never costs a reader their page or their record. Without it nothing extra is read. */
   onReaderEvent?: (event: ReaderEvent) => void | Promise<void>
+  /** The read-only lines under the controls in the page menu's Share settings sheet (0.31.0), for
+   *  a host that knows more than the package about how its pages are found: its robots.txt, who
+   *  its sign-in admits. Given, its rows REPLACE the package's own two (what a stranger with the
+   *  bare URL sees, and search engines). Called only for the owner and admins; a throw falls back
+   *  to the package's rows. */
+  shareFacts?: (artifact: ArtifactRecord) => SettingsFact[] | Promise<SettingsFact[]>
 }
 
 /** Ids are 8 chars from the safe alphabet; anything else is not a page and never reaches the store. */
@@ -245,6 +255,44 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     return { pages, readers: count }
   }
 
+  /** The package's own read-only lines for the Share settings sheet, from the rule `serve` applies
+   *  and the metadata it emits (every page is noindex, nofollow). */
+  function defaultFacts(a: Rec): SettingsFact[] {
+    const unfurl = 'The title, the summary and the share card'
+    const stranger = a.access
+      ? `${unfurl}, then a sign-in door. The body never reaches them.`
+      : a.password ? `${unfurl}, then a door asking for the key.` : 'The whole page. The bare link is all anyone needs.'
+    return [
+      { label: 'A stranger with the bare URL sees', text: stranger },
+      { label: 'Search engines', text: 'Hidden from search engines (noindex, nofollow). People find it only through a link someone sends.' },
+    ]
+  }
+
+  /** The page's settings as the sheets show them, or null: null for anyone but the owner and the
+   *  admins, and on a store that cannot change them, so no one else's page carries the list or
+   *  the key. The settings endpoint answers in this same shape. */
+  async function settingsFor(a: Rec, reader: Reader | null): Promise<PageSettings | null> {
+    if (!isAdmin(reader) || !store.setSettings) return null
+    const list = config.readers ? await config.readers.allowList(a.id).catch(() => []) : null
+    let facts = defaultFacts(a)
+    if (config.shareFacts) {
+      try { facts = await config.shareFacts(a) } catch { /* the package's own lines stand */ }
+    }
+    const on = !!a.comments && a.comments !== 'off' && !!a.state && Object.hasOwn(a.state.slots, COMMENTS_SLOT)
+    return {
+      endpoint: `/api/artifacts/${a.id}/settings`,
+      access: a.access ?? 'public',
+      levels: config.readers ? ['public', 'freedom', 'invite'] : ['public'],
+      password: !!a.password,
+      link: !a.access && a.password ? unlockedUrl(pageUrl(a.id), a.password) : pageUrl(a.id),
+      list: list ? list.map((e) => ({ email: e.email, ...(e.name ? { name: e.name } : {}) })) : null,
+      comments: config.state ? (on ? a.comments! : 'off') : null,
+      commentsVisible: a.commentsVisible ?? 'owner',
+      gated: !!a.access,
+      facts,
+    }
+  }
+
   /** The page menu for one reader on one page. Everything an item needs is decided here, and only
    *  what this reader may use is passed: the markdown source and the history list never reach a
    *  reader who may not have them, so the browser has nothing to hide.
@@ -253,9 +301,10 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
    *    link, since only they hold it.
    *  - Version history: whoever `history` lets see past versions (admins by default).
    *  - Copy the markdown: the owner and admins. */
-  function Menu({ a, reader, shutOut, allow, comments, history, viewing, source }: {
+  function Menu({ a, reader, shutOut, allow, comments, history, viewing, source, settings }: {
     a: Rec; reader: Reader | null; shutOut?: boolean; allow?: AllowEntry[]
     comments?: boolean; history?: VersionEntry[] | null; viewing?: number; source?: string | null
+    settings?: PageSettings | null
   }) {
     const role = roleOf(reader)
     const admin = isAdmin(reader)
@@ -276,6 +325,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
         signOut={reader ? signOutUrl(a.id) : null}
         history={history && history.length > 1 && seesHistory(reader) && viewing ? { items: history, base: pagePath(a.id), viewing } : null}
         markdown={admin && source ? source : null}
+        settings={admin ? settings ?? null : null}
       />
     )
   }
@@ -378,7 +428,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     if (!open) {
       return (
         <BrandGround pack={pack} mode={a.theme}>
-          <Menu a={a} reader={reader} />
+          <Menu a={a} reader={reader} settings={await settingsFor(a, reader)} />
           <div className="mx-auto max-w-2xl px-6 pt-24 pb-8 text-center sm:pt-28">
             <Kicker to={a.to} brand={brand} />
             <h1 className="text-4xl sm:text-5xl" style={{ fontFamily: brand.type.display, color: brand.ink }}>
@@ -438,7 +488,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
       }
       return (
         <BrandGround pack={pack} mode={a.theme}>
-          <Menu a={a} reader={reader} shutOut={d.why === 'not-allowed'} />
+          <Menu a={a} reader={reader} shutOut={d.why === 'not-allowed'} settings={await settingsFor(a, reader)} />
           {header}
           {d.why === 'not-allowed'
             ? <NotAllowedDoor brand={brand} reader={d.reader} signOutUrl={switchUrl(id)} />
@@ -451,7 +501,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     if (config.readers && !(await config.readers.acknowledged(id, r.email))) {
       return (
         <BrandGround pack={pack} mode={a.theme}>
-          <Menu a={a} reader={r} allow={allow} />
+          <Menu a={a} reader={r} allow={allow} settings={await settingsFor(a, r)} />
           {header}
           <AckDoor brand={brand} name={firstName(r, allow)} email={r.email} owner={owner} pageId={id} signOutUrl={switchUrl(id)} />
         </BrandGround>
@@ -530,7 +580,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     const toc = showToc(v.markdown, a.toc) ? tocOf(v.markdown) : []
     return (
       <>
-        <Menu a={a} reader={reader} history={history} viewing={n}
+        <Menu a={a} reader={reader} history={history} viewing={n} settings={await settingsFor(a, reader)}
           source={isAdmin(reader) ? sourceOf(a.id, { title, subtitle: v.subtitle, summary, to: v.to }, v.markdown) : null} />
         {toc.length ? <TocRail items={toc} /> : null}
         <div data-nospeak className={`mx-auto max-w-2xl px-6 ${top ? 'pt-20 sm:pt-24' : 'pt-8'}`}>
@@ -589,7 +639,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     const current = a.version ?? (a.versions?.length ?? 0) + 1
     return (
       <>
-        <Menu a={a} reader={reader} comments={mode !== 'off'} history={history} viewing={current}
+        <Menu a={a} reader={reader} comments={mode !== 'off'} history={history} viewing={current} settings={await settingsFor(a, reader)}
           source={isAdmin(reader) ? sourceOf(a.id, a, a.markdown) : null} />
         {toc.length ? <TocRail items={toc} /> : null}
         <div id="artifact-narration-root">
@@ -804,6 +854,83 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     return NextResponse.json({ id, access, readers })
   }
 
+  /** GET|POST /api/artifacts/<id>/settings: the page menu's Share settings and Comment settings
+   *  (0.31.0). Signed in as the owner or an admin of this host, by the reader grant; nobody else,
+   *  and never the publish key, which belongs to a session rather than a person on the page.
+   *  Everyone else is refused before the page is even looked up, so a refusal says nothing about
+   *  it. A POST must come from this host's own pages (Origin, Sec-Fetch-Site) as JSON, which a
+   *  cross-site form cannot send. Body, every field optional:
+   *  { access: 'public'|'freedom'|'invite', password: 'on'|'off', comments: 'off'|'anyone'|'signed-in',
+   *    commentsVisible: 'owner'|'readers', add: [{ email, name? }], remove: [email] }.
+   *  Answers with the settings as the sheet shows them. */
+  async function SETTINGS(request: NextRequest, { params }: Params) {
+    const no = (error: string, status: number) => NextResponse.json({ error }, { status, headers: { 'cache-control': 'no-store' } })
+    const reader = verifyGrant(readerSecret(), request.cookies.get(GRANT_COOKIE)?.value)
+    if (!reader) return no('sign in to change this page', 401)
+    if (!isAdmin(reader)) return no('only the owner and this hub\'s admins change a page\'s settings', 403)
+    if (!store.setSettings) return no('this store cannot change settings', 501)
+    const { id } = await params
+    const a = ARTIFACT_ID.test(id) ? await store.get(id) : null
+    if (!a) return no(`no artifact with id ${id}`, 404)
+    const view = async (rec: Rec) => NextResponse.json(await settingsFor(rec, reader), { headers: { 'cache-control': 'no-store' } })
+    if (request.method === 'GET') return view(a)
+    const origin = request.headers.get('origin')
+    const site = request.headers.get('sec-fetch-site')
+    if ((origin !== null && origin !== new URL(siteUrl).origin) || (site !== null && site !== 'same-origin')) return no('wrong origin', 403)
+    if (!/^application\/json\b/i.test(request.headers.get('content-type') ?? '')) return no('send JSON', 415)
+    const raw = await request.text()
+    if (raw.length > 8192) return no('too long', 413)
+    let b: Record<string, unknown>
+    try { b = JSON.parse(raw) } catch { return no('the body is not JSON', 400) }
+    if (!b || typeof b !== 'object' || Array.isArray(b)) return no('the body is an object', 400)
+    const KEYS = ['access', 'password', 'comments', 'commentsVisible', 'add', 'remove']
+    const unknown = Object.keys(b).filter((k) => !KEYS.includes(k))
+    if (unknown.length) return no(`unknown setting: ${unknown.join(', ')}`, 400)
+    const patch: SettingsPatch = {}
+    if (b.access !== undefined) {
+      if (b.access !== 'public' && !ACCESS_LEVELS.includes(b.access as Access)) return no(`access must be one of: public, ${ACCESS_LEVELS.join(', ')}`, 400)
+      // Without a reader record a gated page is shut to everyone; the sheet never offers it.
+      if (b.access !== 'public' && !config.readers) return no('this host keeps no reader list, so a page here is public or has a password', 400)
+      patch.access = b.access as Access | 'public'
+    }
+    if (b.password !== undefined) {
+      if (b.password !== 'on' && b.password !== 'off') return no('password is on or off', 400)
+      patch.password = b.password === 'off' ? null : (a.password ?? newPageKey())
+    }
+    if (b.comments !== undefined) {
+      if (!COMMENTS_MODES.includes(b.comments as CommentsMode)) return no(`comments must be one of: ${COMMENTS_MODES.join(', ')}`, 400)
+      patch.comments = b.comments as CommentsMode
+    }
+    if (b.commentsVisible !== undefined) {
+      if (b.commentsVisible !== 'owner' && b.commentsVisible !== 'readers') return no('commentsVisible is owner or readers', 400)
+      patch.commentsVisible = b.commentsVisible
+    }
+    if ((patch.comments !== undefined || patch.commentsVisible !== undefined) && !config.state) return no('this host keeps no comments', 400)
+    const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    const add = b.add === undefined ? [] : b.add
+    const remove = b.remove === undefined ? [] : b.remove
+    if (!Array.isArray(add) || add.length > 50 || !add.every((e) => !!e && typeof e === 'object' && typeof (e as { email?: unknown }).email === 'string'
+      && EMAIL.test((e as { email: string }).email.trim()) && (e as { email: string }).email.length <= 254
+      && ((e as { name?: unknown }).name === undefined || (typeof (e as { name?: unknown }).name === 'string' && ((e as { name: string }).name).length <= 120))))
+      return no('add is a list of { email, name? } with a valid email', 400)
+    if (!Array.isArray(remove) || remove.length > 50 || !remove.every((e) => typeof e === 'string' && e.length <= 254)) return no('remove is a list of emails', 400)
+    if ((add.length || remove.length) && !config.readers) return no('this host keeps no reader list', 400)
+    let rec: Rec | null = a
+    if (Object.keys(patch).length) {
+      try {
+        rec = await store.setSettings(id, patch)
+      } catch (e) {
+        return no(e instanceof Error ? e.message : 'could not change the settings', 409)
+      }
+      if (!rec) return no(`no artifact with id ${id}`, 404)
+    }
+    if (add.length || remove.length) {
+      await config.readers!.allow(id, (add as { email: string; name?: string }[]).map((e) => ({ email: e.email.trim(), ...(e.name ? { name: e.name.trim() } : {}) })), remove as string[])
+    }
+    revalidatePath(pagePath(id))
+    return view(rec)
+  }
+
   /** GET /api/artifacts/<id>/reads, publish key: who read it, for how long, how far, and every
    *  attempt to take it away or to open it without being let in. */
   async function READS(request: NextRequest, { params }: Params) {
@@ -959,5 +1086,5 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     return NextResponse.json({ deleted: true })
   }
 
-  return { Page, generateMetadata, VersionPage, generateVersionMetadata, VERSIONS, POST, GET, DELETE, PUT_ASSET, UPLOAD, SHARE_IMAGE, ENTER, LEAVE, TRACK, ACK, ACCESS, READS, sweepReaders, TRANSCRIBE: voiceRoutes.TRANSCRIBE, ...stateRoutes, ...personalRoutes, dynamic: 'force-dynamic' as const, maxDuration: 30 }
+  return { Page, generateMetadata, VersionPage, generateVersionMetadata, VERSIONS, POST, GET, DELETE, PUT_ASSET, UPLOAD, SHARE_IMAGE, ENTER, LEAVE, TRACK, ACK, ACCESS, SETTINGS, READS, sweepReaders, TRANSCRIBE: voiceRoutes.TRANSCRIBE, ...stateRoutes, ...personalRoutes, dynamic: 'force-dynamic' as const, maxDuration: 30 }
 }

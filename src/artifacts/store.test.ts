@@ -260,3 +260,58 @@ describe('version history', () => {
   })
 })
 
+describe('settings changed on the page (0.31.0)', () => {
+  beforeEach(() => docs.clear())
+  const parse = async (text: string) => {
+    const { parseArtifactSource } = await import('./front-matter.js')
+    const r = parseArtifactSource(text)
+    if (!r.ok) throw new Error(r.error)
+    return r
+  }
+  const file = (lines: string) => `---\ntitle: T\nsummary: S\n${lines}---\n\nBody`
+  it('setSettings changes access, password and comments in place, with no new version', async () => {
+    const p = await parse(file('comments: anyone\n'))
+    const r = (await saveArtifact({ meta: p.meta, markdown: p.body })) as { id: string }
+    const after = await store.setSettings!(r.id, { access: 'invite', password: 'k9', comments: 'signed-in', commentsVisible: 'readers' })
+    expect(after).toMatchObject({ access: 'invite', password: 'k9', comments: 'signed-in', commentsVisible: 'readers', version: 1 })
+    expect(after?.state?.slots.comments).toEqual({ shape: 'many', visibility: 'shared', writers: 'signed-in' })
+    const off = await store.setSettings!(r.id, { access: 'public', password: null, comments: 'off' })
+    expect(off?.access).toBeUndefined()
+    expect(off?.password).toBeUndefined()
+    expect(off?.comments).toBeUndefined()
+    expect(off?.state).toBeUndefined()
+    expect(await store.setSettings!('nosuchid', { access: 'invite' })).toBeNull()
+  })
+  it('settings changed on the page win over a republish of the same file', async () => {
+    const p = await parse(file('access: invite\npassword: k1\ncomments: anyone\n'))
+    const r = (await saveArtifact({ meta: p.meta, markdown: p.body })) as { id: string }
+    await store.setSettings!(r.id, { access: 'public', password: null, comments: 'off' })
+    const again = await parse(file('access: invite\npassword: k1\ncomments: anyone\nchange: a new paragraph\n').replace('Body', 'Body two'))
+    await saveArtifact({ id: r.id, meta: again.meta, markdown: again.body })
+    const got = await getArtifact(r.id)
+    expect(got?.markdown).toContain('Body two')
+    expect(got?.access).toBeUndefined()
+    expect(got?.password).toBeUndefined()
+    expect(got?.comments).toBeUndefined()
+    expect(got?.state).toBeUndefined()
+  })
+  it('a later publish whose line changed applies it', async () => {
+    const p = await parse(file('access: invite\ncomments: anyone\n'))
+    const r = (await saveArtifact({ meta: p.meta, markdown: p.body })) as { id: string }
+    await store.setSettings!(r.id, { access: 'public', comments: 'off' })
+    const next = await parse(file('access: freedom\ncomments: signed-in\n'))
+    await saveArtifact({ id: r.id, meta: next.meta, markdown: next.body })
+    const got = await getArtifact(r.id)
+    expect(got?.access).toBe('freedom')
+    expect(got?.comments).toBe('signed-in')
+    expect(got?.state?.slots.comments).toMatchObject({ writers: 'signed-in' })
+  })
+  it('a page published before 0.31.0 (no declared) takes its file on the next publish, then remembers it', async () => {
+    const p = await parse(file('comments: anyone\n'))
+    const r = (await saveArtifact({ meta: p.meta, markdown: p.body })) as { id: string }
+    docs.set(r.id, { ...docs.get(r.id), declared: undefined, comments: undefined, state: undefined })
+    await saveArtifact({ id: r.id, meta: p.meta, markdown: 'b2' })
+    expect((await getArtifact(r.id))?.comments).toBe('anyone')
+    expect((await getArtifact(r.id))?.declared).toMatchObject({ comments: 'anyone' })
+  })
+})

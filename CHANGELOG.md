@@ -3,6 +3,48 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.31.0
+
+**The owner and admins change a page's share and comment settings from the page menu, and a later
+publish of the same file no longer undoes it.** Release 2 of the page menu design. Until now these
+settings changed only by editing front matter and republishing, so an admin on a phone could see a
+page's settings (on hosts that drew their own panel) but not change them.
+
+- Two items for the owner and the hub's admins: **Share settings** (who can open it: anyone with the
+  link, any Freedom account, only the list; the list, add or remove an email; a password on or off,
+  with the link carrying the key and a Copy button; read-only lines on what a stranger and search
+  engines see) and **Comment settings** (who can comment: anyone, signed-in readers, nobody; who
+  reads them: the owner and admins, or every reader). Each opens a sheet on a phone, a panel on a
+  desk. A save reloads the page and reopens the sheet saying "Saved".
+- `GET|POST /api/artifacts/<id>/settings` (`SETTINGS`): the reader grant naming `ownerEmail` or
+  one of `admins`, nobody else (401 signed out, 403 otherwise, before the page is looked up; the
+  publish key is not accepted). A POST must be same-origin JSON. Validated; unknown fields refused.
+- `ArtifactStore.setSettings(id, patch)`, implemented by `createArtifactStore`: access, password,
+  comments and their visibility in place, the comments slot added to or removed from `state`, no
+  new version.
+- **Settings changed on the page win.** Each publish records what the file said about `access:`,
+  `password:` (as a hash), `comments:` and `comments_visible:` (`declared`); the next publish
+  changes a setting only when the file's line differs from that. Access already ignored a file that
+  named none; this extends the idea to a line the file still carries, and to the password and
+  comments. `settleOnPublish` and `applySettingsPatch` are exported.
+- `shareFacts` (route config): a host's own read-only rows for the Share settings sheet, replacing
+  the package's two.
+- DETECTOR: signed in as an admin, open the page menu. No "Share settings" item means an older
+  version, or a store without `setSettings`. A host route file is needed at
+  `app/api/artifacts/[id]/settings/route.ts`; without it a save answers 404.
+- REMEDY: update the dependency and add the route file (`GET` and `POST` delegating to `SETTINGS`).
+  A host that drew its own share-settings panel on the page can remove it and pass its facts
+  through `shareFacts`. Pages published before 0.31.0 behave as before until their next publish.
+- Tests: `artifacts/settings.test.ts` (the page-wins rule, every setting, legacy records),
+  `artifacts/store.test.ts` (setSettings round trips; a republish of the same file keeps the page's
+  change; a changed line wins), `routes/settings.test.tsx` (visitor, reader, owner, admin; CSRF;
+  validation; each setting round-trips; the list and key handed to nobody else; menu items by role;
+  `shareFacts`), `reader/settings-sheet.test.tsx` (sheets show current values, a save posts only
+  what moved, the list, reopen after reload), and `check-packed` (the tarball's endpoint, items and a
+  password set from the menu shutting the page). Driven in headless Chrome at 390x844 and 1280x800
+  against the packed fixture: open the menu, Share settings, change access, save, reopen, ⋯ still
+  reachable.
+
 ## 0.30.2
 
 **Play from here is kept inside the screen on a host that insets the page.** 0.30.1 clamped the

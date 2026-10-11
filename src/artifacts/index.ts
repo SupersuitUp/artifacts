@@ -20,3 +20,5 @@ export { COMMENTS_SLOT, COMMENTS_MODES, COMMENT_TRANSCRIPTS, MAX_COMMENT_CHARS, 
 export { createPersonalStore, createMemoryPersonalStore, validatePersonal, personalAudioDir, MAX_PERSONAL_PER_READER, type PersonalStore, type PersonalNote, type PersonalNoteValue } from './personal-store.js'
 export { deepgramTranscriber, openaiTranscriber, type Transcriber } from './transcribe.js'
 export { AUDIO_TYPES, audioExtFor, audioTypeFor, baseMime, MAX_AUDIO_BYTES, MAX_MEMO_MS, MEMO_NAME, commentAudioPath, isCommentAudioPath, personalAudioPath, isPersonalAudioPath } from './audio.js'
+export { settleOnPublish, applySettingsPatch, withComments, declaredOf, passwordDigest, newPageKey, type DeclaredSettings, type LiveSettings, type SettingsPatch } from './settings.js'
+export type { PageSettings, SettingsFact, AccessLevel } from '../reader/settings-sheet.js'

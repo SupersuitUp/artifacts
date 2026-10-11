@@ -4,6 +4,7 @@ export { ArtifactReader, wrapWords, seekableWord, litWordIndex, type WordTiming 
 export { PlayerBar } from './player-bar.js'
 export { CommentLayer } from './comment-layer.js'
 export { PageMenu, roleLine, menuItems, type PageMenuProps, type PageRole } from './page-menu.js'
+export { SettingsSheet, settingsChanges, ACCESS_LABEL, COMMENTS_LABEL, VISIBLE_LABEL, REOPEN_KEY, type PageSettings, type SettingsFact, type SheetKind, type AccessLevel } from './settings-sheet.js'
 export { VersionHistory, HistoryPanel, VersionList, type HistoryItem } from './version-history.js'
 export { requestPins, announcePins, signInBack, PINS_SET, PINS_STATE } from './page-bridge.js'
 export { CommentCard, warningLine, DEVICE_LINE } from './comment-card.js'
