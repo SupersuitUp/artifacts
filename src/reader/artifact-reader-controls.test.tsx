@@ -32,9 +32,21 @@ describe('tapping a word', () => {
     expect(played).not.toHaveBeenCalled()
     const offer = document.querySelector<HTMLButtonElement>('[data-play-from-here]')!
     expect(offer.textContent).toContain('Play from here')
+    // One compact pill: no emoji glyph (iOS draws it as a picture), never wrapping, in the UI font.
+    expect(offer.textContent).not.toMatch(/[\u25B6\u23F5\uFE0F]/)
+    const bar = offer.closest<HTMLElement>('[data-play-offer]')!
+    expect(bar.style.whiteSpace).toBe('nowrap')
+    expect(bar.className).toContain('font-sans')
     await click(offer)
     expect(played).toHaveBeenCalledWith(0.6)
     expect(document.querySelector('[data-play-from-here]')).toBeNull()
+  })
+  it('the bar stays inside the screen when the word is near the right edge', async () => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 })
+    word(2).getBoundingClientRect = () => ({ left: 330, right: 380, top: 100, bottom: 120, width: 50, height: 20, x: 330, y: 100, toJSON: () => ({}) }) as DOMRect
+    await click(word(2))
+    const bar = document.querySelector<HTMLElement>('[data-play-offer]')!
+    expect(parseFloat(bar.style.left) + parseFloat(bar.style.width)).toBeLessThanOrEqual(390 - 8)
   })
   it('while playing, jumps straight to the word with no bar in between', async () => {
     await act(async () => { void audio.play() })

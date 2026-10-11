@@ -3,6 +3,19 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.30.1
+
+**Play from here is one compact pill that stays on screen.** A word tapped near the right edge put
+the bar half off the screen, so its label wrapped to three lines inside a pill inside a pill, with
+an emoji play glyph that iOS draws as a picture.
+
+- One pill in the page's accent color, the UI font, 13px, never wrapping, a drawn play triangle, and
+  the close button inside the same pill.
+- Placed under the tapped word and clamped inside the screen.
+- DETECTOR: on a phone, pause and tap a word near the right edge. A three-line bubble means 0.30.0.
+- REMEDY: update the dependency.
+- Tests: `artifact-reader-controls.test.tsx` (no emoji, no wrapping, kept inside a 390px screen).
+
 ## 0.30.0
 
 **Every page has a page menu: one small "⋯" button, top right, whose items depend on who you are

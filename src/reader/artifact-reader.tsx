@@ -147,6 +147,9 @@ export function isUserScrollKey(key: string, target: EventTarget | null): boolea
   return true
 }
 
+/** The Play from here bar's width, so it can be kept inside the screen. */
+const OFFER_WIDTH = 168
+
 export function ArtifactReader({
   src,
   words,
@@ -200,7 +203,9 @@ export function ArtifactReader({
         return
       }
       const r = el.getBoundingClientRect()
-      setOffer({ idx, top: r.bottom + window.scrollY + 6, left: Math.max(8, r.left + window.scrollX) })
+      // Kept on screen: a word near the right edge would push the bar off it and wrap its label.
+      const vw = window.innerWidth || document.documentElement.clientWidth || 1024
+      setOffer({ idx, top: r.bottom + window.scrollY + 8, left: Math.max(8, Math.min(r.left, vw - OFFER_WIDTH - 8)) + window.scrollX })
     }
     root.addEventListener('click', onClick)
     return () => root.removeEventListener('click', onClick)
@@ -290,12 +295,15 @@ export function ArtifactReader({
         onRateChange={(e) => setRate((e.target as HTMLAudioElement).playbackRate)}
       />
       {offer ? (
-        <div data-nospeak className="absolute z-50 flex items-center gap-1 rounded-full border px-1 py-1 text-sm shadow-lg"
-          style={{ top: offer.top, left: offer.left, background: ground, borderColor: accent }}>
-          <button type="button" data-play-from-here onClick={() => playFrom(offer.idx)} className="rounded-full px-3 py-1 font-medium" style={{ background: accent, color: ground }}>
-            ▶ Play from here
+        <div data-nospeak data-play-offer className="absolute z-50 flex items-center rounded-full font-sans text-[13px] leading-none shadow-lg"
+          style={{ top: offer.top, left: offer.left, width: OFFER_WIDTH, whiteSpace: 'nowrap', background: accent, color: ground }}>
+          <button type="button" data-play-from-here onClick={() => playFrom(offer.idx)}
+            className="flex flex-1 items-center gap-1.5 rounded-l-full py-2 pl-3 pr-1 font-medium">
+            <svg aria-hidden="true" width="10" height="11" viewBox="0 0 10 11"><path d="M1 1l8 4.5L1 10z" fill="currentColor" /></svg>
+            Play from here
           </button>
-          <button type="button" aria-label="Close" onClick={() => setOffer(null)} className="px-2 opacity-70">×</button>
+          <button type="button" aria-label="Close" onClick={() => setOffer(null)}
+            className="rounded-r-full py-2 pl-1 pr-3 text-base leading-none opacity-70">×</button>
         </div>
       ) : null}
       {playing && !following ? (
