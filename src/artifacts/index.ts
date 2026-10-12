@@ -16,6 +16,8 @@ export { slugify, headingsOf, blocksOf, scanWidgets, mergeWidgetState, mergeChec
 export { parseSimulatorFence, simulatorSrc, parseEmbedFence, embedSrc, EMBED_KINDS, type SimulatorBlock, type EmbedBlock, type EmbedKind } from './simulator.js'
 export { CHECKLIST_SLOT, checklistStorageKey, checkChecklistValue, parseChecklistFence, type ChecklistBlock, type ChecklistItem, type ChecklistValue } from './checklist.js'
 export { textAnchorFrom, findText, blockId, parseAnchor, CONTEXT_CHARS, MAX_QUOTE_CHARS, BLOCK_ID, type Anchor, type TextAnchor, type RegionAnchor } from './anchor.js'
+export { createResolveDigests, noticesFor, composeDigest, resolverName, itemsOf, emailKey, burstKey, stopToken, verifyStopToken, maskEmail, RESOLVE_DIGEST_QUIET_MS, RESOLVE_DIGEST_MAX_WAIT_MS, RESOLVE_DIGEST_LEASE_MS, RESOLVE_DIGEST_MAX_ATTEMPTS, RESOLVE_DIGEST_STOP_PATH, DIGEST_BODY_CHARS, DIGEST_QUOTE_CHARS, type ResolveEvent, type DigestItem, type Burst, type Digest, type DigestStatus, type ResolveDigestStore, type DigestMessage, type DigestSender, type ResolveDigestOptions, type ComposeOptions, type FlushReport } from './resolve-digest.js'
+export { createResolveDigestStore, createMemoryResolveDigestStore } from './resolve-digest-store.js'
 export { COMMENTS_SLOT, COMMENTS_MODES, COMMENT_TRANSCRIPTS, MAX_COMMENT_CHARS, mergeCommentsState, validateComment, type CommentsMode, type CommentsVisible, type CommentValue } from './comments.js'
 export { createPersonalStore, createMemoryPersonalStore, validatePersonal, personalAudioDir, MAX_PERSONAL_PER_READER, type PersonalStore, type PersonalNote, type PersonalNoteValue } from './personal-store.js'
 export { deepgramTranscriber, openaiTranscriber, type Transcriber } from './transcribe.js'

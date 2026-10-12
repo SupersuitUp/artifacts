@@ -1,4 +1,4 @@
-import { applySettingsPatch, createArtifactRoutes, createMemoryPersonalStore, createMemoryStateStore, freedomDefault, type AllowEntry, type ArtifactRecord, type ArtifactStore, type ReadersStore } from '@supersuit/artifacts'
+import { applySettingsPatch, createArtifactRoutes, createMemoryPersonalStore, createMemoryResolveDigestStore, createMemoryStateStore, createResolveDigests, type DigestMessage, freedomDefault, type AllowEntry, type ArtifactRecord, type ArtifactStore, type ReadersStore } from '@supersuit/artifacts'
 
 /** Signs the fixture's admin in: check-packed (and a headless browser) mint a grant with it. Not a secret. */
 export const FIXTURE_READER_SECRET = 'fixture-reader-secret'
@@ -64,6 +64,16 @@ const store: ArtifactStore = {
       : n === 2 ? { version: 2, at: '2026-01-02T00:00:00Z', markdown: '# hi', current: true }
         : null),
 }
+// Resolution digests (0.34.0), on globalThis for the same reason as the settings: one queue and one
+// outbox whichever route bundle reads them. The sender records instead of emailing.
+const dg = ((globalThis as { __fixtureDigests?: { store: ReturnType<typeof createMemoryResolveDigestStore>; sent: DigestMessage[] } }).__fixtureDigests ??=
+  { store: createMemoryResolveDigestStore(), sent: [] })
+export const sentDigests = dg.sent
+export const digests = createResolveDigests({
+  store: dg.store, send: async (m) => { dg.sent.push(m); return { id: `fx_${dg.sent.length}` } },
+  secret: () => 'fixture-stop-secret', siteUrl: process.env.FIXTURE_SITE_URL ?? 'http://localhost', brandName: 'Fixture Co',
+  ownerEmail: 'owner@example.com', titleOf: async (id) => (await store.get(id))?.title ?? null,
+})
 export const artifacts = createArtifactRoutes({
   store, brand: freedomDefault, siteUrl: process.env.FIXTURE_SITE_URL ?? 'http://localhost', publishKey: () => 'k',
   state: createMemoryStateStore(),
@@ -75,4 +85,5 @@ export const artifacts = createArtifactRoutes({
   readers,
   readerSecret: () => FIXTURE_READER_SECRET,
   ownerEmail: 'owner@example.com',
+  onResolve: digests.onResolve,
 })

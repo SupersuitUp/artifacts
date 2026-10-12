@@ -187,7 +187,31 @@ try {
   if (off.status !== 200 || (await off.json()).password !== false) fail('the password could not be taken off again')
   if (!(await (await fetch(`${base}/abc23456`)).text()).includes('data-defined-term')) fail('the page did not open again when the password came off')
 
-  console.log('check-packed: fixture builds; page, page menu, version history, share card, publish, state routes, the notes and checklist widgets, comments, the comments feed, resolving and the settings sheets answer correctly')
+  // Resolution digests (0.34.0): a signed-in reader's comment, resolved with the key, queues one
+  // digest; a dry run reports it and sends nothing; the real flush sends it once; its stop link works.
+  const danaCookie = grant('dana@example.com')
+  const dc = await fetch(`${base}/api/artifacts/cmt23456/state`, { method: 'POST', headers: { cookie: danaCookie, origin: 'http://localhost', 'content-type': 'application/json' }, body: JSON.stringify({ slot: 'comments', op: 'append', value: { ...comment, body: 'signed-in comment' } }) })
+  const dce = await dc.json()
+  if (dc.status !== 200) fail(`a signed-in comment answered ${dc.status} ${JSON.stringify(dce)}`)
+  const dfd = await (await fetch(`${base}/api/comments?since=2000-01-01T00:00:00Z`, { headers: { authorization: 'Bearer k' } })).json()
+  const dEntry = dfd.comments?.find((c) => c.body === 'signed-in comment')
+  if (!dEntry) fail('the signed-in comment is not in the feed')
+  const dr = await fetch(`${base}/api/artifacts/cmt23456/resolve`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer k' }, body: JSON.stringify({ entry: dEntry.entryId, note: 'fixed in packed' }) })
+  if (dr.status !== 200) fail(`resolving the signed-in comment answered ${dr.status}`)
+  const early = await (await fetch(`${base}/api/digest-flush?ahead=5`)).json()
+  if (early.report.due !== 0 || early.sent.length) fail(`a digest was due inside the quiet window: ${JSON.stringify(early.report)}`)
+  const dry = await (await fetch(`${base}/api/digest-flush?ahead=11&dry=1`)).json()
+  if (dry.report.wouldSend?.length !== 1 || dry.report.wouldSend[0].to !== 'd***@example.com' || dry.sent.length) fail(`the dry run read back ${JSON.stringify(dry)}`)
+  const real = await (await fetch(`${base}/api/digest-flush?ahead=11`)).json()
+  const mail = real.sent[0]
+  if (real.sent.length !== 1 || mail.to !== 'dana@example.com' || mail.subject !== 'Fixture Co resolved your comment on Comments' || !mail.text.includes('fixed in packed') || !mail.text.includes(`#comment-${dEntry.entryId}`)) fail(`the digest read back ${JSON.stringify(real)}`)
+  const again = await (await fetch(`${base}/api/digest-flush?ahead=60`)).json()
+  if (again.sent.length !== 1) fail('a second flush sent the digest again')
+  const stopLink = /Stop these emails for this page: (\S+)/.exec(mail.text)?.[1]
+  const stopRes = stopLink ? await fetch(stopLink.replace('http://localhost', base)) : null
+  if (stopRes?.status !== 200 || !(await stopRes.text()).includes('no more emails about resolved comments on &ldquo;Comments&rdquo;')) fail(`the stop link answered ${stopRes?.status}`)
+
+  console.log('check-packed: fixture builds; page, page menu, version history, share card, publish, state routes, the notes and checklist widgets, comments, the comments feed, resolving, resolution digests and the settings sheets answer correctly')
 } finally {
   server.kill()
 }

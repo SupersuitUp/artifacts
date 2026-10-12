@@ -3,6 +3,50 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.34.0
+
+**Commenters hear when their comments are resolved, in one email per page per burst** (Gary,
+2026-10-12: "Can those notifications around resolved comments batch plz"). 0.33.0 let the owner
+resolve threads, but the reader who asked never found out unless someone texted them.
+
+- `createResolveDigests({ store, send, secret, siteUrl, brandName, ownerName?, ownerEmail?, admins?,
+  quietMs?, maxWaitMs? })` returns `onResolve` (the route hook), `flush({ now?, dryRun? })` (run it on
+  a schedule), `STOP` (the stop link's GET and POST) and `stopUrl`. The package composes and batches;
+  the host's `send` delivers.
+- `onResolve` on `createArtifactRoutes` (and the state routes): told after every resolve and reopen
+  with the page, the whole thread, the resolution (null on reopen) and who did it (`actor.email` for
+  a signed-in owner or admin, `actor.publisher` for the key or a pass). Awaited; a throw is logged and
+  the resolve still lands.
+- Who hears: each signed-in writer of a comment in the thread, about their own comments only; never
+  an anonymous reader, the person resolving, the owner or the admins. A burst closes after 10 quiet
+  minutes for that reader on that page (or 6 hours after its first resolution); a reopened thread
+  drops out. Only resolutions recorded through `onResolve` queue anything, so threads resolved before
+  a host wires it never produce an email.
+- Sent once: claim and lease are transactions, and every retry of one digest carries the same
+  `idempotencyKey` for the provider. Every email has a signed stop link (per reader, per page) and
+  `List-Unsubscribe` headers.
+- `createResolveDigestStore(db, base)` (Firestore, beside the state store: `<base>ResolveBursts`,
+  `<base>ResolveDigests`, `<base>ResolveStops`; no composite index) and
+  `createMemoryResolveDigestStore()`.
+- DETECTOR: `createResolveDigests` is not exported, or `createArtifactRoutes` takes no `onResolve`:
+  0.33.1 or earlier. Nothing changes for a host that does not wire it.
+- REMEDY: to turn digests on, build `createResolveDigests` with your store, sender and a stop-link
+  secret, pass `onResolve: digests.onResolve`, add `app/api/resolve-digest/stop/route.ts` (GET and
+  POST = `digests.STOP`), and call `digests.flush()` from a scheduled job (every 5 minutes is plenty).
+  Otherwise update the dependency; nothing else.
+- Tests: `artifacts/resolve-digest.test.ts` (who hears: writer only, replies by others, anonymous,
+  owner, admin and the resolver excluded; three threads make one digest; one per reader per page;
+  resolving again replaces; the quiet window and its restart; the 6-hour cap; a new burst after a
+  claim; reopen drops a thread and an emptied burst sends nothing; double and overlapping flushes send
+  once; a failed send retried with the same idempotency key; an expired lease after a crash; no
+  backfill; the stop link signed, refused when tampered, honoured for that page only, by GET and POST;
+  no secret queues nothing; dry run changes nothing; the email's words, links, escaping and no em
+  dash), `routes/resolve-digest.test.tsx` (the route hands the thread and the actor to `onResolve`,
+  reopen and the publish key too, a throwing hook never costs the resolve, end to end through RESOLVE
+  and flush, nothing for threads resolved before wiring), and `check-packed` (from the tarball: a
+  signed-in comment resolved with the key, nothing due inside the window, the dry run, one digest
+  sent once, its stop link).
+
 ## 0.33.1
 
 **The player bar: the speed button no longer reflows the bar, 2x is a speed, and the narrator

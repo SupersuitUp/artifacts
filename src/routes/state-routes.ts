@@ -27,6 +27,7 @@ import { CHECKLIST_SLOT, checkChecklistValue } from '../artifacts/checklist.js'
 import { responsesCsv, responsesOf, stateView } from '../artifacts/state-view.js'
 import type { ArtifactRecord, ArtifactStore } from '../artifacts/store.js'
 import type { ReadersStore } from '../artifacts/readers-store.js'
+import type { ResolveEvent } from '../artifacts/resolve-digest.js'
 
 export const ANON_COOKIE = 'artifact_anon'
 const ANON_ID = /^[A-Za-z0-9]{24}$/
@@ -80,6 +81,10 @@ export type StateRoutesContext = {
   /** A signed URL to play a comment's recording. Called only for `comments/` paths, and only for
    *  comments the asker is already being shown. Without it a recording has no play control. */
   audioUrl?: (id: string, path: string) => Promise<string>
+  /** Told after a thread is resolved or reopened (0.34.0), with the whole thread and who did it.
+   *  `createResolveDigests(...).onResolve` turns it into resolution emails. Awaited, and anything
+   *  it throws is logged and swallowed: a broken mailer never costs the owner their resolve. */
+  onResolve?: (event: ResolveEvent) => void | Promise<void>
 }
 type Params = { params: Promise<{ id: string }> }
 
@@ -381,6 +386,7 @@ export function createStateRoutes(ctx: StateRoutesContext) {
   async function RESOLVE(req: NextRequest, { params }: Params) {
     const publisher = isPublisherAuthed(req, ctx)
     let by = 'the publisher'
+    let actorEmail: string | undefined
     if (!publisher) {
       const reader = verifyGrant(ctx.readerSecret(), req.cookies.get(GRANT_COOKIE)?.value)
       if (!reader) return json({ error: 'sign in as the page\'s owner, or send the publish key' }, 401)
@@ -390,6 +396,7 @@ export function createStateRoutes(ctx: StateRoutesContext) {
       if ((origin !== null && origin !== siteOrigin) || (site !== null && site !== 'same-origin')) return json({ error: 'wrong origin' }, 403)
       if (!/^application\/json\b/i.test(req.headers.get('content-type') ?? '')) return json({ error: 'send JSON' }, 415)
       by = reader.name?.trim().split(/\s+/)[0] || 'the owner'
+      actorEmail = reader.email
     }
     const raw = await req.text()
     if (Buffer.byteLength(raw, 'utf8') > 4096) return json({ error: 'request over 4 KB' }, 413)
@@ -428,6 +435,18 @@ export function createStateRoutes(ctx: StateRoutesContext) {
     const resolution: CommentResolution | null = resolve ? { at: new Date().toISOString(), by, ...(note.note ? { note: note.note } : {}) } : null
     const r = await ctx.state.setResolved({ artifactId: id, slot: COMMENTS_SLOT, entryId: root.id, resolved: resolution })
     if (!r) return json({ error: 'no comment with that id on this page' }, 404)
+    if (ctx.onResolve) {
+      const thread = [r, ...[...all.values()].filter((e) => (e.value as CommentValue).parent === root.id)
+        .sort((x, y) => x.at.localeCompare(y.at) || x.id.localeCompare(y.id))]
+      try {
+        await ctx.onResolve({
+          artifactId: id, title: a.title, url: ctx.pageUrl(id), thread: { id: root.id, entries: thread }, resolution,
+          actor: { publisher, ...(actorEmail ? { email: actorEmail } : {}) }, at: resolution?.at ?? new Date().toISOString(),
+        })
+      } catch (err) {
+        console.error('onResolve failed', err)
+      }
+    }
     return json({ id, entry: root.id, resolved: resolution })
   }
 

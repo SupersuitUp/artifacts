@@ -38,6 +38,7 @@ import {
 } from '../artifacts/reader.js'
 import { FLAG_KINDS, summarize, type FlagKind, type ReadersStore } from '../artifacts/readers-store.js'
 import { readSecondsFor, wordCount, type ReaderEvent } from '../artifacts/read-alerts.js'
+import type { ResolveEvent } from '../artifacts/resolve-digest.js'
 import { AckDoor, ConfidentialBanner, NO_PRINT_CSS, NotAllowedDoor, SignInDoor, Watermark, ackText } from '../artifacts/confidential.js'
 import { ARTIFACT_ID_RE } from './ids.js'
 import { createStateRoutes } from './state-routes.js'
@@ -128,6 +129,11 @@ export type ArtifactRoutesConfig = {
    *  event into the alerts worth sending). Awaited, and anything it throws is swallowed: a broken
    *  sink never costs a reader their page or their record. Without it nothing extra is read. */
   onReaderEvent?: (event: ReaderEvent) => void | Promise<void>
+  /** Told after a comment thread is resolved or reopened (0.34.0): the page, the whole thread, the
+   *  resolution (null on reopen) and who did it. Pass `createResolveDigests(...).onResolve` to email
+   *  each signed-in commenter one digest per burst of resolving. Awaited; anything it throws is
+   *  logged and swallowed, so the resolve itself always lands. */
+  onResolve?: (event: ResolveEvent) => void | Promise<void>
   /** The read-only lines under the controls in the page menu's Share settings sheet (0.31.0), for
    *  a host that knows more than the package about how its pages are found: its robots.txt, who
    *  its sign-in admits. Given, its rows REPLACE the package's own two (what a stranger with the
@@ -198,7 +204,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
   const stateRoutes = createStateRoutes({
     store, state: config.state, readers: config.readers, readerSecret, publishKey: config.publishKey,
     publisherSecret: config.publisherSecret, publisherHost: config.publisherHost, pageUrl, signInOrigin, siteUrl,
-    clientIp: config.clientIp, ownerEmail: config.ownerEmail, admins: config.admins, audioUrl,
+    clientIp: config.clientIp, ownerEmail: config.ownerEmail, admins: config.admins, audioUrl, onResolve: config.onResolve,
   })
   const personalRoutes = createPersonalRoutes({ store, personal: config.personal, readers: config.readers, readerSecret, pageUrl, signInOrigin, siteUrl, audioUrl })
   const voiceRoutes = createVoiceRoutes({

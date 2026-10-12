@@ -745,6 +745,48 @@ type Ctx = { params: Promise<{ id: string }> }
 export function POST(request: NextRequest, ctx: Ctx) { return artifacts.RESOLVE(request, ctx) }
 ```
 
+### Telling commenters their comments were resolved (`createResolveDigests`)
+
+When threads are resolved, each signed-in reader whose comments were in them can get ONE email per
+page per burst of resolving, listing every one of their comments resolved in it: the passage it was
+pinned to (or "a box on the page"), their comment trimmed, the resolution note, a link to
+`<page>#comment-<id>`, and one link to the page. Resolve nineteen threads in a sitting and a reader
+gets one email, not nineteen.
+
+- **Who hears:** the signed-in writer of each comment in a resolved thread, about the comments THEY
+  wrote (a reply by someone else is not theirs). Never an anonymous reader (no address), never the
+  person resolving, never `ownerEmail` or `admins` about their own comments.
+- **The burst:** closes after `quietMs` (default 10 minutes) with no new resolution for that reader
+  on that page, or once its first resolution is `maxWaitMs` old (default 6 hours). A thread reopened
+  before then drops out; resolving one again replaces its line.
+- **No backfill:** only resolutions that pass through `onResolve` queue anything, so threads resolved
+  before a host wires it never produce an email.
+- **Sent once:** a due burst is claimed in one transaction (it becomes a digest record and the burst
+  is deleted), and a digest is leased in a transaction before it is sent, so overlapping runs cannot
+  both send it. The message carries `idempotencyKey` (the same on every retry of one digest): hand it
+  to your provider (Resend's `Idempotency-Key`), and a run that died between sending and recording
+  does not deliver twice when the lease expires. A failed send is retried with back-off, at most 5
+  times.
+- **Stop:** every email carries a signed link (`<site>/api/resolve-digest/stop?t=...`, and the RFC 8058
+  `List-Unsubscribe` headers) that ends these emails for that reader on that page. Without `secret`
+  nothing is queued, since no email may go out without one.
+- **Where it waits:** `createResolveDigestStore(db, base)` (Firestore: `<base>ResolveBursts`,
+  `<base>ResolveDigests`, `<base>ResolveStops`; single-field queries only, so no index to create), or
+  `createMemoryResolveDigestStore()` for tests.
+
+```ts
+const digests = createResolveDigests({
+  store: createResolveDigestStore(db, 'artifact'),
+  send: async (m) => sendWithYourProvider(m),     // { to, subject, text, html, headers, idempotencyKey }
+  secret: () => process.env.STOP_LINK_SECRET,     // signs stop links
+  siteUrl: 'https://artifacts.example.com', brandName: 'Example Co', ownerName: 'Ann',
+  ownerEmail, admins,
+})
+createArtifactRoutes({ /* ... */, onResolve: digests.onResolve })
+// app/api/resolve-digest/stop/route.ts:  GET and POST = digests.STOP
+// a scheduled job:                        await digests.flush()   ({ dryRun: true } reports, sends nothing)
+```
+
 ### The comments feed
 
 So the publisher hears about a shared comment without opening every page, one route lists every
