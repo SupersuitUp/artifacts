@@ -3,6 +3,29 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.38.0
+
+**Readers' voice memos live in the private bucket.** A memo left on a page (`comments/<memo>`, or a
+reader's own `personal/<dir>/<memo>`) was written to the PUBLIC bucket. Every URL the package handed
+out was signed, but that bucket carries a bucket-wide public read grant, so the memo itself answered
+an unsigned GET to anyone holding its path. Memos are now written to and read from the private
+bucket (`privateBucket`), under the same key. A host with no private bucket defines no memo method,
+so memos stay on the reader's device instead of going anywhere public.
+
+DETECTOR: an unsigned `curl -o /dev/null -w '%{http_code}'` of
+`https://storage.googleapis.com/<public bucket>/<prefix>/<id>/comments/<memo>.webm` answers 200.
+
+REMEDY: take 0.38.0, then move what is already there:
+`node scripts/migrate-memos-private.mjs --public <bucket> --private <bucket> --prefix tenants/<t>/artifacts`
+(copies each memo to the same key in the private bucket, confirms it arrived, then deletes the
+public one; safe to re-run; `--dry-run` lists). Until a memo is moved the package reads it from the
+public bucket, so nothing stops playing during the move. The same unsigned GET then answers 403.
+
+Tests: `assets.test.ts` (memos sign, size, read and play in the private bucket and never touch the
+public one; an unmoved memo is still read; no private bucket, no memo methods),
+`migrate-memos.test.ts` (moves only memos, never deletes a public memo whose copy did not arrive,
+dry run, same bucket refused).
+
 ## 0.37.0
 
 **A broadcast is its own page kind.** `template: broadcast` in front matter makes a page one

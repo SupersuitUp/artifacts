@@ -673,12 +673,13 @@ recognition, the words appear in the box as the reader speaks. A memo stops at t
 
 Recordings go up through the same `uploads/<name>` route the publisher uses, to
 `<page>/comments/<memo>.<ext>` or, for a signed-in reader's personal note,
-`<page>/personal/<dir>/<memo>.<ext>`. They are never made public: playback is a signed URL
-issued beside the comment or note it belongs to. That needs the four audio methods
-`createArtifactAssets` provides (`signAudioUpload`, `audioSize`, `readAudio`, `audioUrl`); a host
-with its own `ArtifactAssets` and none of them keeps memos on the reader's device. On a bucket
-with bucket-wide public read, a recording is readable by anyone holding its path (the paths are
-unguessable); keep the bucket per-object public to have the signed-URL guarantee.
+`<page>/personal/<dir>/<memo>.<ext>`, in the PRIVATE bucket (`privateBucket`, the same one
+`media: private` uses). They are never made public: playback is a signed URL, valid about an hour,
+issued beside the comment or note it belongs to, and an unsigned GET is refused (403). That needs the
+four audio methods `createArtifactAssets` provides (`signAudioUpload`, `audioSize`, `readAudio`,
+`audioUrl`), which it defines only when it is given a private bucket; a host without one, or with
+its own `ArtifactAssets` and none of them, keeps memos on the reader's device. Memos recorded before
+0.38.0 sat in the public bucket: `scripts/migrate-memos-private.mjs` moves them (see CHANGELOG).
 
 To transcribe on the server, pass `transcribe` and add the route. The key stays on the server;
 without `transcribe` the route answers 404 and readers keep the browser's live transcript (or an

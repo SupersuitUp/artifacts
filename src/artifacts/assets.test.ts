@@ -72,30 +72,59 @@ describe('artifact assets', () => {
     expect(storedName('narration', '0123abcd')).toBe('narration.0123abcd')
   })
 
-  it('reader recordings sign a capped upload, are never made public, and play through a signed read', async () => {
-    const getSignedUrl = vi.fn(async (o: { action: string }) => [`https://signed.example.com/${o.action}`])
-    const makePublic = vi.fn(async () => {})
-    const exists = vi.fn(async () => [true])
-    const getMetadata = vi.fn(async () => [{ size: '1234' }])
-    const download = vi.fn(async () => [Buffer.from('audio')])
-    const file = vi.fn(() => ({ getSignedUrl, makePublic, exists, getMetadata, download }))
-    const bucket = { name: 'b', file } as unknown as import('@google-cloud/storage').Bucket
-    const assets = createArtifactAssets(bucket, 'tenants/t/artifacts')
+  // A memo in the PUBLIC bucket was readable unsigned by anyone holding its path, because that bucket
+  // carries a bucket-wide public read grant (found 2026-10-12). Memos live in the private bucket.
+  function memoBuckets() {
+    const make = (name: string, present: Set<string>) => {
+      const calls: { key: string; op: string; action?: string }[] = []
+      const file = vi.fn((key: string) => ({
+        getSignedUrl: vi.fn(async (o: { action: string }) => { calls.push({ key, op: 'sign', action: o.action }); return [`https://signed.example.com/${name}/${o.action}`] }),
+        makePublic: vi.fn(async () => { calls.push({ key, op: 'makePublic' }) }),
+        exists: vi.fn(async () => [present.has(key)]),
+        getMetadata: vi.fn(async () => [{ size: '1234' }]),
+        download: vi.fn(async () => [Buffer.from(`audio from ${name}`)]),
+      }))
+      return { bucket: { name, file } as unknown as import('@google-cloud/storage').Bucket, file, calls, present }
+    }
+    return { pub: make('public-example', new Set()), priv: make('private-example', new Set()) }
+  }
+  const KEY = 'tenants/t/artifacts/abc23456/comments/Zq3xY7abcDEF12345.m4a'
+
+  it('reader recordings sign a capped upload to the PRIVATE bucket, are never made public, and play through a signed read', async () => {
+    const { pub, priv } = memoBuckets()
+    const assets = createArtifactAssets(pub.bucket, 'tenants/t/artifacts', { privateBucket: priv.bucket })
     const up = await assets.signAudioUpload!('abc23456', 'comments/Zq3xY7abcDEF12345.m4a', 'audio/mp4')
-    expect(file.mock.calls[0]).toEqual(['tenants/t/artifacts/abc23456/comments/Zq3xY7abcDEF12345.m4a'])
+    expect(priv.file.mock.calls[0]).toEqual([KEY])
+    expect(pub.file).not.toHaveBeenCalled()
     expect(up.headers['content-type']).toBe('audio/mp4')
     expect(up.headers['x-goog-content-length-range']).toBe('0,4194304')
-    const signed = getSignedUrl.mock.calls[0][0] as unknown as { action: string; contentType: string; extensionHeaders: Record<string, string> }
-    expect(signed.action).toBe('write')
-    expect(signed.contentType).toBe('audio/mp4')
-    expect(signed.extensionHeaders['x-goog-content-length-range']).toBe('0,4194304')
+    expect(priv.calls[0]).toEqual({ key: KEY, op: 'sign', action: 'write' })
+    priv.present.add(KEY)
     expect(await assets.audioSize!('abc23456', 'comments/Zq3xY7abcDEF12345.m4a')).toBe(1234)
-    expect((await assets.readAudio!('abc23456', 'comments/Zq3xY7abcDEF12345.m4a'))!.toString()).toBe('audio')
-    expect(await assets.audioUrl!('abc23456', 'comments/Zq3xY7abcDEF12345.m4a')).toBe('https://signed.example.com/read')
-    expect(makePublic).not.toHaveBeenCalled()
-    exists.mockResolvedValueOnce([false]).mockResolvedValueOnce([false])
+    expect((await assets.readAudio!('abc23456', 'comments/Zq3xY7abcDEF12345.m4a'))!.toString()).toBe('audio from private-example')
+    expect(await assets.audioUrl!('abc23456', 'comments/Zq3xY7abcDEF12345.m4a')).toBe('https://signed.example.com/private-example/read')
+    expect([...pub.calls, ...priv.calls].some((c) => c.op === 'makePublic')).toBe(false)
     expect(await assets.audioSize!('abc23456', 'comments/none.webm')).toBeNull()
     expect(await assets.readAudio!('abc23456', 'comments/none.webm')).toBeNull()
+  })
+
+  it('a memo recorded before the move is still read from the public bucket until it is migrated', async () => {
+    const { pub, priv } = memoBuckets()
+    pub.present.add(KEY)
+    const assets = createArtifactAssets(pub.bucket, 'tenants/t/artifacts', { privateBucket: priv.bucket })
+    expect((await assets.readAudio!('abc23456', 'comments/Zq3xY7abcDEF12345.m4a'))!.toString()).toBe('audio from public-example')
+    expect(await assets.audioUrl!('abc23456', 'comments/Zq3xY7abcDEF12345.m4a')).toBe('https://signed.example.com/public-example/read')
+    priv.present.add(KEY)
+    expect(await assets.audioUrl!('abc23456', 'comments/Zq3xY7abcDEF12345.m4a')).toBe('https://signed.example.com/private-example/read')
+  })
+
+  it('a host with no private bucket keeps memos on the reader\'s device: no memo method is defined', () => {
+    const { pub } = memoBuckets()
+    const assets = createArtifactAssets(pub.bucket, 'tenants/t/artifacts')
+    expect(assets.signAudioUpload).toBeUndefined()
+    expect(assets.audioSize).toBeUndefined()
+    expect(assets.readAudio).toBeUndefined()
+    expect(assets.audioUrl).toBeUndefined()
   })
 })
 

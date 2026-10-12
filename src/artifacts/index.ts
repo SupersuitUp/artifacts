@@ -27,3 +27,4 @@ export type { PageSettings, SettingsFact, AccessLevel } from '../reader/settings
 // Per-reader links: the host-facing surface only. The signing and token primitives stay internal.
 export { ridLink, parseRidParam, verifyRid, isUnfurlAgent, usableSecret, RECIPIENT_SECRET_MIN } from './recipients.js'
 export { createRecipientsStore, memoryRecipientsStore, summarizeViews, type RecipientsStore, type Recipient, type RecipientsRecord, type ViewDoc, type RecipientSummary } from './recipients-store.js'
+export { migrateMemosToPrivate, MEMO_KEY, type MemoMigration } from './migrate-memos.js'

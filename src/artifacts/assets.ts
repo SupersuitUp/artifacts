@@ -19,10 +19,11 @@ export interface ArtifactAssets {
   /** After a signed upload: make it readable and return its URL, or null if nothing arrived. */
   finishUpload?(id: string, name: string, digest: string): Promise<string | null>
 
-  // READERS' VOICE MEMOS. Never made public: every read is a short-lived signed URL, issued only
-  // where the route already shows the comment or note the recording belongs to. `path` is under
-  // the page (`comments/<memo>.webm`, `personal/<dir>/<memo>.m4a`), checked by the route first.
-  // All four are optional; a host without them keeps memos on the reader's device.
+  // READERS' VOICE MEMOS. Stored in the PRIVATE bucket and never made public: every read is a
+  // short-lived signed URL, issued only where the route already shows the comment or note the
+  // recording belongs to. `path` is under the page (`comments/<memo>.webm`,
+  // `personal/<dir>/<memo>.m4a`), checked by the route first. All four are defined only when the
+  // host gives a private bucket; a host without one keeps memos on the reader's device.
   /** A signed URL a reader PUTs one recording to, at most MAX_AUDIO_BYTES. */
   signAudioUpload?(id: string, path: string, contentType: string): Promise<{ uploadUrl: string; headers: Record<string, string> }>
   /** After the PUT: the stored size, or null if nothing arrived. */
@@ -168,38 +169,6 @@ export function createArtifactAssets(bucket: Bucket, prefix: string, options: Ar
       }
       return `https://storage.googleapis.com/${bucket.name}/${key}`
     },
-    // The size cap rides in the signature (`x-goog-content-length-range`), so the bucket itself
-    // refuses an oversize body; the browser must send the returned headers verbatim.
-    async signAudioUpload(id, path, contentType) {
-      const range = `0,${MAX_AUDIO_BYTES}`
-      const headers = { 'content-type': contentType, 'cache-control': 'private, max-age=3600', 'x-goog-content-length-range': range }
-      const [uploadUrl] = await bucket.file(`${clean}/${id}/${path}`).getSignedUrl({
-        version: 'v4',
-        action: 'write',
-        expires: Date.now() + 15 * 60 * 1000,
-        contentType,
-        extensionHeaders: { 'cache-control': headers['cache-control'], 'x-goog-content-length-range': range },
-      })
-      return { uploadUrl, headers }
-    },
-    async audioSize(id, path) {
-      const file = bucket.file(`${clean}/${id}/${path}`)
-      const [there] = await file.exists()
-      if (!there) return null
-      const [meta] = await file.getMetadata()
-      return Number(meta.size ?? 0)
-    },
-    async readAudio(id, path) {
-      const file = bucket.file(`${clean}/${id}/${path}`)
-      const [there] = await file.exists()
-      if (!there) return null
-      const [bytes] = await file.download()
-      return bytes
-    },
-    async audioUrl(id, path) {
-      const [url] = await bucket.file(`${clean}/${id}/${path}`).getSignedUrl({ version: 'v4', action: 'read', expires: Date.now() + 60 * 60 * 1000 })
-      return url
-    },
     async deletePage(id) {
       // An empty or path-shaped id would make the prefix wider than one page.
       if (!ARTIFACT_ID_RE.test(id)) throw new Error('not an artifact id')
@@ -214,8 +183,51 @@ export function createArtifactAssets(bucket: Bucket, prefix: string, options: Ar
   }
   if (!priv) return assets
   const privateFile = (id: string, stored: string) => priv.file(`${clean}/${id}/private/${stored}`)
+  // READERS' VOICE MEMOS LIVE IN THE PRIVATE BUCKET (0.38.0). Until then they went to the public
+  // bucket, unlisted and read through signed URLs, but a bucket-wide public read grant served any
+  // memo to anyone holding its path, unsigned. A memo recorded before 0.38.0 is still read from the
+  // public bucket until scripts/migrate-memos-private.mjs moves it; nothing new is written there.
+  const memo = (id: string, path: string) => priv.file(`${clean}/${id}/${path}`)
+  const legacyMemo = (id: string, path: string) => bucket.file(`${clean}/${id}/${path}`)
+  const memoFile = async (id: string, path: string) => {
+    const f = memo(id, path)
+    if ((await f.exists())[0]) return f
+    const old = legacyMemo(id, path)
+    return (await old.exists())[0] ? old : null
+  }
   return {
     ...assets,
+    // The size cap rides in the signature (`x-goog-content-length-range`), so the bucket itself
+    // refuses an oversize body; the browser must send the returned headers verbatim.
+    async signAudioUpload(id, path, contentType) {
+      const range = `0,${MAX_AUDIO_BYTES}`
+      const headers = { 'content-type': contentType, 'cache-control': 'private, max-age=3600', 'x-goog-content-length-range': range }
+      const [uploadUrl] = await memo(id, path).getSignedUrl({
+        version: 'v4',
+        action: 'write',
+        expires: Date.now() + 15 * 60 * 1000,
+        contentType,
+        extensionHeaders: { 'cache-control': headers['cache-control'], 'x-goog-content-length-range': range },
+      })
+      return { uploadUrl, headers }
+    },
+    async audioSize(id, path) {
+      const file = await memoFile(id, path)
+      if (!file) return null
+      const [meta] = await file.getMetadata()
+      return Number(meta.size ?? 0)
+    },
+    async readAudio(id, path) {
+      const file = await memoFile(id, path)
+      if (!file) return null
+      const [bytes] = await file.download()
+      return bytes
+    },
+    async audioUrl(id, path) {
+      const file = (await memoFile(id, path)) ?? memo(id, path)
+      const [url] = await file.getSignedUrl({ version: 'v4', action: 'read', expires: Date.now() + 60 * 60 * 1000 })
+      return url
+    },
     async putPrivate(id, name, bytes, contentType) {
       const stored = hashedName(name, bytes)
       await privateFile(id, stored).save(bytes, { contentType, resumable: false, metadata: { cacheControl: 'private, max-age=3600' } })
