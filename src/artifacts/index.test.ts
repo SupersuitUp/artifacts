@@ -8,4 +8,8 @@ describe('the artifacts entry point', () => {
     for (const k of ['beatKey', 'mintRenderToken', 'verifyRenderToken', 'newRid', 'ridSig', 'ridCookieName', 'TOKEN_MAX_AGE_MS', 'VIEW_AFTER_MS', 'RID_RE', 'RID_COOKIE_MAX_AGE', 'UNFURL_AGENTS', 'CAME_BACK_MS'])
       expect(api, k).not.toHaveProperty(k)
   })
+  it('exports the page kinds and the list helpers (0.37.0)', () => {
+    for (const k of ['ARTIFACT_KINDS', 'kindOf', 'listOfKind']) expect(api, k).toHaveProperty(k)
+    expect(api.ARTIFACT_KINDS).toEqual(['document', 'broadcast'])
+  })
 })

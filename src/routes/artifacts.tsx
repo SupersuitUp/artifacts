@@ -7,13 +7,13 @@ import { revalidatePath } from 'next/cache'
 import { notFound, redirect } from 'next/navigation'
 import { NextRequest, NextResponse } from 'next/server'
 import { isPublisherAuthed } from '../artifacts/auth.js'
-import { parseArtifactSource } from '../artifacts/front-matter.js'
+import { ARTIFACT_KINDS, parseArtifactSource, type ArtifactKind } from '../artifacts/front-matter.js'
 import { narrationText } from '../artifacts/narration.js'
 import { ArtifactMarkdown } from '../artifacts/render.js'
 import { CHECKLIST_SLOT } from '../artifacts/checklist.js'
 import { ArtifactDoor } from '../artifacts/door.js'
 import { isUnlocked, keyHash, unlockCookieName } from '../artifacts/unlock.js'
-import { cleanNote, type ArtifactRecord, type ArtifactStore, type VersionEntry } from '../artifacts/store.js'
+import { cleanNote, kindOf, type ArtifactRecord, type ArtifactStore, type VersionEntry } from '../artifacts/store.js'
 import { effectiveWriters, shapeChanges } from '../artifacts/state.js'
 import { COMMENTS_SLOT, type CommentsMode } from '../artifacts/comments.js'
 import type { StateStore } from '../artifacts/state-store.js'
@@ -28,7 +28,7 @@ import { CommentLayer } from '../reader/comment-layer.js'
 import { ReaderWatch } from '../reader/reader-watch.js'
 import { UpdatedTime } from '../reader/updated-time.js'
 import { perReaderGate, withPrivateUrls, NO_LINK, UNAVAILABLE } from './per-reader.js'
-import { ridCookieName, mintRenderToken, usableSecret, RID_COOKIE_MAX_AGE } from '../artifacts/recipients.js'
+import { ridCookieName, mintRenderToken, usableSecret, isUnfurlAgent, RID_COOKIE_MAX_AGE } from '../artifacts/recipients.js'
 import type { RecipientsStore } from '../artifacts/recipients-store.js'
 import { PageMenu, type PageRole } from '../reader/page-menu.js'
 import type { PageSettings, SettingsFact } from '../reader/settings-sheet.js'
@@ -93,6 +93,9 @@ export type ArtifactRoutesConfig = {
   pagePrefix?: string
   /** Read one request cookie by name. Default reads through next/headers; tests inject one. */
   readCookie?: (name: string) => Promise<string | undefined>
+  /** Read one request header by name (the per-reader page reads `user-agent`, so an unfurl fetcher
+   *  is never handed a signed media URL). Default reads through next/headers; tests inject one. */
+  readHeader?: (name: string) => Promise<string | undefined>
   /** The record for gated pages (`access:` in front matter). Without it a gated page stays shut
    *  to everyone, never open: failing closed is the only safe default for a confidential page. */
   readers?: ReadersStore
@@ -163,12 +166,29 @@ type Rec = NonNullable<Awaited<ReturnType<ArtifactStore['get']>>>
 /** A version number as it appears in a URL: no zero, no leading zero, so each version has one address. */
 const VERSION_N = /^[1-9]\d{0,5}$/
 
+/** How long a broadcast lives when nobody gave it a date: 90 days from its first publish, unless
+ *  the owner taps Keep (`expires: null` on the recipients route). */
+export const BROADCAST_TTL_MS = 90 * 24 * 60 * 60 * 1000
+
+/** Media in a body, as markdown image syntax: what an unfurl fetcher's copy of a page leaves out. */
+const MEDIA_MD = /!\[[^\]]*\]\([^)]*\)/g
+const withoutMedia = (md: string) => md.replace(MEDIA_MD, '')
+/** A colour from a pack, only if it is plainly a colour: it is written into a raw HTML answer. */
+const SAFE_COLOUR = /^(#[0-9a-f]{3,8}|[a-z]+|rgba?\([0-9.,\s%]+\))$/i
+
 /** What a host with no private store answers to private media, in words that say what to set up. */
 const NO_PRIVATE_STORE = 'this host keeps no private store, so media: private is refused and nothing was published. Give createArtifactAssets a privateBucket (its own bucket, never the public one) to keep private media'
 
 async function defaultReadCookie(name: string): Promise<string | undefined> {
   const { cookies } = await import('next/headers')
   return (await cookies()).get(name)?.value
+}
+
+/** A header the request did not send reads as '' (so an agent that sends none is treated as a
+ *  fetcher); a header that cannot be read at all, outside a request, reads as undefined. */
+async function defaultReadHeader(name: string): Promise<string | undefined> {
+  const { headers } = await import('next/headers')
+  return (await headers()).get(name) ?? ''
 }
 
 export function createArtifactRoutes(config: ArtifactRoutesConfig) {
@@ -423,17 +443,24 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     const { pack, brand } = lookOf(a)
     const render = (top: boolean, reader: Reader | null) => (n === null ? Body(a, { top, reader }) : VersionBody(a, n, { top, reader }))
     if (a.access) return GatedPage(a, id, render, n)
-    if (a.links === 'per-reader') {
+    const broadcast = kindOf(a) === 'broadcast'
+    if (a.links === 'per-reader' || broadcast) {
       if (n !== null) notFound() // a past version of a per-reader page is never served
       const sp = (await searchParams) ?? {}
       const param = Array.isArray(sp.r) ? sp.r[0] : sp.r
       const readCookie = config.readCookie ?? defaultReadCookie
       const privateUrl = config.assets?.privateUrl?.bind(config.assets)
+      // An unfurl fetcher (or anything sending no agent at all) gets the card's text and never a
+      // signed media URL: a preview service may cache what it fetched long after a link is revoked.
+      const ua = await (config.readHeader ?? defaultReadHeader)('user-agent').catch(() => undefined)
+      const bot = ua !== undefined && isUnfurlAgent(ua)
+      const media = async (md: string) => (bot ? withoutMedia(md) : a.privateMedia ? await withPrivateUrls(md, id, privateUrl) : md)
       // A signed-in owner or admin gets through as the owner, with no link and no tracking.
       const me = readerSecret() ? verifyGrant(readerSecret(), await readCookie(GRANT_COOKIE).catch(() => undefined)) : null
       if (isAdmin(me)) {
-        const markdown = a.privateMedia ? await withPrivateUrls(a.markdown, id, privateUrl) : a.markdown
-        return <BrandGround pack={pack} mode={a.theme}>{await Body({ ...a, markdown }, { top: true, reader: me })}</BrandGround>
+        const markdown = await media(a.markdown)
+        const page = broadcast ? await BroadcastCard({ ...a, markdown }, { reader: me, bot }) : await Body({ ...a, markdown }, { top: true, reader: me })
+        return <BrandGround pack={pack} mode={a.theme}>{page}</BrandGround>
       }
       const secret = usableSecret(config.recipientSecret?.())
       const g = await perReaderGate({ id, param, cookie: await readCookie(ridCookieName(id)).catch(() => undefined), secret, recipients: config.recipients })
@@ -444,12 +471,15 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
           </BrandGround>
         )
       }
-      const token = mintRenderToken(secret!, id, g.rid)
-      const remember = g.fromLink
+      // A fetcher is not the reader: it sets no cookie, carries no render token and sees no note.
+      const remember = g.fromLink && !bot
         ? [pagePath(id), `/api/artifacts/${id}`].map((p) => `document.cookie=${JSON.stringify(`${ridCookieName(id)}=${g.rid}.${g.sig}; Path=${p}; Max-Age=${RID_COOKIE_MAX_AGE}; SameSite=Lax; Secure`)}`).join(';')
         : null
-      const markdown = a.privateMedia ? await withPrivateUrls(a.markdown, id, privateUrl) : a.markdown
-      const body = await Body({ ...a, markdown }, { top: true, reader: null, perReader: { rid: g.rid, sig: g.sig, label: g.label, note: g.note, owner: g.owner, token } })
+      const perReader = bot ? undefined : { rid: g.rid, sig: g.sig, label: g.label, note: g.note, owner: g.owner, token: mintRenderToken(secret!, id, g.rid) }
+      const markdown = await media(a.markdown)
+      const body = broadcast
+        ? await BroadcastCard({ ...a, markdown }, { reader: null, perReader, bot })
+        : await Body({ ...a, markdown }, { top: true, reader: null, perReader })
       return (
         <BrandGround pack={pack} mode={a.theme}>
           {remember ? <script dangerouslySetInnerHTML={{ __html: remember }} /> : null}
@@ -673,6 +703,71 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
         >
           <ArtifactMarkdown markdown={v.markdown} simulator={config.simulatorEmbed ? { embed: config.simulatorEmbed } : undefined} messages={config.messagesEmbed ? { embed: config.messagesEmbed } : undefined} definitions={a.definitions} checklist={{ artifactId: a.id, accent: brand.accent }} Section={pack.Section} figure={pack.figure} />
         </Framed>
+      </>
+    )
+  }
+
+  /** A broadcast: one message card. The sender's words at the top, then the media (a video with
+   *  sound and controls, photos, a voice note's player, link cards) in the order the words put
+   *  them, then this reader's own note. None of the document's furniture: no table of contents, no
+   *  version line, no read-along (a voice note is its own audio), and no page menu for a reader.
+   *  Comments only when the file turned them on; the quiet view beacon always, for a reader. */
+  async function BroadcastCard(a: Rec, { reader, perReader, bot }: { reader: Reader | null; bot: boolean; perReader?: { rid: string; sig: string; label: string; note: string | null; owner: boolean; token: string } }) {
+    const { brand } = lookOf(a)
+    const mode: CommentsMode = !bot && config.state && a.state && a.comments && a.comments !== 'off' && a.state.slots[COMMENTS_SLOT] ? a.comments : 'off'
+    const admin = isAdmin(reader)
+    // A photo sent with no other media can ride as the cover; with media in the body it would repeat it.
+    const cover = !bot && a.cover && !/!\[[^\]]*\]\(/.test(a.markdown) ? a.cover : null
+    return (
+      <>
+        {admin ? (
+          <PageMenu role={roleOf(reader)} name={reader ? reader.name ?? reader.email : null} share={null} comments={mode !== 'off'}
+            signIn={null} signOut={signOutUrl(a.id)} history={null} markdown={null} settings={null} />
+        ) : null}
+        <main data-broadcast className="mx-auto max-w-lg px-4 pt-16 pb-20 sm:pt-24">
+          <article id="broadcast-root" data-broadcast-card className="rounded-2xl border border-[color:var(--a-line)] bg-[color:var(--a-surface)] px-5 py-6 sm:px-7 sm:py-8">
+            <p data-nospeak data-broadcast-from className="text-[11px] font-medium uppercase tracking-[0.3em]" style={{ color: brand.accent }}>
+              {`From ${owner}`}
+            </p>
+            <h1 className="mt-3 text-2xl sm:text-3xl" style={{ fontFamily: brand.type.display, color: brand.ink }}>
+              {a.title}
+            </h1>
+            {cover ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={cover} alt="" className="mt-5 w-full rounded-xl border border-[color:var(--a-line)]" />
+            ) : null}
+            <div data-broadcast-body className="mt-4">
+              <ArtifactMarkdown
+                markdown={a.markdown}
+                checklist={{ artifactId: a.id, owner, accent: brand.accent }}
+                simulator={config.simulatorEmbed ? { embed: config.simulatorEmbed } : undefined}
+                messages={config.messagesEmbed ? { embed: config.messagesEmbed } : undefined}
+              />
+            </div>
+            {perReader?.note ? (
+              <div data-for-reader className="mt-6 rounded-xl border border-[color:var(--a-line)] px-4 py-3">
+                <p data-nospeak className="text-[11px] uppercase tracking-[0.2em] opacity-70">{`For ${perReader.label}`}</p>
+                <p className="mt-1 text-lg">{perReader.note}</p>
+              </div>
+            ) : null}
+          </article>
+        </main>
+        {mode !== 'off' ? (
+          <CommentLayer
+            artifactId={a.id}
+            rootId="broadcast-root"
+            ownerName={owner}
+            comments={mode}
+            canShare={reader !== null || effectiveWriters(a.state!, a.access, COMMENTS_SLOT) === 'anyone'}
+            signedIn={reader !== null}
+            isOwner={admin}
+            version={a.version ?? (a.versions?.length ?? 0) + 1}
+            accent={brand.accent}
+            ground={brand.ground}
+            signIn={null}
+          />
+        ) : null}
+        {perReader && !perReader.owner ? <QuietView id={a.id} rid={perReader.rid} sig={perReader.sig} token={perReader.token} /> : null}
       </>
     )
   }
@@ -1045,10 +1140,23 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     const amend = request.nextUrl.searchParams.get('amend') === '1'
     const result = await store.save({ id, meta: parsed.meta, markdown: parsed.body, note, amend })
     if ('notFound' in result) return NextResponse.json({ error: `no artifact with id ${id}` }, { status: 404 })
+    // A broadcast with no date gets one: 90 days from now. A date already set (by the sender, or
+    // by an earlier publish) stands, and Keep (expireAt null, keep true) is never undone.
+    let expireAt: string | null | undefined
+    if (parsed.meta.template === 'broadcast' && config.recipients) {
+      const rec = await config.recipients.get(result.id)
+      if (rec?.keep) expireAt = null
+      else if (rec?.expireAt) expireAt = rec.expireAt
+      else {
+        expireAt = new Date(Date.now() + BROADCAST_TTL_MS).toISOString()
+        await config.recipients.setExpiry(result.id, expireAt)
+      }
+    }
     revalidatePath(pagePath(result.id))
     return NextResponse.json(
       {
         id: result.id, url: pageUrl(result.id), version: result.version,
+        ...(expireAt !== undefined ? { expireAt } : {}),
         ...(parsed.meta.state && !config.state ? { warning: 'this host keeps no answers; state: is stored but inert' } : {}),
       },
       { status: result.created ? 201 : 200 },
@@ -1154,14 +1262,77 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     return NextResponse.json({ id, versions: await store.history(id) })
   }
 
+  /** DELETE /api/artifacts/<id>, publish key: the page and every file stored under it, public and
+   *  private. The files go first, so a bucket that fails leaves the record to delete again rather
+   *  than media nobody can find. The id is checked before anything is touched: a path-shaped id
+   *  would widen the bucket prefix past one page. */
   async function DELETE(request: NextRequest, { params }: Params) {
     if (!authed(request)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     const { id } = await params
+    if (!ARTIFACT_ID.test(id) || !(await store.get(id))) return NextResponse.json({ error: `no artifact with id ${id}` }, { status: 404 })
+    let files = 0
+    if (config.assets?.deletePage) {
+      try {
+        files = await config.assets.deletePage(id)
+      } catch (e) {
+        return NextResponse.json({ error: `the page's files could not be removed, so the page was kept; delete it again: ${e instanceof Error ? e.message : String(e)}` }, { status: 502 })
+      }
+    }
     const ok = await store.delete(id)
     if (!ok) return NextResponse.json({ error: `no artifact with id ${id}` }, { status: 404 })
     revalidatePath(pagePath(id))
-    return NextResponse.json({ deleted: true })
+    return NextResponse.json({ deleted: true, files })
   }
 
-  return { Page, generateMetadata, VersionPage, generateVersionMetadata, VERSIONS, POST, GET, DELETE, PUT_ASSET, UPLOAD, SHARE_IMAGE, ENTER, LEAVE, TRACK, ACK, ACCESS, SETTINGS, READS, sweepReaders, TRANSCRIBE: voiceRoutes.TRANSCRIBE, ...stateRoutes, ...personalRoutes, ...recipientsRoutes, dynamic: 'force-dynamic' as const, maxDuration: 30 }
+  /** GET /api/artifacts?kind=document|broadcast: the owner's list of one kind, newest first, with
+   *  no bodies. Documents and broadcasts are separate lists; `kind` defaults to document, so a
+   *  documents list never carries a broadcast. A broadcast's line adds its expiry, whether it is
+   *  kept, and how many people it went to. The publish key, or the owner or an admin signed in. */
+  async function LIST(request: NextRequest) {
+    const no = (error: string, status: number) => NextResponse.json({ error }, { status, headers: { 'cache-control': 'no-store' } })
+    const me = verifyGrant(readerSecret(), request.cookies.get(GRANT_COOKIE)?.value)
+    if (!authed(request) && !isAdmin(me)) return no('Unauthorized', 401)
+    const kind = request.nextUrl.searchParams.get('kind') ?? 'document'
+    if (!ARTIFACT_KINDS.includes(kind as ArtifactKind)) return no(`kind must be one of: ${ARTIFACT_KINDS.join(', ')}`, 400)
+    if (!store.list) return no('this store cannot list its pages', 501)
+    const items = await store.list(kind as ArtifactKind)
+    const pages = await Promise.all(items.map(async (p) => {
+      const line = { id: p.id, title: p.title, summary: p.summary, url: pageUrl(p.id), createdAt: p.createdAt, updatedAt: p.updatedAt }
+      if (kind !== 'broadcast') return { ...line, views: p.views }
+      const rec = config.recipients ? await config.recipients.get(p.id).catch(() => null) : null
+      const readers = rec ? Object.values(rec.recipients).filter((r) => !r.owner).length : 0
+      return { ...line, expireAt: rec?.expireAt ?? null, keep: rec?.keep ?? false, readers }
+    }))
+    return NextResponse.json({ kind, pages }, { headers: { 'cache-control': 'no-store' } })
+  }
+
+  /** For a host's proxy, ahead of the page: a per-reader page whose link was revoked or whose date
+   *  passed answers 410 Gone with the same quiet words the page shows, so a crawler or a preview
+   *  service drops it. Null for everything else (no link at all, a valid link, a document, the
+   *  owner signed in, any other path), which the proxy passes on untouched. Reads nothing unless
+   *  the request carries a reader's link or its cookie. */
+  async function shutPageResponse(request: NextRequest): Promise<Response | null> {
+    const path = request.nextUrl.pathname
+    if (!path.startsWith(prefix)) return null
+    const id = path.slice(prefix.length)
+    if (!ARTIFACT_ID.test(id)) return null
+    const param = request.nextUrl.searchParams.get('r') ?? undefined
+    const cookie = request.cookies.get(ridCookieName(id))?.value
+    if (!param && !cookie) return null
+    const secret = usableSecret(config.recipientSecret?.())
+    if (!secret || !config.recipients) return null
+    if (isAdmin(verifyGrant(readerSecret(), request.cookies.get(GRANT_COOKIE)?.value))) return null
+    const a = await store.get(id)
+    if (!a || a.access || !(a.links === 'per-reader' || kindOf(a) === 'broadcast')) return null
+    const g = await perReaderGate({ id, param, cookie, secret, recipients: config.recipients })
+    if (g.state !== 'shut' || (g.why !== 'revoked' && g.why !== 'expired')) return null
+    const look = lookOf(a).pack
+    const colour = (c: string, fallback: string) => (SAFE_COLOUR.test(c) ? c : fallback)
+    const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex, nofollow"><title>${UNAVAILABLE}</title></head>`
+      + `<body style="margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:${colour(look.ground, '#0e0f13')};color:${colour(look.ink, '#ece7dc')};font-family:system-ui,sans-serif">`
+      + `<p data-per-reader-shut style="max-width:36rem;padding:0 1.5rem;text-align:center;font-size:1.125rem;opacity:.8">${UNAVAILABLE}</p></body></html>`
+    return new Response(html, { status: 410, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'x-robots-tag': 'noindex, nofollow' } })
+  }
+
+  return { Page, generateMetadata, VersionPage, generateVersionMetadata, VERSIONS, POST, GET, DELETE, LIST, shutPageResponse, PUT_ASSET, UPLOAD, SHARE_IMAGE, ENTER, LEAVE, TRACK, ACK, ACCESS, SETTINGS, READS, sweepReaders, TRANSCRIBE: voiceRoutes.TRANSCRIBE, ...stateRoutes, ...personalRoutes, ...recipientsRoutes, dynamic: 'force-dynamic' as const, maxDuration: 30 }
 }

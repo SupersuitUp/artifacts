@@ -11,7 +11,9 @@ import { parseDefinitions, type Definition } from './definitions.js'
 export type ArtifactMeta = {
   title: string
   summary: string
-  template: 'document'
+  /** The page kind. `document` (the default) is the read-along reader; `broadcast` is one message
+   *  card sent to several people, each through their own link (0.37.0). */
+  template: ArtifactKind
   /** A line under the title. Title, subtitle and summary are three separate fields; the summary
    *  is the teaser, and the unfurl carries the title and the summary. */
   subtitle?: string
@@ -65,6 +67,18 @@ export type ArtifactMeta = {
   commentsVisible?: CommentsVisible
 }
 
+/** What a page is. A broadcast is its own kind, not a document with extra flags: it renders as a
+ *  message card, opens only through per-reader links, keeps its media private, has comments off
+ *  and no narration by default, and expires 90 days after publish unless kept. */
+export type ArtifactKind = 'document' | 'broadcast'
+export const ARTIFACT_KINDS: readonly ArtifactKind[] = ['document', 'broadcast']
+
+/** Any media in a body: an image, a video or an audio clip, written as markdown image syntax. */
+const MEDIA_IN_BODY = /!\[[^\]]*\]\(\s*<?([^)\s>]+)/g
+/** A reference the publisher uploads before the page is finished: neither a URL, a site path nor
+ *  an already-stored private file. */
+const LOCAL_REF = /^(?![a-z][a-z0-9+.-]*:|\/|#)/i
+
 /** A pack name, as a host registers one. */
 export const PACK_NAME = /^[a-z0-9][a-z0-9-]{0,39}$/
 
@@ -86,11 +100,18 @@ export function parseArtifactSource(
     if (typeof v !== 'string' || !v.trim()) return { ok: false, error: `front matter is missing ${k}` }
   }
   const template = d.template ?? 'document'
-  if (template !== 'document') return { ok: false, error: 'template must be document' }
+  if (!ARTIFACT_KINDS.includes(template as ArtifactKind)) return { ok: false, error: 'template must be document or broadcast' }
   const meta: ArtifactMeta = {
     title: String(d.title).trim(),
     summary: String(d.summary).trim(),
-    template: 'document',
+    template: template as ArtifactKind,
+  }
+  // A broadcast opens only through each person's own link: a door or a shared thread of comments
+  // would make it something else, so those lines are refused in words rather than dropped.
+  if (meta.template === 'broadcast') {
+    if (d.access !== undefined && d.access !== null) return { ok: false, error: 'a broadcast opens only through each person\'s own link: drop access' }
+    if (d.password !== undefined && d.password !== null) return { ok: false, error: 'a broadcast opens only through each person\'s own link: drop password' }
+    if (d.comments_visible === 'readers') return { ok: false, error: 'a broadcast keeps each person\'s comments to the owner: drop comments_visible: readers' }
   }
   for (const k of ['subtitle', 'audience', 'cover', 'id', 'voice', 'narration', 'timings', 'narrationHash', 'password'] as const) {
     const v = d[k]
@@ -150,6 +171,16 @@ export function parseArtifactSource(
   if (d.comments_visible !== undefined && d.comments_visible !== null) {
     if (d.comments_visible !== 'owner' && d.comments_visible !== 'readers') return { ok: false, error: 'comments_visible must be owner or readers' }
     meta.commentsVisible = d.comments_visible
+  }
+  if (meta.template === 'broadcast') {
+    // Per-reader links are what a broadcast is, whatever the file says or leaves out.
+    meta.links = 'per-reader'
+    const refs = [...content.matchAll(MEDIA_IN_BODY)].map((m) => m[1])
+    // The publisher uploads a local file privately only when the file itself says `media: private`,
+    // so a broadcast that would send one up in public is refused before anything is uploaded.
+    if (!meta.privateMedia && refs.some((r) => LOCAL_REF.test(r)))
+      return { ok: false, error: 'a broadcast keeps its media private: add media: private so the publisher uploads it privately' }
+    if (refs.length) meta.privateMedia = true
   }
   // Only the per-reader page resolves private media, so on any other page it would ship broken.
   if (meta.privateMedia && meta.links !== 'per-reader') return { ok: false, error: 'media: private needs links: per-reader' }

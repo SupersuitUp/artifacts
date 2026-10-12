@@ -1,7 +1,7 @@
 // One route config for route tests: an in-memory artifact store holding whatever pages a test
 // seeds, the key `test-key`, and the example host. Every field may be overridden.
 import type { ArtifactRoutesConfig } from './artifacts.js'
-import type { ArtifactRecord, ArtifactStore } from '../artifacts/store.js'
+import { listOfKind, type ArtifactRecord, type ArtifactStore } from '../artifacts/store.js'
 import { freedomDefault } from '../brand/pack.js'
 
 export function memoryArtifactStore(pages: Partial<ArtifactRecord>[] = []): ArtifactStore & { pages: Map<string, ArtifactRecord> } {
@@ -12,6 +12,7 @@ export function memoryArtifactStore(pages: Partial<ArtifactRecord>[] = []): Arti
     get: async (id: string) => all.get(id) ?? null,
     delete: async (id: string) => all.delete(id),
     bumpViews: async () => {},
+    list: async (kind: ArtifactRecord['template']) => listOfKind(all.values(), kind),
   } as unknown as ArtifactStore & { pages: Map<string, ArtifactRecord> }
 }
 
