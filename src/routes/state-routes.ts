@@ -5,6 +5,9 @@
 //   GET  /api/artifacts/<id>/responses  publish key; every answer with who (?format=csv)
 //   DELETE /api/artifacts/<id>/responses?reader=<key>  publish key; one reader's answers
 //   GET  /api/comments?since=<ISO>      publish key; every shared comment on any page after a time
+//                                       (&open=1: leave out threads that are resolved)
+//   POST /api/artifacts/<id>/resolve    publish key, or the owner or an admin signed in; resolve or
+//                                       reopen one comment thread { entry, resolved?, note?, by? }
 //
 // Who is writing: the grant a gated page already uses, or on a page with `writers: anyone`, an
 // anonymous id in an HttpOnly cookie. When both are present the anonymous answers move to the
@@ -16,9 +19,9 @@ import { ARTIFACT_ID_RE } from './ids.js'
 import { GRANT_COOKIE, decide, firstName, signInUrl, verifyGrant, type Reader } from '../artifacts/reader.js'
 import { isUnlocked, unlockCookieName } from '../artifacts/unlock.js'
 import { ANON_WRITES_PER_MINUTE, MAX_ENTRIES_PER_SLOT, checkValue, effectiveWriters, slotVisibility } from '../artifacts/state.js'
-import { COMMENTS_SLOT, validateComment, type CommentValue } from '../artifacts/comments.js'
+import { COMMENTS_SLOT, MAX_COMMENT_NAME_CHARS, cleanResolveNote, resolutionOf, validateComment, type CommentResolution, type CommentValue } from '../artifacts/comments.js'
 import { isCommentAudioPath } from '../artifacts/audio.js'
-import { readerKeyFor, type StateStore, type Writer } from '../artifacts/state-store.js'
+import { readerKeyFor, type StateEntry, type StateStore, type Writer } from '../artifacts/state-store.js'
 import { NOTES_SLOT, checkNoteValue, checklistAnswerIds, hasNotesWidget } from '../artifacts/widgets.js'
 import { CHECKLIST_SLOT, checkChecklistValue } from '../artifacts/checklist.js'
 import { responsesCsv, responsesOf, stateView } from '../artifacts/state-view.js'
@@ -27,6 +30,7 @@ import type { ReadersStore } from '../artifacts/readers-store.js'
 
 export const ANON_COOKIE = 'artifact_anon'
 const ANON_ID = /^[A-Za-z0-9]{24}$/
+const ENTRY_ID = /^[A-Za-z0-9_-]{1,128}$/
 const MAX_BODY = 16 * 1024
 /** The most comments one feed answer carries. A caller that gets this many moves its cursor to the
  *  last row's `at` and asks again. */
@@ -267,6 +271,9 @@ export function createStateRoutes(ctx: StateRoutesContext) {
         if (op === 'replace' && seen.has(entryId!) && (seen.get(entryId!)!.parent ?? null) !== (c.value.parent ?? null))
           return json({ error: 'an edit cannot move a comment into or out of a thread' }, 400)
         value = c.value
+        // Resolving is the owner's, never the writer's: an edit keeps the thread as it was.
+        const prev = op === 'replace' ? resolutionOf(seen.get(entryId!)) : null
+        if (prev) value = { ...c.value, resolved: prev }
       }
       if (op === 'replace') {
         const r = await ctx.state!.replace!({ artifactId: id, slot, readerKey: writer.key, entryId: entryId!, value })
@@ -315,34 +322,114 @@ export function createStateRoutes(ctx: StateRoutesContext) {
   /** GET /api/comments?since=<ISO>: every SHARED comment on any of this host's pages written after
    *  `since` (exclusive), oldest first, at most FEED_MAX, each with a link that opens it on the
    *  page. It reads the `comments` slot of the state core only; personal notes live in a store no
-   *  publisher route reads, so they cannot appear here. The publisher's own notifier polls it. */
+   *  publisher route reads, so they cannot appear here. The publisher's own notifier polls it.
+   *
+   *  Each row carries `resolved`: its THREAD's resolution (a reply carries its parent's), or null.
+   *  `&open=1` leaves out every row of a resolved thread, except a reply written after the thread
+   *  was resolved, which is news about it. `cursor` is the `at` of the last comment READ, filtered
+   *  or not, and `more` says a full page was read; a caller paging with `open=1` follows `cursor`,
+   *  since the last row it was given can sit well before it. */
   async function COMMENTS_FEED(req: NextRequest) {
     if (!isPublisherAuthed(req, ctx)) return json({ error: 'Unauthorized' }, 401)
     const since = feedSince(req.nextUrl.searchParams.get('since'))
     if (!since) return json({ error: 'since must be an ISO 8601 time with a zone, like 2026-09-28T12:00:00Z' }, 400)
+    const openParam = req.nextUrl.searchParams.get('open')
+    if (openParam !== null && !['1', 'true', '0', 'false'].includes(openParam)) return json({ error: 'open is 1 or 0' }, 400)
+    const openOnly = openParam === '1' || openParam === 'true'
     if (!ctx.state) return json({ error: 'this host keeps no answers' }, 501)
     if (!ctx.state.slotSince) return json({ error: 'this host cannot list comments by time' }, 501)
     const now = new Date().toISOString()
     const entries = await ctx.state.slotSince(COMMENTS_SLOT, since, FEED_MAX)
     const pages = new Map<string, Promise<ArtifactRecord | null>>()
     const pageOf = (id: string) => { if (!pages.has(id)) pages.set(id, ctx.store.get(id)); return pages.get(id)! }
+    // A reply's thread is resolved on its parent, which may sit outside this window: read the page's
+    // comments once, and only for a page that has a reply in it.
+    const threads = new Map<string, Promise<Map<string, StateEntry>>>()
+    const commentsOf = (id: string) => {
+      if (!threads.has(id)) threads.set(id, ctx.state!.entries(id).then((all) => new Map(all.filter((e) => e.slot === COMMENTS_SLOT).map((e) => [e.id, e]))))
+      return threads.get(id)!
+    }
     const comments = []
     for (const e of entries) {
       const a = await pageOf(e.artifactId)
       // A page deleted since the comment was left has nowhere for the link to land.
       if (!a) continue
       const v = e.value as CommentValue
+      const resolved = resolutionOf(v.parent ? (await commentsOf(e.artifactId)).get(v.parent)?.value : v)
+      if (openOnly && resolved && !(v.parent && e.at > resolved.at)) continue
       const audio = isCommentAudioPath(v.audio) && ctx.audioUrl ? await ctx.audioUrl(e.artifactId, v.audio) : null
       comments.push({
         artifactId: e.artifactId, title: a.title, entryId: e.id, parent: v.parent ?? null,
         name: e.writer.anonymous ? null : e.writer.name?.trim() || 'a signed-in reader',
         quote: v.anchor?.kind === 'text' ? v.anchor.quote : null, region: v.anchor?.kind === 'region',
-        body: v.body, transcript: v.transcript ?? null, audioUrl: audio, at: e.at,
+        body: v.body, transcript: v.transcript ?? null, audioUrl: audio, at: e.at, resolved,
         link: `${ctx.pageUrl(e.artifactId)}#comment-${e.id}`,
       })
     }
-    return json({ now, comments })
+    return json({ now, comments, cursor: entries.length ? entries[entries.length - 1].at : null, more: entries.length >= FEED_MAX })
   }
 
-  return { STATE_GET, STATE_POST, RESPONSES, COMMENTS_FEED }
+  /** POST /api/artifacts/<id>/resolve: mark one comment thread done, or open it again (0.33.0).
+   *  Body { entry, resolved?: true|false (default true), note?: one line, at most 280, by?: one line }.
+   *  `entry` may name a reply: the thread it belongs to is what is resolved, and the answer's
+   *  `entry` names that thread's top comment.
+   *
+   *  Who: the publish key or a publisher pass (an agent on the operator's machine resolves with the
+   *  credential it publishes with, and may say who it is with `by`), or a reader signed in as the
+   *  page's owner or one of this hub's admins (named by their first name; `by` is ignored), from
+   *  this host's own pages as JSON. Everyone else is refused before the page is looked up. */
+  async function RESOLVE(req: NextRequest, { params }: Params) {
+    const publisher = isPublisherAuthed(req, ctx)
+    let by = 'the publisher'
+    if (!publisher) {
+      const reader = verifyGrant(ctx.readerSecret(), req.cookies.get(GRANT_COOKIE)?.value)
+      if (!reader) return json({ error: 'sign in as the page\'s owner, or send the publish key' }, 401)
+      if (!isOwner(reader)) return json({ error: 'only the page\'s owner, this hub\'s admins and the publisher resolve comments' }, 403)
+      const origin = req.headers.get('origin')
+      const site = req.headers.get('sec-fetch-site')
+      if ((origin !== null && origin !== siteOrigin) || (site !== null && site !== 'same-origin')) return json({ error: 'wrong origin' }, 403)
+      if (!/^application\/json\b/i.test(req.headers.get('content-type') ?? '')) return json({ error: 'send JSON' }, 415)
+      by = reader.name?.trim().split(/\s+/)[0] || 'the owner'
+    }
+    const raw = await req.text()
+    if (Buffer.byteLength(raw, 'utf8') > 4096) return json({ error: 'request over 4 KB' }, 413)
+    let b: Record<string, unknown>
+    try {
+      const parsed: unknown = JSON.parse(raw)
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return json({ error: 'body must be a JSON object' }, 400)
+      b = parsed as Record<string, unknown>
+    } catch {
+      return json({ error: 'body must be JSON' }, 400)
+    }
+    const unknownKeys = Object.keys(b).filter((k) => !['entry', 'resolved', 'note', 'by'].includes(k))
+    if (unknownKeys.length) return json({ error: `unknown field: ${unknownKeys.join(', ')}; the body is { entry, resolved?, note?, by? }` }, 400)
+    if (typeof b.entry !== 'string' || !ENTRY_ID.test(b.entry)) return json({ error: 'entry is the id of the comment to resolve' }, 400)
+    if (b.resolved !== undefined && typeof b.resolved !== 'boolean') return json({ error: 'resolved is true or false' }, 400)
+    const resolve = b.resolved !== false
+    const note = cleanResolveNote(b.note)
+    if (!note.ok) return json({ error: note.error }, 400)
+    if (!resolve && note.note) return json({ error: 'reopening a thread takes no note' }, 400)
+    if (publisher && b.by !== undefined) {
+      if (typeof b.by !== 'string' || /[\r\n]/.test(b.by) || !b.by.trim() || b.by.trim().length > MAX_COMMENT_NAME_CHARS)
+        return json({ error: `by is one line of at most ${MAX_COMMENT_NAME_CHARS} characters` }, 400)
+      by = b.by.trim()
+    }
+    if (!ctx.state) return json({ error: 'this host keeps no answers' }, 501)
+    if (!ctx.state.setResolved) return json({ error: 'this host cannot resolve comments' }, 501)
+    const { id } = await params
+    const a = ARTIFACT_ID_RE.test(id) ? await ctx.store.get(id) : null
+    if (!a) return json({ error: `no artifact with id ${id}` }, 404)
+    const all = new Map((await ctx.state.entries(id)).filter((e) => e.slot === COMMENTS_SLOT).map((e) => [e.id, e]))
+    const asked = all.get(b.entry)
+    if (!asked) return json({ error: 'no comment with that id on this page' }, 404)
+    const parent = (asked.value as CommentValue).parent
+    const root = parent ? all.get(parent) : asked
+    if (!root) return json({ error: 'the comment this reply answers is gone' }, 404)
+    const resolution: CommentResolution | null = resolve ? { at: new Date().toISOString(), by, ...(note.note ? { note: note.note } : {}) } : null
+    const r = await ctx.state.setResolved({ artifactId: id, slot: COMMENTS_SLOT, entryId: root.id, resolved: resolution })
+    if (!r) return json({ error: 'no comment with that id on this page' }, 404)
+    return json({ id, entry: root.id, resolved: resolution })
+  }
+
+  return { STATE_GET, STATE_POST, RESPONSES, COMMENTS_FEED, RESOLVE }
 }

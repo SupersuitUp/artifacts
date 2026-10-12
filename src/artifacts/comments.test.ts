@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { COMMENTS_SLOT, MAX_COMMENT_CHARS, mergeCommentsState, validateComment, type CommentValue } from './comments.js'
+import { COMMENTS_SLOT, MAX_COMMENT_CHARS, MAX_RESOLVE_NOTE_CHARS, cleanResolveNote, mergeCommentsState, resolutionOf, validateComment, type CommentValue } from './comments.js'
 import { effectiveWriters } from './state.js'
 
 describe('mergeCommentsState', () => {
@@ -89,5 +89,28 @@ describe('a declared name on a comment', () => {
     expect(validateComment({ ...base, by: 'x'.repeat(81) }, none).ok).toBe(false)
     expect(validateComment({ ...base, by: 'Ada\nLovelace' }, none).ok).toBe(false)
     expect(validateComment({ ...base, by: 7 }, none).ok).toBe(false)
+  })
+})
+
+describe('resolving (0.33.0)', () => {
+  const anchor = { kind: 'text', quote: 'river', prefix: '', suffix: '' }
+  it('a reader cannot write resolved into a comment: only the resolve route sets it', () => {
+    const r = validateComment({ anchor, body: 'Done', version: 1, resolved: { at: '2026-10-12T00:00:00Z', by: 'Olive' } }, () => null)
+    expect(r.ok).toBe(false)
+  })
+  it('a note is one line of at most MAX_RESOLVE_NOTE_CHARS, trimmed; blank or absent is no note', () => {
+    expect(cleanResolveNote(undefined)).toEqual({ ok: true, note: null })
+    expect(cleanResolveNote(null)).toEqual({ ok: true, note: null })
+    expect(cleanResolveNote('  ')).toEqual({ ok: true, note: null })
+    expect(cleanResolveNote('  Fixed it  ')).toEqual({ ok: true, note: 'Fixed it' })
+    expect(cleanResolveNote('x'.repeat(MAX_RESOLVE_NOTE_CHARS)).ok).toBe(true)
+    expect(cleanResolveNote('x'.repeat(MAX_RESOLVE_NOTE_CHARS + 1)).ok).toBe(false)
+    expect(cleanResolveNote('one\ntwo').ok).toBe(false)
+    expect(cleanResolveNote(5).ok).toBe(false)
+  })
+  it('resolutionOf reads a stored value and tolerates anything else', () => {
+    expect(resolutionOf({ body: 'x', resolved: { at: 't', by: 'Olive', note: 'n' } })).toEqual({ at: 't', by: 'Olive', note: 'n' })
+    expect(resolutionOf({ body: 'x', resolved: { at: 't', by: 'Olive' } })).toEqual({ at: 't', by: 'Olive' })
+    for (const v of [null, undefined, 'x', { body: 'x' }, { resolved: true }, { resolved: { by: 'x' } }]) expect(resolutionOf(v)).toBeNull()
   })
 })

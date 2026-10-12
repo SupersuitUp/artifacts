@@ -148,6 +148,17 @@ try {
   if (!fc || fc.artifactId !== 'cmt23456' || fc.link !== `http://localhost/cmt23456#comment-${fc.entryId}` || typeof fd.now !== 'string') fail(`the comments feed read back ${JSON.stringify(fd)}`)
   const fno = await fetch(`${base}/api/comments?since=2000-01-01T00:00:00Z`)
   if (fno.status !== 401) fail(`the comments feed without the key answered ${fno.status}, not 401`)
+  // Resolving (0.33.0): refused without the key; with it the thread is resolved, the feed says so,
+  // and `open=1` leaves it out.
+  const rno = await fetch(`${base}/api/artifacts/cmt23456/resolve`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ entry: fc.entryId }) })
+  if (rno.status !== 401) fail(`resolve without the key answered ${rno.status}, not 401`)
+  const rok = await fetch(`${base}/api/artifacts/cmt23456/resolve`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer k' }, body: JSON.stringify({ entry: fc.entryId, note: 'packed fix' }) })
+  const rb = await rok.json()
+  if (rok.status !== 200 || rb.resolved?.note !== 'packed fix') fail(`resolve answered ${rok.status} ${JSON.stringify(rb)}`)
+  const fr = await (await fetch(`${base}/api/comments?since=2000-01-01T00:00:00Z`, { headers: { authorization: 'Bearer k' } })).json()
+  if (fr.comments?.find((c) => c.entryId === fc.entryId)?.resolved?.note !== 'packed fix') fail(`the feed did not carry the resolution: ${JSON.stringify(fr)}`)
+  const fo = await (await fetch(`${base}/api/comments?since=2000-01-01T00:00:00Z&open=1`, { headers: { authorization: 'Bearer k' } })).json()
+  if (fo.comments?.some((c) => c.entryId === fc.entryId)) fail('open=1 still listed a resolved thread')
   const pr = await fetch(`${base}/api/artifacts/cmt23456/personal`)
   if (pr.status !== 401 || (await pr.json()).device !== true) fail(`personal notes for a signed-out reader answered ${pr.status}, not 401 device`)
 
@@ -176,7 +187,7 @@ try {
   if (off.status !== 200 || (await off.json()).password !== false) fail('the password could not be taken off again')
   if (!(await (await fetch(`${base}/abc23456`)).text()).includes('data-defined-term')) fail('the page did not open again when the password came off')
 
-  console.log('check-packed: fixture builds; page, page menu, version history, share card, publish, state routes, the notes and checklist widgets, comments, the comments feed and the settings sheets answer correctly')
+  console.log('check-packed: fixture builds; page, page menu, version history, share card, publish, state routes, the notes and checklist widgets, comments, the comments feed, resolving and the settings sheets answer correctly')
 } finally {
   server.kill()
 }

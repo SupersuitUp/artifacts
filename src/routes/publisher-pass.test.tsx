@@ -49,6 +49,7 @@ const CALLS: Record<string, (r: Routes, auth?: string) => Promise<Response>> = {
   PUT_ASSET: (r, a) => r.PUT_ASSET(new NextRequest(`https://${HOST}/api/artifacts/abc23456/assets/x.png`, { method: 'PUT', body: 'x', headers: h(a) }), asset),
   UPLOAD: (r, a) => r.UPLOAD(new NextRequest(`https://${HOST}/api/artifacts/abc23456/upload/x.png`, { method: 'POST', body: '{}', headers: h(a) }), asset),
   RESPONSES: (r, a) => r.RESPONSES(new NextRequest(`https://${HOST}/api/artifacts/abc23456/responses`, { headers: h(a) }), id),
+  RESOLVE: (r, a) => r.RESOLVE(new NextRequest(`https://${HOST}/api/artifacts/abc23456/resolve`, { method: 'POST', body: JSON.stringify({ entry: 'nope' }), headers: h(a, { 'content-type': 'application/json' }) }), id),
   COMMENTS_FEED: (r, a) => r.COMMENTS_FEED(new NextRequest(`https://${HOST}/api/comments?since=2026-09-28T00:00:00Z`, { headers: h(a) })),
 }
 

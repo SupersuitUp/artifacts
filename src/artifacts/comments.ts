@@ -43,6 +43,35 @@ export type CommentValue = {
   transcript?: (typeof COMMENT_TRANSCRIPTS)[number]
   /** The name a reader typed so the owner can credit them. A signed-in reader's account name wins. */
   by?: string
+  /** On a thread's top-level comment only: the owner, an admin or the publisher marked the thread
+   *  done (0.33.0). Written by the resolve route, never by a reader: `validateComment` refuses the
+   *  key, and an edit keeps whatever the comment already carried. */
+  resolved?: CommentResolution
+}
+
+/** A resolved thread: when, by whom (a first name, or what the publisher called itself, never an
+ *  email, because a readers-visible page shows it to every reader), and an optional one-line note
+ *  saying what changed. */
+export type CommentResolution = { at: string; by: string; note?: string }
+export const MAX_RESOLVE_NOTE_CHARS = 280
+
+/** The resolve route's check on a note: absent, null or blank means no note; otherwise one line of
+ *  at most MAX_RESOLVE_NOTE_CHARS, trimmed. */
+export function cleanResolveNote(v: unknown): { ok: true; note: string | null } | { ok: false; error: string } {
+  if (v === undefined || v === null) return { ok: true, note: null }
+  if (typeof v !== 'string') return { ok: false, error: 'note is one line of text, or null' }
+  const note = v.trim()
+  if (/[\r\n]/.test(note)) return { ok: false, error: 'note is one line' }
+  if (note.length > MAX_RESOLVE_NOTE_CHARS) return { ok: false, error: `note is at most ${MAX_RESOLVE_NOTE_CHARS} characters` }
+  return { ok: true, note: note || null }
+}
+
+/** The resolution a stored value carries, or null. Tolerant of anything, since it reads stored JSON. */
+export function resolutionOf(v: unknown): CommentResolution | null {
+  const r = v && typeof v === 'object' ? (v as { resolved?: unknown }).resolved : undefined
+  if (!r || typeof r !== 'object' || typeof (r as CommentResolution).at !== 'string') return null
+  const { at, by, note } = r as CommentResolution
+  return { at, by: typeof by === 'string' ? by : '', ...(typeof note === 'string' && note ? { note } : {}) }
 }
 
 const ENTRY_ID = /^[A-Za-z0-9_-]{1,128}$/

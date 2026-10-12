@@ -19,13 +19,18 @@
 // on load and on every hashchange the pin is scrolled into view and its thread opened; a reply's
 // id opens its parent's thread; a comment on an earlier version is scrolled to and highlighted.
 //
+// A RESOLVED thread (0.33.0: the owner, an admin or the publisher marked it done) draws a muted
+// check pin with no box, so the page reads clean, and opens collapsed to one line, "Resolved: <note>",
+// with the comment and its replies a tap away. The Comments count is open threads only. The owner
+// and admins get Resolve and Reopen in every shared thread.
+//
 // Rendered empty on the server and on the first client render so the markup always hydrates; the
 // overlay is portalled onto document.body so its coordinates are page coordinates.
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { PINS_SET, announcePins, signInBack } from './page-bridge.js'
 import { MAX_QUOTE_CHARS, textAnchorFrom, type Anchor } from '../artifacts/anchor.js'
-import { COMMENTS_SLOT, type CommentValue, type CommentsMode } from '../artifacts/comments.js'
+import { COMMENTS_SLOT, MAX_RESOLVE_NOTE_CHARS, resolutionOf, type CommentResolution, type CommentValue, type CommentsMode } from '../artifacts/comments.js'
 import type { PersonalNote } from '../artifacts/personal-store.js'
 import { CommentCard, type SavedMemo } from './comment-card.js'
 import { AudioPlay, hostVoice, newMemoId, type VoiceHost } from './voice-recorder.js'
@@ -47,6 +52,9 @@ const HASH = /^#comment-([A-Za-z0-9_-]{1,128})$/
 
 /** The entry id a `#comment-<id>` hash names, or null. */
 const commentHashId = (hash: string): string | null => HASH.exec(hash)?.[1] ?? null
+/** The line a resolved thread collapses to. */
+export const resolvedLine = (r: CommentResolution) => (r.note ? `Resolved: ${r.note}` : 'Resolved')
+const resolvedOf = (item: Item) => (item.kind === 'shared' ? resolutionOf(item.value) : null)
 const DRAG_PX = 8
 /** Where a drag never starts a box: controls, and anything that is somebody's words. */
 const NOT_FOR_BOXES = 'a, button, input, textarea, select, audio, video[controls], summary, label, [data-comment-ui], [data-note-toggle], [data-heading-notes], [data-artifact-notes], .artifact-defined-term, .artifact-word'
@@ -109,6 +117,7 @@ export function CommentLayer({
   const host = useMemo(() => voice ?? hostVoice(artifactId), [voice, artifactId])
   const audioDb = useMemo(() => audioStore ?? defaultDeviceAudio, [audioStore])
   const stateUrl = `/api/artifacts/${artifactId}/state`
+  const resolveUrl = `/api/artifacts/${artifactId}/resolve`
   const personalUrl = `/api/artifacts/${artifactId}/personal`
   const [mounted, setMounted] = useState(false)
   const [shared, setShared] = useState<Item[]>([])
@@ -131,6 +140,8 @@ export function CommentLayer({
   const [highlight, setHighlight] = useState<string | null>(null)
   /** A selector to scroll into view once the render that draws it has committed. */
   const [scrollTo, setScrollTo] = useState<string | null>(null)
+  /** A resolved thread the address named, opened expanded rather than collapsed. */
+  const [expanded, setExpanded] = useState<string | null>(null)
 
   const call = useCallback(async (url: string, init?: RequestInit) => {
     try {
@@ -356,6 +367,7 @@ export function CommentLayer({
       setShowPins(true)
       setHighlight(null)
       setThread(id)
+      setExpanded(id)
       setScrollTo(`[data-comment-pin][data-comment-id="${id}"]`)
     } else if (layout.earlier.some((i) => i.id === id)) {
       setThread(null)
@@ -426,7 +438,9 @@ export function CommentLayer({
   }
 
   const edit = async (item: Item, body: string): Promise<string | null> => {
-    const value = { ...item.value, body }
+    // `resolved` is the owner's to set, and the server keeps it through an edit; sending it back is refused.
+    const { resolved: _resolved, ...rest } = item.value
+    const value = { ...rest, body }
     if (item.where === 'device') { replaceDeviceNote(artifactId, item.id, value); refreshDevice(); return null }
     const r = item.kind === 'personal'
       ? await call(personalUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ entry: item.id, value }) })
@@ -445,9 +459,17 @@ export function CommentLayer({
     return null
   }
 
+  const resolveThread = async (item: Item, resolved: boolean, note?: string): Promise<string | null> => {
+    const r = await call(resolveUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ entry: item.id, resolved, ...(note ? { note } : {}) }) })
+    if (r.status !== 200) return typeof r.body.error === 'string' ? r.body.error : 'that did not save; try again'
+    const s = await call(stateUrl)
+    if (s.status === 200) setShared(sharedFrom(s.body))
+    return null
+  }
+
   const open = layout.placed.find((p) => p.item.id === thread)
   const openItem = open?.item ?? layout.earlier.find((i) => i.id === thread)
-  const count = tops.length
+  const count = tops.filter((i) => !resolvedOf(i)).length
   const overlay: ReactNode = mounted ? (
     <div data-comment-ui data-nospeak className="font-sans" style={theme as CSSProperties}>
       {missing ? (
@@ -465,7 +487,7 @@ export function CommentLayer({
       ) : null}
       {showPins ? layout.placed.map(({ item, left, top, box }) => (
         <div key={item.id}>
-          {box ? (
+          {box && !resolvedOf(item) ? (
             <div data-comment-box={item.id} aria-hidden className="pointer-events-none absolute z-30 rounded-md border-2"
               style={{ left: box.left, top: box.top, width: box.width, height: box.height, borderColor: accent, borderStyle: item.kind === 'personal' ? 'dashed' : 'solid', opacity: thread === item.id ? 1 : 0.55 }} />
           ) : null}
@@ -492,8 +514,9 @@ export function CommentLayer({
       ) : null}
       {openItem && open ? (
         <Floating x={open.left + 28} y={open.top}>
-          <Thread item={openItem} replies={items.filter((i) => i.value.parent === openItem.id)} canReply={openItem.kind === 'shared' && canShare}
-            accent={accent} audioDb={audioDb} onClose={() => setThread(null)} onRemove={remove} onEdit={edit} onReply={reply} />
+          <Thread key={openItem.id} item={openItem} replies={items.filter((i) => i.value.parent === openItem.id)} canReply={openItem.kind === 'shared' && canShare}
+            canResolve={openItem.kind === 'shared' && isOwner} startExpanded={expanded === openItem.id}
+            accent={accent} audioDb={audioDb} onClose={() => { setThread(null); setExpanded(null) }} onRemove={remove} onEdit={edit} onReply={reply} onResolve={resolveThread} />
         </Floating>
       ) : null}
       {drag ? (
@@ -531,6 +554,7 @@ export function CommentLayer({
               <li key={item.id} data-comment-earlier-id={item.id} {...(highlight === item.id ? { 'data-comment-highlight': '' } : {})}
                 className="m-0 border-l-2 py-1 pl-3"
                 style={{ borderColor: accent, borderStyle: item.kind === 'personal' ? 'dashed' : 'solid', ...(highlight === item.id ? { background: `color-mix(in srgb, ${accent} 14%, transparent)` } : {}) }}>
+                {resolvedOf(item) ? <span data-comment-resolved-line className="block text-[13px] font-medium" style={{ color: accent }}>✓ {resolvedLine(resolvedOf(item)!)}</span> : null}
                 {item.value.anchor.kind === 'text' ? <span className="block text-[13px] italic opacity-70">“{item.value.anchor.quote}”</span> : <span className="block text-[13px] italic opacity-70">A box on part of the page that has changed</span>}
                 <span className="block whitespace-pre-wrap text-[15px] text-[color:var(--a-strong)]">{item.value.body}</span>
                 <span className="block text-xs opacity-60">
@@ -549,12 +573,14 @@ export function CommentLayer({
 
 function Pin({ item, left, top, accent, ground, onOpen }: { item: Item; left: number; top: number; accent: string; ground: string; onOpen: () => void }) {
   const personal = item.kind === 'personal'
+  const resolved = resolvedOf(item)
   return (
     <button type="button" data-comment-pin={item.kind} data-comment-id={item.id} onClick={onOpen}
-      aria-label={personal ? 'Your personal note (only you)' : `Comment by ${item.name}`}
+      {...(resolved ? { 'data-comment-resolved': '' } : {})}
+      aria-label={personal ? 'Your personal note (only you)' : resolved ? `${resolvedLine(resolved)}. Comment by ${item.name}` : `Comment by ${item.name}`}
       className="absolute z-30 flex h-6 min-w-6 items-center justify-center gap-1 rounded-full border-2 px-1.5 text-[10px] font-semibold shadow"
-      style={{ left, top, borderColor: accent, background: personal ? ground : accent, color: personal ? accent : 'var(--a-on-accent, #111)' }}>
-      {personal ? <span>only you</span> : <span aria-hidden>●</span>}
+      style={{ left, top, borderColor: accent, background: personal || resolved ? ground : accent, color: personal || resolved ? accent : 'var(--a-on-accent, #111)', ...(resolved ? { opacity: 0.45 } : {}) }}>
+      {personal ? <span>only you</span> : resolved ? <span aria-hidden>✓</span> : <span aria-hidden>●</span>}
     </button>
   )
 }
@@ -566,17 +592,45 @@ function Floating({ x, y, children }: { x: number; y: number; children: ReactNod
   return <div className="absolute z-50" style={{ left, top: y }}>{children}</div>
 }
 
-function Thread({ item, replies, canReply, accent, audioDb, onClose, onRemove, onEdit, onReply }: {
-  item: Item; replies: Item[]; canReply: boolean; accent: string; audioDb: DeviceAudio
+function Thread({ item, replies, canReply, canResolve = false, startExpanded = false, accent, audioDb, onClose, onRemove, onEdit, onReply, onResolve }: {
+  item: Item; replies: Item[]; canReply: boolean; canResolve?: boolean; startExpanded?: boolean; accent: string; audioDb: DeviceAudio
   onClose: () => void; onRemove: (i: Item) => Promise<void>; onEdit: (i: Item, body: string) => Promise<string | null>; onReply: (i: Item, body: string) => Promise<string | null>
+  onResolve?: (i: Item, resolved: boolean, note?: string) => Promise<string | null>
 }) {
   const [replying, setReplying] = useState(false)
+  const [resolving, setResolving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [showResolved, setShowResolved] = useState(startExpanded)
+  const resolved = resolvedOf(item)
+  const shell = 'w-[min(22rem,calc(100vw-2rem))] rounded-xl border border-[color:var(--a-line-strong)] bg-[color:var(--a-surface)] p-3 text-sm text-[color:var(--a-strong)] shadow-xl'
+  const reopen = canResolve && onResolve ? (
+    <button type="button" data-comment-reopen className="ml-3 text-xs underline" onClick={async () => setError(await onResolve(item, false))}>Reopen</button>
+  ) : null
+  if (resolved && !showResolved) {
+    return (
+      <div data-comment-thread data-comment-thread-resolved data-comment-ui data-nospeak className={shell}>
+        <div className="flex items-start justify-between gap-2">
+          <p data-comment-resolved-line className="m-0 flex-1 text-[14px]"><span aria-hidden style={{ color: accent }}>✓ </span>{resolvedLine(resolved)}</p>
+          <button type="button" onClick={onClose} aria-label="Close" className="opacity-70 hover:opacity-100">×</button>
+        </div>
+        <p className="m-0 mt-1 text-xs opacity-60">
+          {resolved.by ? `by ${resolved.by}` : null}
+          <button type="button" data-comment-expand className={resolved.by ? 'ml-3 underline' : 'underline'} onClick={() => setShowResolved(true)}>
+            Show comment{replies.length ? ` and ${replies.length} ${replies.length === 1 ? 'reply' : 'replies'}` : ''}
+          </button>
+          {reopen}
+        </p>
+        {error ? <p role="alert" className="text-xs text-amber-500">{error}</p> : null}
+      </div>
+    )
+  }
   return (
-    <div data-comment-thread data-comment-ui data-nospeak className="w-[min(22rem,calc(100vw-2rem))] rounded-xl border border-[color:var(--a-line-strong)] bg-[color:var(--a-surface)] p-3 text-sm text-[color:var(--a-strong)] shadow-xl">
+    <div data-comment-thread data-comment-ui data-nospeak className={shell}>
       <div className="mb-2 flex items-center justify-between text-[11px] uppercase tracking-[0.15em]" style={{ color: accent }}>
-        <span>{item.kind === 'personal' ? 'Only you' : 'Comment'}</span>
+        <span>{item.kind === 'personal' ? 'Only you' : resolved ? 'Resolved comment' : 'Comment'}</span>
         <button type="button" onClick={onClose} aria-label="Close" className="opacity-70 hover:opacity-100">×</button>
       </div>
+      {resolved ? <p data-comment-resolved-line className="m-0 mb-2 text-[13px]" style={{ color: accent }}>✓ {resolvedLine(resolved)}{resolved.by ? <span className="opacity-70">{` · ${resolved.by}`}</span> : null}</p> : null}
       {item.value.anchor.kind === 'text' ? <p className="mb-2 line-clamp-2 border-l-2 pl-2 text-[13px] italic opacity-70" style={{ borderColor: accent }}>{item.value.anchor.quote}</p> : null}
       <Entry item={item} accent={accent} audioDb={audioDb} onRemove={onRemove} onEdit={onEdit} />
       {replies.length ? <ul className="m-0 mt-2 grid list-none gap-2 border-l pl-3 p-0">{replies.map((r) => <li key={r.id} className="m-0"><Entry item={r} accent={accent} audioDb={audioDb} onRemove={onRemove} onEdit={onEdit} /></li>)}</ul> : null}
@@ -585,6 +639,14 @@ function Thread({ item, replies, canReply, accent, audioDb, onClose, onRemove, o
           ? <InlineForm label="Reply" accent={accent} onCancel={() => setReplying(false)} onSubmit={async (b) => { const e = await onReply(item, b); if (!e) setReplying(false); return e }} />
           : <button type="button" data-comment-reply onClick={() => setReplying(true)} className="mt-2 text-xs underline">Reply</button>
       ) : null}
+      {canResolve && onResolve && !replying ? (
+        resolved ? <p className="m-0 mt-2">{reopen}</p>
+          : resolving
+            ? <InlineForm label="Resolve" accent={accent} optional placeholder="What changed (optional)" maxLength={MAX_RESOLVE_NOTE_CHARS}
+                onCancel={() => setResolving(false)} onSubmit={async (note) => { const e = await onResolve(item, true, note || undefined); if (!e) setResolving(false); return e }} />
+            : <button type="button" data-comment-resolve onClick={() => setResolving(true)} className={canReply ? 'ml-3 mt-2 text-xs underline' : 'mt-2 text-xs underline'}>Resolve</button>
+      ) : null}
+      {error ? <p role="alert" className="text-xs text-amber-500">{error}</p> : null}
     </div>
   )
 }
@@ -624,16 +686,22 @@ function Entry({ item, accent, audioDb, onRemove, onEdit }: { item: Item; accent
   )
 }
 
-function InlineForm({ label, initial = '', accent = 'currentColor', onSubmit, onCancel }: { label: string; initial?: string; accent?: string; onSubmit: (body: string) => Promise<string | null>; onCancel: () => void }) {
+function InlineForm({ label, initial = '', accent = 'currentColor', optional = false, placeholder, maxLength, onSubmit, onCancel }: {
+  label: string; initial?: string; accent?: string
+  /** The text may be left empty (a resolve note), so the button is never disabled. */
+  optional?: boolean; placeholder?: string; maxLength?: number
+  onSubmit: (body: string) => Promise<string | null>; onCancel: () => void
+}) {
   const [text, setText] = useState(initial)
   const [error, setError] = useState<string | null>(null)
   return (
-    <form className="mt-2" onSubmit={async (e) => { e.preventDefault(); if (text.trim()) setError(await onSubmit(text.trim())) }}>
-      <textarea value={text} autoFocus rows={2} onChange={(e) => setText(e.target.value)} aria-label={label}
+    <form className="mt-2" onSubmit={async (e) => { e.preventDefault(); if (optional || text.trim()) setError(await onSubmit(text.trim())) }}>
+      <textarea value={text} autoFocus rows={2} onChange={(e) => setText(optional ? e.target.value.replace(/[\r\n]+/g, ' ') : e.target.value)} aria-label={optional && placeholder ? placeholder : label}
+        placeholder={placeholder} maxLength={maxLength}
         className="w-full rounded-lg border border-[color:var(--a-line)] bg-transparent p-2" style={NO_ZOOM_FONT} />
       {error ? <p role="alert" className="text-xs text-amber-500">{error}</p> : null}
       <div className="mt-1 flex gap-3 text-xs">
-        <button type="submit" disabled={!text.trim()} className="rounded-full px-3 py-0.5 font-medium disabled:opacity-40" style={{ background: accent, color: 'var(--a-on-accent, #111)' }}>{label}</button>
+        <button type="submit" disabled={!optional && !text.trim()} className="rounded-full px-3 py-0.5 font-medium disabled:opacity-40" style={{ background: accent, color: 'var(--a-on-accent, #111)' }}>{label}</button>
         <button type="button" onClick={onCancel} className="opacity-70">Cancel</button>
       </div>
     </form>

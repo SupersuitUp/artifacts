@@ -45,6 +45,11 @@ export interface StateStore {
    *  feed reads it. Optional so a host's own store keeps working; without it the feed answers 501.
    *  The Firestore query needs a composite index on <base>State: slot ASC, at ASC. */
   slotSince?(slot: string, after: string, limit: number): Promise<StateEntry[]>
+  /** Set or clear `resolved` on one `many` entry's value, whoever wrote it (resolving a comment
+   *  thread, 0.33.0). Keeps the entry's id, writer and time. Null when the entry is not on this page
+   *  in this slot. Only the resolve route calls it, after its own check of who is asking. Optional
+   *  so a host's own store keeps working; without it the resolve route answers 501. */
+  setResolved?(input: { artifactId: string; slot: string; entryId: string; resolved: unknown | null }): Promise<StateEntry | null>
 }
 
 export const readerKeyFor = {
@@ -55,6 +60,13 @@ export const readerKeyFor = {
 const writerOf = (w: Writer): Omit<Writer, 'key'> => ({
   ...(w.uid ? { uid: w.uid } : {}), ...(w.email ? { email: w.email } : {}), name: w.name, anonymous: w.anonymous,
 })
+/** The value with `resolved` set to the given resolution, or removed when it is null. */
+const withResolved = (value: unknown, resolved: unknown | null): unknown => {
+  const base = value && typeof value === 'object' && !Array.isArray(value) ? { ...(value as Record<string, unknown>) } : {}
+  if (resolved === null) delete base.resolved
+  else base.resolved = structuredClone(resolved)
+  return base
+}
 const oneId = (artifactId: string, slot: string, readerKey: string) => `${artifactId}__${slot}__${readerKey}`
 
 type Stored = Omit<StateEntry, 'id' | 'value'> & { json: string }
@@ -138,6 +150,16 @@ export function createStateStore(db: Firestore, base: string): StateStore {
     // order on at. Needs the composite index (slot ASC, at ASC) on <base>State, or Firestore
     // refuses the query with FAILED_PRECONDITION and a link that creates it.
     slotSince: (slot, after, limit) => load(col().where('slot', '==', slot).where('at', '>', after).orderBy('at').limit(limit)),
+    async setResolved({ artifactId, slot, entryId, resolved }) {
+      const ref = col().doc(entryId)
+      const snap = await ref.get()
+      if (!snap.exists) return null
+      const e = toEntry(snap.id, snap.data() as Stored)
+      if (e.artifactId !== artifactId || e.slot !== slot || e.shape !== 'many') return null
+      const value = withResolved(e.value, resolved)
+      await ref.update({ json: JSON.stringify(value) })
+      return { ...e, value }
+    },
   }
   return store
 }
@@ -198,6 +220,13 @@ export function createMemoryStateStore(): StateStore {
       const e = docs.get(entryId)
       if (!e || e.artifactId !== artifactId || e.slot !== slot || e.readerKey !== readerKey || e.shape !== 'many') return null
       const next = { ...e, value: structuredClone(value) }
+      docs.set(entryId, next)
+      return structuredClone(next)
+    },
+    async setResolved({ artifactId, slot, entryId, resolved }) {
+      const e = docs.get(entryId)
+      if (!e || e.artifactId !== artifactId || e.slot !== slot || e.shape !== 'many') return null
+      const next = { ...e, value: withResolved(e.value, resolved) }
       docs.set(entryId, next)
       return structuredClone(next)
     },

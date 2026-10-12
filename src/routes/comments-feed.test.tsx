@@ -60,7 +60,7 @@ async function build(opts: { state?: StateStore | null; audio?: boolean } = {}) 
 const feed = (since: string | null, auth: string | null = 'Bearer k') =>
   new NextRequest(`https://artifacts.example.com/api/comments${since === null ? '' : `?since=${encodeURIComponent(since)}`}`, { headers: auth ? { authorization: auth } : {} })
 
-type Row = { artifactId: string; title: string; entryId: string; parent: string | null; name: string | null; quote: string | null; region: boolean; body: string; transcript: string | null; audioUrl: string | null; at: string; link: string }
+type Row = { artifactId: string; title: string; entryId: string; parent: string | null; name: string | null; quote: string | null; region: boolean; body: string; transcript: string | null; audioUrl: string | null; at: string; resolved: unknown; link: string }
 
 describe('COMMENTS_FEED', () => {
   it('refuses without the publish key', async () => {
@@ -89,11 +89,11 @@ describe('COMMENTS_FEED', () => {
     expect(body.comments[0]).toEqual({
       artifactId: 'fda23456', title: 'First page', entryId: ids.first, parent: null, name: 'Sam Rivera', quote: 'river', region: false,
       body: 'Which river?', transcript: 'host', audioUrl: 'https://cdn.example.com/signed/fda23456/comments/memo1memo1memo1memo1.webm',
-      at: '2026-09-28T11:00:00.000Z', link: `https://artifacts.example.com/fda23456#comment-${ids.first}`,
+      at: '2026-09-28T11:00:00.000Z', resolved: null, link: `https://artifacts.example.com/fda23456#comment-${ids.first}`,
     })
     expect(body.comments[1]).toEqual({
       artifactId: 'fdb23456', title: 'Second page', entryId: ids.region, parent: null, name: null, quote: null, region: true,
-      body: 'This box', transcript: null, audioUrl: null, at: '2026-09-28T12:00:00.000Z', link: `https://artifacts.example.com/fdb23456#comment-${ids.region}`,
+      body: 'This box', transcript: null, audioUrl: null, at: '2026-09-28T12:00:00.000Z', resolved: null, link: `https://artifacts.example.com/fdb23456#comment-${ids.region}`,
     })
     expect(body.comments[2]).toMatchObject({ entryId: ids.reply, parent: ids.first, name: null, link: `https://artifacts.example.com/fda23456#comment-${ids.reply}` })
     const text = JSON.stringify(body)

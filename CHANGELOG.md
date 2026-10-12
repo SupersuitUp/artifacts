@@ -3,6 +3,44 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.33.0
+
+**A comment thread can be resolved** (Gary, 2026-10-12: "Are you going to resolve the comments at
+some point?"). Until now a shared comment could only be replied to, so a page whose every comment
+had been dealt with still read as a page full of open questions, and the publisher's notifier kept
+listing them.
+
+- `POST /api/artifacts/<id>/resolve` (`RESOLVE`), body `{ entry, resolved?, note?, by? }`: the
+  publish key or a publisher pass (an agent resolves with the credential it publishes with), or a
+  reader signed in as `ownerEmail` or one of `admins`, same-origin JSON. Nobody else: 401 signed
+  out, 403 signed in, before the page is looked up. `entry` may name a reply; the thread's top
+  comment is what is resolved. `resolved: false` reopens. `note` is one line of at most 280.
+- Recorded on the top comment's value as `resolved: { at, by, note? }`, where `by` is a first name
+  or what the publisher calls itself, never an email. A reader cannot write the field (the
+  comment check refuses it), and an edit keeps it.
+- On the page a resolved thread draws a muted check pin with no box, opens collapsed to
+  "Resolved: <note>" with the comment and replies a tap away, and leaves the Comments count. The
+  owner and admins get Resolve and Reopen in every shared thread.
+- The comments feed carries `resolved` on every row (a reply carries its thread's), takes
+  `&open=1` to leave resolved threads out (a reply written after the resolution stays in), and
+  answers `cursor` and `more` so a filtered caller can page.
+- `StateStore.setResolved` (optional), implemented by `createStateStore` and
+  `createMemoryStateStore`.
+- DETECTOR: `POST /api/artifacts/<id>/resolve` with the publish key answers 404 from the host's
+  router (no route file), or the feed's rows have no `resolved` key: 0.32.0 or earlier.
+- REMEDY: update the dependency and add `app/api/artifacts/[id]/resolve/route.ts` exporting
+  `POST` delegating to `RESOLVE`. A host with its own `StateStore` implements `setResolved`, or the
+  route answers 501. No index or data migration: an open thread is one with no `resolved`.
+- Tests: `routes/resolve.test.tsx` (anonymous and signed-in non-admin refused, the comment's own
+  writer refused; owner, admin, publish key and publisher pass allowed; origin and JSON for the
+  cookie path; note length and lines; a reply resolves its thread; reopen; 501s; readers and the
+  writer shown the resolution; a forged `resolved` refused; an edit keeps it; the feed's field,
+  `open=1`, `cursor`), `artifacts/comments.test.ts` (note rules, `resolutionOf`),
+  `reader/comment-layer.test.tsx` (muted pin, no box, open count, collapsed line, expand, owner
+  Resolve and Reopen post the route, a reader gets neither, an edit never sends `resolved`),
+  `routes/publisher-pass.test.tsx` (RESOLVE takes a pass exactly as the key), and `check-packed`
+  (the tarball resolves through the fixture's route, the feed carries it, `open=1` drops it).
+
 ## 0.32.0
 
 **The page's owner and the hub's admins always get past a locked page's door** (Gary, 2026-10-11).

@@ -83,6 +83,7 @@ The rest, each exporting the named handler(s) from `artifacts`:
 | `app/api/reader/leave/route.ts` | `GET` = `LEAVE` |
 | `app/api/reader/ack/route.ts` | `POST` = `ACK` |
 | `app/api/reader/track/route.ts` | `POST` = `TRACK` |
+| `app/api/artifacts/[id]/resolve/route.ts` | `POST` = `RESOLVE` (see [resolving a thread](#resolving-a-thread)) |
 | `app/api/comments/route.ts` | `GET` = `COMMENTS_FEED` (see [the comments feed](#the-comments-feed)) |
 
 Pages live at `/<id>` by default. Mounting inside a larger site, pass `pagePrefix: '/a/'` and put
@@ -702,6 +703,48 @@ The bucket also needs CORS allowing `PUT` from the site's origin with the `conte
 `cache-control` and `x-goog-content-length-range` headers, since the reader's browser uploads
 directly.
 
+### Resolving a thread
+
+When what a comment asked for has been done, the thread is resolved. On the page it then draws a
+muted check pin with no box over the page, opens collapsed to one line, **"Resolved: <note>"** (or
+**"Resolved"**), with the comment and its replies a tap away, and leaves the Comments count. The
+reader who left the comment sees the note. The owner and the hub's admins get **Resolve** (with an
+optional note) and **Reopen** in every shared thread.
+
+```
+POST /api/artifacts/<id>/resolve
+Authorization: Bearer <publish key or publisher pass>
+Content-Type: application/json
+
+{ "entry": "<entryId>", "note": "Named the river in the second paragraph.", "by": "Pat's agent" }
+
+200 { id, entry, resolved: { at, by, note? } }
+```
+
+- **Who:** the publish key or a publisher pass, so an agent resolves with the credential it
+  publishes with; or a reader signed in as `ownerEmail` or one of `admins`, from this host's own
+  pages, as JSON. Anyone else is refused (401 signed out, 403 signed in) before the page is looked
+  up. Leaving a comment does not make you able to resolve it.
+- **`entry`** is a comment's entry id, as the feed and `/responses` give it. Naming a reply
+  resolves the thread it belongs to; the answer's `entry` is that thread's top comment, which is
+  where `resolved` is stored (in the comment's value, beside `body`).
+- **`note`** is optional: one line, at most 280 characters, saying what changed. **`by`** names the
+  resolver and is the publisher's to set (one line, at most 80; default "the publisher"); a signed-in
+  owner or admin is named by their first name. Never an email: a readers-visible page shows it.
+- **Reopen** with `{ "entry": "<entryId>", "resolved": false }` (no note), by the same people.
+- A reader cannot set `resolved` by writing a comment (the server refuses the field), and an edit to
+  a resolved comment keeps its resolution.
+- 404 for a page or comment that is not there; 501 on a host with no `state`, or whose own
+  `StateStore` has no `setResolved` (`createStateStore` and `createMemoryStateStore` have it).
+
+```ts
+// app/api/artifacts/[id]/resolve/route.ts
+import type { NextRequest } from 'next/server'
+import { artifacts } from '@/lib/artifacts'
+type Ctx = { params: Promise<{ id: string }> }
+export function POST(request: NextRequest, ctx: Ctx) { return artifacts.RESOLVE(request, ctx) }
+```
+
 ### The comments feed
 
 So the publisher hears about a shared comment without opening every page, one route lists every
@@ -712,8 +755,8 @@ appear (the privacy test covers this handler like every other).
 GET /api/comments?since=2026-09-28T12:00:00Z
 Authorization: Bearer <publish key>
 
-200 { now, comments: [ { artifactId, title, entryId, parent, name, quote, region, body,
-                         transcript, audioUrl, at, link } ] }
+200 { now, cursor, more, comments: [ { artifactId, title, entryId, parent, name, quote, region,
+                                       body, transcript, audioUrl, at, resolved, link } ] }
 ```
 
 Oldest first, at most 200, strictly after `since` (an ISO 8601 time with a zone; anything else is
@@ -724,6 +767,12 @@ URL to the recording, when there is one and the host can sign it. `link` is the 
 parent's; a comment on an earlier version is highlighted in that list). A caller keeps a cursor
 at the last row's `at` and leaves it where it was when nothing came back; `now` is where a first
 run starts, so it does not replay history.
+
+`resolved` is the row's THREAD's resolution (`{ at, by, note? }`, a reply carries its parent's), or
+null while the thread is open. **`&open=1` lists only open threads**: every row of a resolved thread
+is left out, except a reply written after the thread was resolved, which is news about it. Filtered,
+a page can come back short while more remains, so page with `cursor` (the `at` of the last comment
+read, filtered or not) and `more` (a full page was read) rather than with the last row.
 
 The path sits outside `/api/artifacts/` because `comments` is itself a legal page id there.
 

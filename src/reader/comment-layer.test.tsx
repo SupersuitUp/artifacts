@@ -34,6 +34,7 @@ function stubFetch(opts: { shared?: Row[]; mine?: Row[]; personal?: 'device' | R
     if (url.endsWith('/state')) {
       return new Response(JSON.stringify({ slots: { comments: { shape: 'many', visibility: 'shared', mine: opts.mine ?? [], shared: opts.shared } } }), { status: opts.stateStatus ?? 200 })
     }
+    if (url.endsWith('/resolve')) return new Response(JSON.stringify({ ok: true }), { status: 200 })
     if (url.includes('/personal')) {
       if (personal === 'device') return new Response(JSON.stringify({ error: 'sign in', device: true }), { status: 401 })
       if (method === 'POST') personal.push({ id: `p${personal.length}`, value: body.value, at: '2026-09-28T00:00:00Z' })
@@ -324,5 +325,86 @@ describe('deep link', () => {
     const to = new URL(link.href).searchParams.get('to')!
     expect(to.endsWith('#comment-hidden')).toBe(true)
   })
-})
 
+  describe('a resolved thread (0.33.0)', () => {
+    const resolvedThread = () => stubFetch({ shared: [
+      { id: 's1', name: 'Sam', value: value(text('river', 'The ', ' runs north'), 'Which river?', { resolved: { at: '2026-10-12T00:00:00Z', by: 'Olive', note: 'Named it in the text' } }), at: '2026-09-28T00:00:00Z' },
+      { id: 's1r', name: 'Jo', value: value(text('river', 'The ', ' runs north'), 'The north one.', { parent: 's1' }), at: '2026-09-28T00:00:01Z' },
+      { id: 's2', name: 'Jo', value: value({ kind: 'region', block: 'b-img-00000003', x: 0.1, y: 0.1, w: 0.5, h: 0.5 }, 'This bar', { resolved: { at: '2026-10-12T00:00:00Z', by: 'Olive' } }), at: '2026-09-28T00:00:02Z' },
+      { id: 's3', name: 'Kit', value: value(text('floods'), 'Every year?'), at: '2026-09-28T00:00:03Z' },
+    ] })
+
+    it('draws a muted check pin, no box, and counts only open threads', async () => {
+      resolvedThread()
+      await mount({ comments: 'anyone', canShare: true })
+      const pin = document.querySelector<HTMLElement>('[data-comment-id="s1"]')!
+      expect(pin.hasAttribute('data-comment-resolved')).toBe(true)
+      expect(pin.textContent).toBe('✓')
+      expect(pin.getAttribute('aria-label')).toContain('Resolved: Named it in the text')
+      expect(Number(pin.style.opacity)).toBeLessThan(1)
+      expect(document.querySelector('[data-comment-id="s3"]')!.hasAttribute('data-comment-resolved')).toBe(false)
+      // The resolved box comment keeps its pin but loses the box drawn over the page.
+      expect(document.querySelector('[data-comment-id="s2"]')).not.toBeNull()
+      expect(document.querySelector('[data-comment-box="s2"]')).toBeNull()
+      expect(document.querySelector('[data-comment-button]')!.textContent).toBe('Comments · 1')
+    })
+
+    it('opens collapsed to "Resolved: <note>", and expands to the comment and its replies', async () => {
+      resolvedThread()
+      await mount({ comments: 'anyone', canShare: true })
+      await act(async () => { document.querySelector<HTMLButtonElement>('[data-comment-id="s1"]')!.click() })
+      const t = document.querySelector('[data-comment-thread]')!
+      expect(t.hasAttribute('data-comment-thread-resolved')).toBe(true)
+      expect(t.querySelector('[data-comment-resolved-line]')!.textContent).toContain('Resolved: Named it in the text')
+      expect(t.textContent).not.toContain('Which river?')
+      expect(t.querySelector('[data-comment-expand]')!.textContent).toBe('Show comment and 1 reply')
+      await act(async () => { t.querySelector<HTMLButtonElement>('[data-comment-expand]')!.click() })
+      const open = document.querySelector('[data-comment-thread]')!
+      expect(open.textContent).toContain('Which river?')
+      expect(open.textContent).toContain('The north one.')
+      expect(open.querySelector('[data-comment-resolved-line]')!.textContent).toContain('Resolved: Named it in the text')
+      // With no note the line is just "Resolved".
+      await act(async () => { document.querySelector<HTMLButtonElement>('[data-comment-id="s2"]')!.click() })
+      expect(document.querySelector('[data-comment-thread] [data-comment-resolved-line]')!.textContent).toBe('✓ Resolved')
+    })
+
+    it('a reader gets no Resolve or Reopen; the owner resolves with a note and reopens', async () => {
+      resolvedThread()
+      await mount({ comments: 'anyone', canShare: true })
+      await act(async () => { document.querySelector<HTMLButtonElement>('[data-comment-id="s3"]')!.click() })
+      expect(document.querySelector('[data-comment-resolve]')).toBeNull()
+      await act(async () => root?.unmount()); root = null
+      resolvedThread()
+      await mount({ comments: 'anyone', canShare: true, signedIn: true, isOwner: true })
+      await act(async () => { document.querySelector<HTMLButtonElement>('[data-comment-id="s3"]')!.click() })
+      await act(async () => { document.querySelector<HTMLButtonElement>('[data-comment-resolve]')!.click() })
+      const box = document.querySelector<HTMLTextAreaElement>('[data-comment-thread] textarea')!
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(box, 'Added the dates')
+        box.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+      await act(async () => { box.form!.requestSubmit() })
+      expect(calls.find((c) => c.url.endsWith('/resolve'))).toMatchObject({ url: '/api/artifacts/abc23456/resolve', method: 'POST', body: { entry: 's3', resolved: true, note: 'Added the dates' } })
+      await act(async () => { document.querySelector<HTMLButtonElement>('[data-comment-id="s1"]')!.click() })
+      await act(async () => { document.querySelector<HTMLButtonElement>('[data-comment-reopen]')!.click() })
+      expect(calls.filter((c) => c.url.endsWith('/resolve')).at(-1)).toMatchObject({ body: { entry: 's1', resolved: false } })
+    })
+
+    it('an edit of my own resolved comment never sends the resolution back', async () => {
+      stubFetch({ shared: [], mine: [{ id: 'm1', value: value(text('floods'), 'Mine', { resolved: { at: '2026-10-12T00:00:00Z', by: 'Olive' } }), at: '2026-09-28T00:00:00Z' }] })
+      await mount({ comments: 'anyone', canShare: true, signedIn: true })
+      await act(async () => { document.querySelector<HTMLButtonElement>('[data-comment-id="m1"]')!.click() })
+      await act(async () => { document.querySelector<HTMLButtonElement>('[data-comment-expand]')!.click() })
+      await act(async () => { document.querySelector<HTMLButtonElement>('[data-comment-edit]')!.click() })
+      const box = document.querySelector<HTMLTextAreaElement>('[data-comment-thread] textarea')!
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(box, 'Mine, edited')
+        box.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+      await act(async () => { box.form!.requestSubmit() })
+      const sent = calls.find((c) => c.method === 'POST' && c.url.endsWith('/state'))!
+      expect(sent.body).toMatchObject({ op: 'replace', entry: 'm1', value: { body: 'Mine, edited' } })
+      expect((sent.body as { value: object }).value).not.toHaveProperty('resolved')
+    })
+  })
+})
