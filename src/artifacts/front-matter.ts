@@ -151,6 +151,8 @@ export function parseArtifactSource(
     if (d.comments_visible !== 'owner' && d.comments_visible !== 'readers') return { ok: false, error: 'comments_visible must be owner or readers' }
     meta.commentsVisible = d.comments_visible
   }
+  // Only the per-reader page resolves private media, so on any other page it would ship broken.
+  if (meta.privateMedia && meta.links !== 'per-reader') return { ok: false, error: 'media: private needs links: per-reader' }
   // People on one broadcast never see each other's comments, so a per-reader page cannot share them.
   if (meta.links === 'per-reader' && meta.commentsVisible === 'readers')
     return { ok: false, error: 'a per-reader page keeps each reader\'s comments to the owner: drop comments_visible: readers' }

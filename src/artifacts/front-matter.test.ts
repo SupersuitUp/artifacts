@@ -177,6 +177,10 @@ describe('links and media', () => {
     const b = parseArtifactSource('---\ntitle: T\nsummary: S\nmedia: secret\n---\nbody')
     expect(!b.ok && b.error).toMatch(/media must be private/)
   })
+  it('media: private without links: per-reader is refused', () => {
+    const r = parseArtifactSource('---\ntitle: T\nsummary: S\nmedia: private\n---\nbody')
+    expect(!r.ok && r.error).toMatch(/media: private needs links: per-reader/)
+  })
   it('per-reader cannot be combined with password or access', () => {
     const r = parseArtifactSource('---\ntitle: T\nsummary: S\nlinks: per-reader\npassword: x\n---\nbody')
     expect(!r.ok && r.error).toMatch(/per-reader links stand alone/)
