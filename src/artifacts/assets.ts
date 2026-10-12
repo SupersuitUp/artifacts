@@ -5,6 +5,7 @@
 import { createHash } from 'node:crypto'
 import type { Bucket } from '@google-cloud/storage'
 import { MAX_AUDIO_BYTES } from './audio.js'
+import { ARTIFACT_ID_RE } from '../routes/ids.js'
 
 export interface ArtifactAssets {
   /** Store `bytes` for artifact `id` under `name`; return the public URL. */
@@ -202,6 +203,8 @@ export function createArtifactAssets(bucket: Bucket, prefix: string): ArtifactAs
       return url
     },
     async deletePage(id) {
+      // An empty or path-shaped id would make the prefix wider than one page.
+      if (!ARTIFACT_ID_RE.test(id)) throw new Error('not an artifact id')
       const [files] = await bucket.getFiles({ prefix: `${clean}/${id}/` })
       for (const f of files) await f.delete()
       return files.length
