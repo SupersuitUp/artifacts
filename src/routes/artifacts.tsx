@@ -45,6 +45,8 @@ import type { ResolveEvent } from '../artifacts/resolve-digest.js'
 import { AckDoor, ConfidentialBanner, NO_PRINT_CSS, NotAllowedDoor, SignInDoor, Watermark, ackText } from '../artifacts/confidential.js'
 import { ARTIFACT_ID_RE } from './ids.js'
 import { createStateRoutes } from './state-routes.js'
+import { createRecipientsRoutes } from './recipients-routes.js'
+import { QuietView } from '../reader/quiet-view.js'
 import { createPersonalRoutes } from './personal-routes.js'
 import { createVoiceRoutes } from './voice-routes.js'
 import type { PersonalStore } from '../artifacts/personal-store.js'
@@ -213,6 +215,10 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     store, state: config.state, readers: config.readers, readerSecret, publishKey: config.publishKey,
     publisherSecret: config.publisherSecret, publisherHost: config.publisherHost, pageUrl, signInOrigin, siteUrl,
     clientIp: config.clientIp, ownerEmail: config.ownerEmail, admins: config.admins, audioUrl, onResolve: config.onResolve,
+  })
+  const recipientsRoutes = createRecipientsRoutes({
+    store, recipients: config.recipients, recipientSecret: config.recipientSecret, publishKey: config.publishKey,
+    state: config.state, assets: config.assets, pageUrl, authed,
   })
   const personalRoutes = createPersonalRoutes({ store, personal: config.personal, readers: config.readers, readerSecret, pageUrl, signInOrigin, siteUrl, audioUrl })
   const voiceRoutes = createVoiceRoutes({
@@ -775,6 +781,8 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
           ground={brand.ground}
           signIn={signInOrigin ? signInUrl(signInOrigin, pageUrl(a.id)) : null}
         />
+        {/* A reader's own link reports that it was looked at; the owner's opens never do. */}
+        {perReader && !perReader.owner ? <QuietView id={a.id} rid={perReader.rid} sig={perReader.sig} token={perReader.token} /> : null}
         {a.narration && words.length > 0 ? (
           <ArtifactReader
             src={a.narration}
@@ -1144,5 +1152,5 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     return NextResponse.json({ deleted: true })
   }
 
-  return { Page, generateMetadata, VersionPage, generateVersionMetadata, VERSIONS, POST, GET, DELETE, PUT_ASSET, UPLOAD, SHARE_IMAGE, ENTER, LEAVE, TRACK, ACK, ACCESS, SETTINGS, READS, sweepReaders, TRANSCRIBE: voiceRoutes.TRANSCRIBE, ...stateRoutes, ...personalRoutes, dynamic: 'force-dynamic' as const, maxDuration: 30 }
+  return { Page, generateMetadata, VersionPage, generateVersionMetadata, VERSIONS, POST, GET, DELETE, PUT_ASSET, UPLOAD, SHARE_IMAGE, ENTER, LEAVE, TRACK, ACK, ACCESS, SETTINGS, READS, sweepReaders, TRANSCRIBE: voiceRoutes.TRANSCRIBE, ...stateRoutes, ...personalRoutes, ...recipientsRoutes, dynamic: 'force-dynamic' as const, maxDuration: 30 }
 }
