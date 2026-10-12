@@ -1001,6 +1001,8 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
   async function PUT_ASSET(request: NextRequest, { params }: { params: Promise<{ id: string; name: string }> }) {
     if (!authed(request)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     if (!config.assets) return NextResponse.json({ error: 'this host does not store assets' }, { status: 501 })
+    const priv = request.nextUrl.searchParams.get('private') === '1'
+    if (priv && !config.assets.putPrivate) return NextResponse.json({ error: 'this host keeps no private media' }, { status: 501 })
     const { id, name } = await params
     if (!ARTIFACT_ID.test(id)) return NextResponse.json({ error: `no artifact with id ${id}` }, { status: 404 })
     if (!(await store.get(id))) return NextResponse.json({ error: `no artifact with id ${id}` }, { status: 404 })
@@ -1010,7 +1012,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     const bytes = Buffer.from(await request.arrayBuffer())
     if (bytes.length === 0) return NextResponse.json({ error: 'empty body' }, { status: 400 })
     if (bytes.length > 16 * 1024 * 1024) return NextResponse.json({ error: 'asset over 16 MiB' }, { status: 413 })
-    const url = await config.assets.put(id, name, bytes, type)
+    const url = priv ? await config.assets.putPrivate!(id, name, bytes, type) : await config.assets.put(id, name, bytes, type)
     return NextResponse.json({ id, name, url }, { status: 201 })
   }
 
@@ -1036,7 +1038,10 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     }
     if (!authed(request)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     const assets = config.assets
-    if (!assets?.signUpload || !assets.finishUpload) return NextResponse.json({ error: 'this host does not take direct uploads' }, { status: 501 })
+    const priv = request.nextUrl.searchParams.get('private') === '1'
+    if (priv) {
+      if (!assets?.signPrivateUpload || !assets.finishPrivateUpload) return NextResponse.json({ error: 'this host keeps no private media' }, { status: 501 })
+    } else if (!assets?.signUpload || !assets.finishUpload) return NextResponse.json({ error: 'this host does not take direct uploads' }, { status: 501 })
     const { id, name } = await params
     if (!ARTIFACT_ID.test(id)) return NextResponse.json({ error: `no artifact with id ${id}` }, { status: 404 })
     if (!(await store.get(id))) return NextResponse.json({ error: `no artifact with id ${id}` }, { status: 404 })
@@ -1046,11 +1051,12 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     const digest = typeof body.digest === 'string' ? body.digest : ''
     if (!ASSET_DIGEST.test(digest)) return NextResponse.json({ error: 'digest must be the first 8 hex of the sha256 of the bytes' }, { status: 400 })
     if (body.done === true) {
-      const url = await assets.finishUpload(id, name, digest)
+      const url = priv ? await assets!.finishPrivateUpload!(id, name, digest) : await assets!.finishUpload!(id, name, digest)
       if (!url) return NextResponse.json({ error: 'nothing was uploaded to that url' }, { status: 409 })
       return NextResponse.json({ id, name, url }, { status: 201 })
     }
-    return NextResponse.json({ id, name, ...(await assets.signUpload(id, name, digest, type)) }, { status: 201 })
+    const signed = priv ? await assets!.signPrivateUpload!(id, name, digest, type) : await assets!.signUpload!(id, name, digest, type)
+    return NextResponse.json({ id, name, ...signed }, { status: 201 })
   }
 
   /** GET /<id>/share.png: the page's title card. 404 when the pack draws none, so a
