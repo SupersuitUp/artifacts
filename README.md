@@ -898,8 +898,8 @@ We finally made it up there.
 
 What the kind decides, so the file does not have to:
 
-- **Per-reader links, always.** `links: per-reader` is implied. `access`, `password` and `comments_visible: readers` are refused in words.
-- **Private media wherever there is media.** `media: private` is implied as soon as the body carries any. A body that points at a local file (one the publisher will upload) must still say `media: private`, because that line is what makes the publisher upload it privately; without it the page is refused before anything is uploaded.
+- **Per-reader links, always.** `links: per-reader` is implied. The kind is sticky like `links:`: a republish that leaves `template:` out stays a broadcast, and one that says `document` is refused (409). `access`, `password` and `comments_visible: readers` are refused in words.
+- **Private media wherever there is media.** `media: private` is implied as soon as the body carries a stored private file or a local one (a remote URL alone stores nothing, so it does not count). A body that points at a local file (one the publisher will upload) must still say `media: private`, because that line is what makes the publisher upload it privately; without it the page is refused before anything is uploaded.
 - **Expires 90 days after it is published** (`BROADCAST_TTL_MS`), set by `POST /api/artifacts` when the page has no date yet, and answered as `expireAt` in its response. A date set on the recipients route stands, a republish never moves it, and Keep (`expires: null`) holds.
 - **Comments off** unless the file turns them on. **No narration player**, ever: a voice note is its own audio (`![Voice note](note.m4a)` draws a player). Write `voice: none` so the publisher does not record one.
 - **Silent view tracking**: the quiet view beacon, as on every per-reader page.
@@ -908,19 +908,29 @@ Routes:
 
 | Route | Who | What |
 |---|---|---|
-| `GET /api/artifacts?kind=broadcast` | publish key, or the owner or an admin signed in | Every broadcast, newest first: id, title, summary, url, dates, `expireAt`, `keep` and `readers` (how many people it went to). `?kind=document` (the default) lists documents, never a broadcast |
+| `GET /api/artifacts?kind=broadcast` | publish key, or the owner or an admin signed in | Every broadcast, newest first: id, title, summary, url, dates, `expireAt`, `keep`, `readers` (people whose link still works) and `revoked`. `?kind=document` (the default) lists documents, never a broadcast |
 | `shutPageResponse(request)` | your proxy | A per-reader page whose link was revoked or whose date passed answers **410 Gone** with the quiet words the page shows. Null for everything else, which the proxy passes on. Reads nothing unless the request carries a reader's link or its cookie |
 
 ```ts
 // proxy.ts
 import { NextResponse, type NextRequest } from 'next/server'
 export async function proxy(request: NextRequest) {
-  return (await routes.shutPageResponse(request)) ?? NextResponse.next()
+  // Only a request carrying a reader's link or its cookie can be shut; skip the rest cheaply.
+  const hasLink = request.nextUrl.searchParams.has('r') || request.cookies.getAll().some((c) => c.name.startsWith('artifact_r_'))
+  if (!hasLink) return NextResponse.next()
+  try {
+    const { routes } = await import('./routes') // your createArtifactRoutes(...)
+    const shut = await routes.shutPageResponse(request)
+    if (shut) return shut
+  } catch {
+    // A store outage never costs a reader the page: the page applies the same gate itself.
+  }
+  return NextResponse.next()
 }
 export const config = { matcher: ['/:id([a-z0-9]{8})'] }
 ```
 
-Any per-reader page served to a known unfurl fetcher (or a request with no user agent) carries its text only: no media, no signed URL, no reader's note, no cookie. `readHeader` on `createArtifactRoutes` reads the agent (default through `next/headers`). `DELETE /api/artifacts/<id>` removes the page's files from both buckets (`deletePage`) before the record, and keeps the record (502) if the files could not go, so it can be run again.
+Any per-reader page served to a known unfurl fetcher (or a request with no user agent) carries its text only: no media, no signed URL, no reader's note, no cookie. `readHeader` on `createArtifactRoutes` reads the agent (default through `next/headers`). `DELETE /api/artifacts/<id>` removes the page's files from both buckets (`deletePage`), then its readers, their notes and views and every comment, before the record, and keeps the record (502) if the files could not go, so it can be run again.
 
 ## Brand packs
 

@@ -14,6 +14,7 @@ import { createArtifactRoutes, BROADCAST_TTL_MS } from './artifacts.js'
 import { testConfig, memoryArtifactStore } from './test-config.js'
 import { parseArtifactSource } from '../artifacts/front-matter.js'
 import { memoryRecipientsStore } from '../artifacts/recipients-store.js'
+import { createMemoryStateStore } from '../artifacts/state-store.js'
 import { ridSig, ridCookieName } from '../artifacts/recipients.js'
 import { GRANT_COOKIE, mintGrant } from '../artifacts/reader.js'
 import { UNAVAILABLE, NO_LINK } from './per-reader.js'
@@ -38,6 +39,13 @@ describe('front matter: template: broadcast', () => {
     expect(r.meta.privateMedia).toBe(true)
     const said = parseArtifactSource(src('links: per-reader\nmedia: private\n', '![A photo](lake.jpg)'))
     expect(said.ok && said.meta.privateMedia).toBe(true)
+  })
+  it('a remote URL alone is not private media: nothing would be stored privately', () => {
+    const r = parseArtifactSource(src('', '![A view](https://cdn.example.com/view.jpg)'))
+    if (!r.ok) throw new Error(r.error)
+    expect(r.meta.privateMedia).toBeUndefined()
+    const mixed = parseArtifactSource(src('', '![A view](https://cdn.example.com/view.jpg)\n\n![Mine](private:mine-1234abcd.jpg)'))
+    expect(mixed.ok && mixed.meta.privateMedia).toBe(true)
   })
   it('refuses a local file without media: private, so the publisher never uploads it in public', () => {
     const r = parseArtifactSource(src('', '![A photo](lake.jpg)'))
@@ -108,6 +116,20 @@ describe('the 90-day default', () => {
     const res = await r.POST(publish(BROADCAST, id))
     expect((await res.json()).expireAt).toBeNull()
     expect(await recipients.get(id)).toMatchObject({ keep: true, expireAt: null })
+  })
+  it('the kind is sticky: a republish that leaves the line out stays a broadcast; saying document is refused', async () => {
+    const store = savingStore()
+    const recipients = memoryRecipientsStore()
+    const r = createArtifactRoutes(testConfig({ store, recipients, recipientSecret: () => S }))
+    const { id } = (await (await r.POST(publish(BROADCAST))).json()) as { id: string }
+    const bare = '---\ntitle: At the lake\nsummary: A short one\n---\nHello again.\n'
+    expect((await r.POST(publish(bare, id))).status).toBe(200)
+    expect(store.pages.get(id)?.template).toBe('broadcast')
+    expect(store.pages.get(id)?.links).toBe('per-reader')
+    const res = await r.POST(publish('---\ntitle: At the lake\nsummary: A short one\ntemplate: document\n---\nNow a doc.\n', id))
+    expect(res.status).toBe(409)
+    expect((await res.json()).error).toContain('broadcast')
+    expect(store.pages.get(id)?.markdown).toContain('Hello again.')
   })
   it('a document gets no date', async () => {
     const recipients = memoryRecipientsStore()
@@ -267,6 +289,21 @@ describe('DELETE removes the page\'s media too', () => {
     expect(order).toEqual(['media', 'record'])
     expect(store.pages.has(ID)).toBe(false)
   })
+  it('leaves nothing of the page: readers, their notes, views and comments go too, even on a kept broadcast', async () => {
+    const store = memoryArtifactStore([card()])
+    const recipients = memoryRecipientsStore()
+    const [sam] = await recipients.add(ID, [{ label: 'Sam', note: 'You picked the spot.' }])
+    await recipients.setExpiry(ID, null) // Keep
+    await recipients.recordView({ artifactId: ID, rid: sam.rid, session: 's1', device: 'd1', at: '2026-10-11T00:00:00.000Z', addSeconds: 2 })
+    const state = createMemoryStateStore()
+    await state.append({ artifactId: ID, slot: 'comments', writer: { key: `r:${sam.rid}`, name: 'Sam', anonymous: true } as never, value: { body: 'So good.' } })
+    const r = createArtifactRoutes(testConfig({ store, recipients, state, recipientSecret: () => S, assets: { put: async () => '', deletePage: async () => 1 } as never }))
+    expect((await r.DELETE(...del(ID))).status).toBe(200)
+    expect(store.pages.has(ID)).toBe(false)
+    expect(await recipients.get(ID)).toBeNull()
+    expect(await recipients.views(ID)).toEqual([])
+    expect(await state.entries(ID)).toEqual([])
+  })
   it('a bad id never reaches the bucket', async () => {
     const deletePage = vi.fn(async () => 0)
     const r = createArtifactRoutes(testConfig({ assets: { put: async () => '', deletePage } as never }))
@@ -292,17 +329,23 @@ describe('the owner\'s lists: broadcasts apart from documents', () => {
   const list = (q: string, headers: Record<string, string> = { authorization: 'Bearer test-key' }) => new NextRequest(`${site}/api/artifacts${q}`, { headers })
   async function routes(over: Record<string, unknown> = {}) {
     const recipients = memoryRecipientsStore()
-    await recipients.add('bcsa2345', [{ label: 'Sam' }, { label: 'Lee' }, { label: 'Robin', owner: true }])
+    const [, lee] = await recipients.add('bcsa2345', [{ label: 'Sam' }, { label: 'Lee' }, { label: 'Kit' }, { label: 'Robin', owner: true }])
+    await recipients.revoke('bcsa2345', [lee.rid])
     await recipients.setExpiry('bcsa2345', '2027-01-01T00:00:00.000Z')
     return createArtifactRoutes(testConfig({ store: memoryArtifactStore(pages), recipients, recipientSecret: () => S, ...over }))
   }
   it('broadcasts list on their own, with their expiry and how many people each went to', async () => {
     const res = await (await routes()).LIST(list('?kind=broadcast'))
     expect(res.status).toBe(200)
-    const body = (await res.json()) as { kind: string; pages: { id: string; expireAt: string; keep: boolean; readers: number; url: string }[] }
+    const body = (await res.json()) as { kind: string; pages: { id: string; expireAt: string; keep: boolean; readers: number; revoked: number; url: string }[] }
     expect(body.kind).toBe('broadcast')
     expect(body.pages.map((p) => p.id)).toEqual(['bcsa2345'])
-    expect(body.pages[0]).toMatchObject({ expireAt: '2027-01-01T00:00:00.000Z', keep: false, readers: 2, url: `${site}/bcsa2345` })
+    expect(body.pages[0]).toMatchObject({ expireAt: '2027-01-01T00:00:00.000Z', keep: false, readers: 2, revoked: 1, url: `${site}/bcsa2345` })
+  })
+  it('a recipients store that fails fails the list, rather than reading as sent to nobody', async () => {
+    const recipients = { ...memoryRecipientsStore(), get: async () => { throw new Error('store down') } }
+    const r = createArtifactRoutes(testConfig({ store: memoryArtifactStore(pages), recipients: recipients as never, recipientSecret: () => S }))
+    await expect(r.LIST(list('?kind=broadcast'))).rejects.toThrow('store down')
   })
   it('documents list without a single broadcast, newest first, as they always were', async () => {
     const body = (await (await (await routes()).LIST(list(''))).json()) as { kind: string; pages: { id: string }[] }

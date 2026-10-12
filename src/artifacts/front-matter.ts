@@ -78,6 +78,8 @@ const MEDIA_IN_BODY = /!\[[^\]]*\]\(\s*<?([^)\s>]+)/g
 /** A reference the publisher uploads before the page is finished: neither a URL, a site path nor
  *  an already-stored private file. */
 const LOCAL_REF = /^(?![a-z][a-z0-9+.-]*:|\/|#)/i
+/** A file already stored in the page's private store. */
+const PRIVATE_REF_IN_BODY = /^private:/
 
 /** A pack name, as a host registers one. */
 export const PACK_NAME = /^[a-z0-9][a-z0-9-]{0,39}$/
@@ -89,6 +91,9 @@ const KNOWN = new Set(['title', 'summary', 'subtitle', 'to', 'template', 'audien
 
 export function parseArtifactSource(
   text: string,
+  /** The kind a file that leaves `template:` out is read as: the stored page's kind on a
+   *  republish, so a broadcast stays one (sticky, like `links:`). Default `document`. */
+  opts: { defaultKind?: ArtifactKind } = {},
 ): { ok: true; meta: ArtifactMeta; body: string } | { ok: false; error: string } {
   const { data, content } = matter(text)
   const d = data as Record<string, unknown>
@@ -99,7 +104,7 @@ export function parseArtifactSource(
     const v = d[k]
     if (typeof v !== 'string' || !v.trim()) return { ok: false, error: `front matter is missing ${k}` }
   }
-  const template = d.template ?? 'document'
+  const template = d.template ?? opts.defaultKind ?? 'document'
   if (!ARTIFACT_KINDS.includes(template as ArtifactKind)) return { ok: false, error: 'template must be document or broadcast' }
   const meta: ArtifactMeta = {
     title: String(d.title).trim(),
@@ -175,11 +180,12 @@ export function parseArtifactSource(
   if (meta.template === 'broadcast') {
     // Per-reader links are what a broadcast is, whatever the file says or leaves out.
     meta.links = 'per-reader'
-    const refs = [...content.matchAll(MEDIA_IN_BODY)].map((m) => m[1])
+    const refs = [...content.matchAll(MEDIA_IN_BODY)].map((m) => m[1]).filter((r) => LOCAL_REF.test(r) || PRIVATE_REF_IN_BODY.test(r))
     // The publisher uploads a local file privately only when the file itself says `media: private`,
     // so a broadcast that would send one up in public is refused before anything is uploaded.
     if (!meta.privateMedia && refs.some((r) => LOCAL_REF.test(r)))
       return { ok: false, error: 'a broadcast keeps its media private: add media: private so the publisher uploads it privately' }
+    // A remote URL alone stores nothing here, so only a stored private file or a local one counts.
     if (refs.length) meta.privateMedia = true
   }
   // Only the per-reader page resolves private media, so on any other page it would ship broken.

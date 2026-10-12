@@ -1107,9 +1107,20 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
   async function POST(request: NextRequest) {
     if (!authed(request)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     const text = await request.text()
-    const parsed = parseArtifactSource(text)
+    let parsed = parseArtifactSource(text)
     if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 })
     const id = request.nextUrl.searchParams.get('id') ?? parsed.meta.id ?? undefined
+    // The kind is sticky, like `links:`: a republish of a broadcast that leaves `template:` out is
+    // still a broadcast, and one that says `document` is refused rather than quietly changed.
+    if (id && parsed.meta.template === 'document') {
+      const stored = await store.get(id)
+      if (stored && kindOf(stored) === 'broadcast') {
+        const again = parseArtifactSource(text, { defaultKind: 'broadcast' })
+        if (!again.ok) return NextResponse.json({ error: again.error }, { status: 400 })
+        if (again.meta.template !== 'broadcast') return NextResponse.json({ error: 'this page is a broadcast and stays one: drop template: document, or publish the document as a new page' }, { status: 409 })
+        parsed = again
+      }
+    }
     // Fail closed: private media needs a private store. Without one the media would have to sit in
     // the public bucket, which may carry a bucket-wide public read grant, so nothing is saved.
     // `media:` is sticky, so a stored page that already keeps private media counts too.
@@ -1278,6 +1289,12 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
         return NextResponse.json({ error: `the page's files could not be removed, so the page was kept; delete it again: ${e instanceof Error ? e.message : String(e)}` }, { status: 502 })
       }
     }
+    // Nothing of the page outlives it: readers, their notes and views, and every comment, kept or not.
+    try {
+      await recipientsRoutes.forgetReaders(id)
+    } catch (e) {
+      return NextResponse.json({ error: `the page's readers could not be forgotten, so the page was kept; delete it again: ${e instanceof Error ? e.message : String(e)}` }, { status: 502 })
+    }
     const ok = await store.delete(id)
     if (!ok) return NextResponse.json({ error: `no artifact with id ${id}` }, { status: 404 })
     revalidatePath(pagePath(id))
@@ -1287,7 +1304,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
   /** GET /api/artifacts?kind=document|broadcast: the owner's list of one kind, newest first, with
    *  no bodies. Documents and broadcasts are separate lists; `kind` defaults to document, so a
    *  documents list never carries a broadcast. A broadcast's line adds its expiry, whether it is
-   *  kept, and how many people it went to. The publish key, or the owner or an admin signed in. */
+   *  kept, how many people still hold a live link (`readers`) and how many were revoked. The publish key, or the owner or an admin signed in. */
   async function LIST(request: NextRequest) {
     const no = (error: string, status: number) => NextResponse.json({ error }, { status, headers: { 'cache-control': 'no-store' } })
     const me = verifyGrant(readerSecret(), request.cookies.get(GRANT_COOKIE)?.value)
@@ -1299,9 +1316,10 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     const pages = await Promise.all(items.map(async (p) => {
       const line = { id: p.id, title: p.title, summary: p.summary, url: pageUrl(p.id), createdAt: p.createdAt, updatedAt: p.updatedAt }
       if (kind !== 'broadcast') return { ...line, views: p.views }
-      const rec = config.recipients ? await config.recipients.get(p.id).catch(() => null) : null
-      const readers = rec ? Object.values(rec.recipients).filter((r) => !r.owner).length : 0
-      return { ...line, expireAt: rec?.expireAt ?? null, keep: rec?.keep ?? false, readers }
+      // A store that fails fails the list: a blank line would read as "kept, sent to nobody".
+      const rec = config.recipients ? await config.recipients.get(p.id) : null
+      const people = rec ? Object.values(rec.recipients).filter((r) => !r.owner) : []
+      return { ...line, expireAt: rec?.expireAt ?? null, keep: rec?.keep ?? false, readers: people.filter((r) => !r.revokedAt).length, revoked: people.filter((r) => r.revokedAt).length }
     }))
     return NextResponse.json({ kind, pages }, { headers: { 'cache-control': 'no-store' } })
   }
