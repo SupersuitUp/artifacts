@@ -3,6 +3,29 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.35.0
+
+**Per-reader links, private media, video with sound, quiet views, and expiry.** A page can now go
+to several people at once with one link each, revocable one at a time, with a tailored note per
+reader.
+
+- `links: per-reader` in front matter: the page opens only through a link made for one reader
+  (`?r=<rid>.<sig>`, signed with the host's recipient secret). Each link can be revoked alone.
+  `createRecipientsStore(db, base)` and `memoryRecipientsStore()` hold the readers; the routes are
+  `RECIPIENTS` (GET and POST: add, revoke, set a note), `VIEWS` (GET) and `SEEN` (POST).
+- `media: private`: body media is stored under the page's private prefix and served only by signed
+  URL to a valid reader. The cover stays public so the share card works.
+- Video with sound: `![sound: caption](clip.mp4)` renders a clip with controls. `.m4a` voice notes
+  are supported.
+- A quiet view beacon. DETECTOR: an unfurl fetch or a background tab used to count as an open.
+  REMEDY: a view is the page visible for two seconds with a single-use render token; known unfurl
+  agents and the owner are dropped server side. TESTS: `src/routes/seen.test.tsx`,
+  `src/reader/quiet-view.test.tsx`.
+- `sweepExpired()` for dated pages: deletes the page, its media, readers, views and comments, and
+  returns `{ pages, files, skipped, failed }`. Call it daily from a cron route.
+- Config on `createArtifactRoutes`: `recipients` and `recipientSecret` (a function; at least 32
+  characters, shorter is treated as unset).
+
 ## 0.34.0
 
 **Commenters hear when their comments are resolved, in one email per page per burst** (Gary,
