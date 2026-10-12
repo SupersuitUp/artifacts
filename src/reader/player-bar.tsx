@@ -3,11 +3,15 @@
 // The bar at the bottom of a page that can be listened to, shared by the recorded-narration
 // reader and the browser read-aloud, so a page looks the same whichever one is speaking. It is
 // pure chrome: each reader owns its engine and hands the bar what to show and what to call.
+//
+// No narrator line (0.33.1, Gary: "read by freedom should be removed"): the bar is the play
+// button, the seek line, the progress and the speed. The speed button has a FIXED width wide enough
+// for its longest label ("1.25x"), so stepping 1x -> 1.25x -> 2x never resizes it and never shifts
+// the seek line beside it (Gary: "the bottom bar speed dial shouldn't cause reflow when clicked").
 
 export function PlayerBar({
   playing,
   onToggle,
-  label,
   accent,
   ground,
   value,
@@ -20,8 +24,8 @@ export function PlayerBar({
 }: {
   playing: boolean
   onToggle: () => void
-  /** The line under the play button. */
-  label: string
+  /** Ignored since 0.33.1: the bar names no narrator. Kept so an older caller still compiles. */
+  label?: string
   accent: string
   ground: string
   value: number
@@ -56,9 +60,6 @@ export function PlayerBar({
             )}
           </button>
           <div className="min-w-0 flex-1">
-            <div className="text-[11px] uppercase tracking-[0.2em]" style={{ color: accent }}>
-              {label}
-            </div>
             <input
               type="range"
               min={0}
@@ -67,7 +68,7 @@ export function PlayerBar({
               value={Math.min(value, max || 0)}
               onChange={(e) => onSeek(Number(e.target.value))}
               aria-label="Seek"
-              className="mt-1 w-full"
+              className="block w-full"
               style={{ accentColor: accent }}
             />
           </div>
@@ -77,8 +78,9 @@ export function PlayerBar({
           <button
             type="button"
             onClick={onRate}
-            className="shrink-0 rounded border border-[color:var(--a-line-strong)] px-2 py-1 text-xs text-[color:var(--a-body)]"
-            aria-label="Playback speed"
+            data-artifact-rate
+            className="w-14 shrink-0 whitespace-nowrap rounded border border-[color:var(--a-line-strong)] py-1 text-center text-xs tabular-nums text-[color:var(--a-body)]"
+            aria-label={`Playback speed, ${rate}x`}
           >
             {rate}x
           </button>
@@ -89,7 +91,10 @@ export function PlayerBar({
   )
 }
 
-/** The speeds the speed button steps through, in order, wrapping back to 1. */
+/** The speeds the speed button steps through, in order, wrapping back to the first. */
+export const RATES = [1, 1.25, 1.5, 2] as const
+
 export function nextRate(rate: number): number {
-  return rate >= 1.5 ? 1 : rate + 0.25
+  const i = RATES.findIndex((r) => r > rate + 1e-9)
+  return i === -1 ? RATES[0] : RATES[i]
 }

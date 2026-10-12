@@ -791,7 +791,7 @@ refuses the query and the error names a link that creates the index. A host with
 ## Brand packs
 
 A `BrandPack` is data plus at most two components: colours, type, the kicker line above a title,
-the narrator label, an optional full-page `Wrapper` and `Mark`, and an optional `share` block
+an optional full-page `Wrapper` and `Mark`, and an optional `share` block
 (a font loader and a backdrop) that draws the unfurl card. `freedomDefault` is the default look.
 Keep a pack carrying your own trademark in your own app, not in a pull request here.
 

@@ -729,7 +729,6 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
             src={a.narration}
             words={words}
             rootId="artifact-narration-root"
-            label={brand.narratorLabel(a.voice)}
             accent={brand.accent}
             ground={brand.ground}
           />

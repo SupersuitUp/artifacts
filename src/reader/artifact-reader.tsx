@@ -154,19 +154,17 @@ export function ArtifactReader({
   src,
   words,
   rootId,
-  label,
   accent,
   ground,
 }: {
   src: string
   words: WordTiming[]
   rootId: string
-  /** The line under the play button; the brand pack decides it from the voice. */
-  label: string
+  /** Ignored since 0.33.1: the player bar names no narrator. Kept so an older caller compiles. */
+  label?: string
   accent: string
   ground: string
 }) {
-  const narrator = label
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const mapRef = useRef<(HTMLSpanElement | null)[]>([])
   const litRef = useRef<HTMLSpanElement | null>(null)
@@ -342,7 +340,6 @@ export function ArtifactReader({
       <PlayerBar
         playing={playing}
         onToggle={toggle}
-        label={narrator}
         accent={accent}
         ground={ground}
         value={t}

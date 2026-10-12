@@ -3,6 +3,34 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.33.1
+
+**The player bar: the speed button no longer reflows the bar, 2x is a speed, and the narrator
+line is gone** (Gary, 2026-10-12: "The bottom bar speed dial shouldn't cause reflow when clicked.
+2x should be an option. And read by freedom should be removed."). Ships after 0.33.0, which was
+already tagged when these were asked for.
+
+- **No reflow.** The speed button sized itself to its label, so "1x" (30px) to "1.25x" (48px) made
+  it grow and the seek line beside it shrink by 18px on every tap. It is now a fixed 56px
+  (`w-14`), centred, never wrapping, with tabular figures, and a tap inserts nothing into the bar.
+  Measured in Chromium at 390 and 1280 wide with the bar rendered at every speed: 0.32.0's button
+  was 29.86, 47.56, 40.17 and 31.55px wide and the seek line moved with it; 0.33.1's bar, button
+  and seek line have identical boxes at every speed.
+- **2x.** The button steps 1x, 1.25x, 1.5x, 2x and back to 1x (`RATES`, exported beside
+  `nextRate`).
+- **No "Read aloud by Freedom".** The bar shows no narrator line. `PlayerBar`'s and
+  `ArtifactReader`'s `label` and `BrandPack.narratorLabel` are optional and ignored, so a host or
+  pack that still sets them compiles and shows nothing; `freedomDefault` no longer sets one. The
+  narration itself is unchanged.
+- DETECTOR: on a narrated page, a line above the seek bar reading "Read aloud by ...", or the
+  speed button changing width as you tap it, or no 2x: 0.33.0 or earlier.
+- REMEDY: update the dependency. A host may delete its own `narratorLabel` from its packs (it is
+  ignored either way). Nothing else.
+- Tests: `reader/player-bar.test.tsx` (no narrator text even when a label is passed; the 1, 1.25,
+  1.5, 2 cycle; GUARD: one class list and one node count across every speed, with `w-14`,
+  `whitespace-nowrap`, `tabular-nums` and no horizontal padding). jsdom has no layout, so the
+  measured proof is the Chromium check above, run against the built `lib` with the host's Tailwind.
+
 ## 0.33.0
 
 **A comment thread can be resolved** (Gary, 2026-10-12: "Are you going to resolve the comments at

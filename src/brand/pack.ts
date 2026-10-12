@@ -31,8 +31,9 @@ export type BrandPack = {
   type: { display: string; body: string }
   /** The small uppercase line above a title, e.g. "From Sam Rivera". */
   kicker: string
-  /** The label under the play button, by narrator voice id. */
-  narratorLabel: (voice?: string) => string
+  /** Unused since 0.33.1: the player bar names no narrator (it read "Read aloud by Freedom").
+   *  Optional so a pack that still sets it compiles; nothing reads it. */
+  narratorLabel?: (voice?: string) => string
   /** Optional full-page backdrop. Receives the page as children. */
   Wrapper?: ComponentType<{ children: ReactNode }>
   /** Optional mark rendered once above the kicker. */
@@ -124,7 +125,6 @@ export const freedomDefault: BrandPack = {
     body: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif',
   },
   kicker: 'A page from Freedom',
-  narratorLabel: () => 'Read aloud by Freedom',
   // Pages unfurl as their title on the ground colour. A pack with a backdrop of its own
   // overrides this whole field.
   share: { font: newsreader },
