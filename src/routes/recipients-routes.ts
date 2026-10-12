@@ -112,8 +112,10 @@ export function createRecipientsRoutes(given: RecipientsRoutesCtx) {
     const { id } = await params
     if (!ctx.authed(req)) return unauth()
     if (!ctx.recipients) return json({ error: 'this host keeps no per-reader links' }, 501)
-    const rec = await ctx.recipients.get(id)
-    if (!rec) return json({ error: `no readers for ${id}` }, 404)
+    const a = ARTIFACT_ID_RE.test(id) ? await ctx.store.get(id) : null
+    if (!a) return json({ error: `no artifact with id ${id}` }, 404)
+    // A page nobody has been added to yet has no readers, which is an answer and not a missing page.
+    const rec = (await ctx.recipients.get(id)) ?? { recipients: {}, expireAt: null, keep: false }
     const entries = ctx.state ? await ctx.state.entries(id) : []
     const comments = entries.filter((e) => e.slot === COMMENTS_SLOT && e.readerKey.startsWith('r:')).map((e) => ({ readerKey: e.readerKey, at: e.at, text: String((e.value as { body?: unknown } | null)?.body ?? '') }))
     return json({ id, expireAt: rec.expireAt, keep: rec.keep, recipients: summarizeViews(rec, await ctx.recipients.views(id), comments) })

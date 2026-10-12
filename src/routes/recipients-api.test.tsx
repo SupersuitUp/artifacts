@@ -46,6 +46,16 @@ describe('recipients API', () => {
     const kept = await (await call('POST', 'RECIPIENTS', { expires: null })).json()
     expect(kept).toMatchObject({ expireAt: null, keep: true })
   })
+  it('views: a page with no readers yet answers 200 with none; a missing page or a bad id answers 404', async () => {
+    const { call } = setup()
+    const res = await call('GET', 'VIEWS')
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ id: 'abcd2345', recipients: [] })
+    const route = createRecipientsRoutes({ store: memoryArtifactStore([]), recipients: memoryRecipientsStore(), recipientSecret: () => S, publishKey: () => 'k', pageUrl: (id) => id, authed: () => true })
+    const get = (id: string) => route.VIEWS(new NextRequest('https://a.example/x'), { params: Promise.resolve({ id }) })
+    expect((await get('abcd2345')).status).toBe(404)
+    expect((await get('../x')).status).toBe(404)
+  })
   it('refuses readers on a page that is not per-reader', async () => {
     const { call } = setup({ id: 'abcd2345' })
     expect((await call('POST', 'RECIPIENTS', { add: [{ label: 'A' }] })).status).toBe(409)
