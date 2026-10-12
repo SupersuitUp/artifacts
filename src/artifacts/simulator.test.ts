@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseSimulatorFence, simulatorSrc, parseEmbedFence, embedSrc } from './simulator.js'
+import { parseSimulatorFence, simulatorSrc, parseEmbedFence, embedSrc, fitFrom, FIT_MIN, FIT_MAX } from './simulator.js'
 
 describe('parseSimulatorFence', () => {
   it('reads a scenario, a caption and an optional height', () => {
@@ -21,7 +21,7 @@ describe('parseSimulatorFence', () => {
 
 describe('simulatorSrc', () => {
   it('points the host\'s embed page at the scenario, with the timeline off', () => {
-    expect(simulatorSrc('https://example.com/simulator/embed', 'diane-meeting-prep')).toBe('https://example.com/simulator/embed?scenario=diane-meeting-prep&timeline=off')
+    expect(simulatorSrc('https://example.com/simulator/embed', 'diane-meeting-prep')).toBe('https://example.com/simulator/embed?scenario=diane-meeting-prep&timeline=off&fit=content')
   })
   it('refuses an embed address that is not https', () => {
     expect(simulatorSrc('http://example.com/embed', 'a')).toBeNull()
@@ -43,5 +43,25 @@ describe('the messages block', () => {
     expect(embedSrc('messages', 'https://example.com/messages/embed', 'fritz')).toBe('https://example.com/messages/embed?chat=fritz')
     expect(embedSrc('messages', 'https://example.com/messages/embed', null)).toBe('https://example.com/messages/embed')
     expect(embedSrc('messages', 'http://example.com/messages/embed', 'a')).toBeNull()
+  })
+})
+
+describe('a frame that fits its player', () => {
+  it('asks the session demo to fit, and leaves the Messages phone as it was', () => {
+    expect(embedSrc('simulator', 'https://example.com/simulator/embed', 'a-b')).toContain('fit=content')
+    expect(embedSrc('messages', 'https://example.com/messages/embed', 'fritz')).toBe('https://example.com/messages/embed?chat=fritz')
+  })
+  it('takes a height only from its own embed page, as a sane number of pixels', () => {
+    const from = 'https://example.com'
+    expect(fitFrom({ type: 'embed:fit', height: 512.4 }, from, 'https://example.com/simulator/embed?scenario=a')).toBe(513)
+    expect(fitFrom({ type: 'embed:fit', height: 512 }, 'https://evil.example', 'https://example.com/simulator/embed')).toBeNull()
+    expect(fitFrom({ type: 'session-player:height', height: 512 }, from, 'https://example.com/x')).toBeNull()
+    expect(fitFrom({ type: 'embed:fit', height: '512' }, from, 'https://example.com/x')).toBeNull()
+    expect(fitFrom({ type: 'embed:fit', height: NaN }, from, 'https://example.com/x')).toBeNull()
+    expect(fitFrom('embed:fit', from, 'https://example.com/x')).toBeNull()
+    expect(fitFrom(null, from, 'https://example.com/x')).toBeNull()
+    expect(fitFrom({ type: 'embed:fit', height: 20 }, from, 'https://example.com/x')).toBe(FIT_MIN)
+    expect(fitFrom({ type: 'embed:fit', height: 90000 }, from, 'https://example.com/x')).toBe(FIT_MAX)
+    expect(fitFrom({ type: 'embed:fit', height: 500 }, from, 'not a url')).toBeNull()
   })
 })
