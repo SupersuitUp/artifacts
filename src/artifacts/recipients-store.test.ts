@@ -13,7 +13,7 @@ function deepMerge(a: Record<string, unknown>, b: Record<string, unknown>): Reco
 function fakeDb(onRead?: (path: string) => Promise<void> | void) {
   const data = new Map<string, Record<string, unknown>>()
   const doc = (path: string) => ({
-    get: async () => { const snap = { exists: data.has(path), data: () => structuredClone(data.get(path)) }; await onRead?.(path); return snap },
+    get: async () => { const copy = structuredClone(data.get(path)); const snap = { exists: data.has(path), data: () => copy }; await onRead?.(path); return snap },
     set: async (v: Record<string, unknown>, o?: { merge?: boolean }) => { data.set(path, o?.merge ? deepMerge(data.get(path) ?? {}, v) : v) },
     create: async (v: Record<string, unknown>) => { if (data.has(path)) throw Object.assign(new Error('exists'), { code: 6 }); data.set(path, v) },
     delete: async () => { data.delete(path) },
