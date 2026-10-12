@@ -123,7 +123,8 @@ export function createStateRoutes(ctx: StateRoutesContext) {
     // A per-reader page is answered through the link it was sent with: the rid cookie names the
     // reader, and what they write is theirs under that key. A revoked or expired rid is shut.
     let recipient: { rid: string; label: string } | null = null
-    if (a.links === 'per-reader') {
+    // The owner and the page's admins open it without a link: their comment layer is signed-in, never a reader's.
+    if (a.links === 'per-reader' && !isOwner(reader)) {
       const g = await perReaderGate({ id, param: undefined, cookie: req.cookies.get(ridCookieName(id))?.value, secret: usableSecret(ctx.recipientSecret?.()), recipients: ctx.recipients })
       if (g.state === 'shut') return { error: json({ error: 'this page is locked' }, 403) }
       recipient = { rid: g.rid, label: g.label }
