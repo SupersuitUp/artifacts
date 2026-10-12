@@ -18,10 +18,13 @@ export type RecipientsRoutesCtx = {
   assets?: ArtifactAssets
   pageUrl: (id: string) => string
   authed: (r: Request) => boolean
+  /** Where the sweep reports a page it skipped or could not finish. Defaults to console.warn. */
+  log?: (message: string) => void
 }
 // Session and device ids become part of a stored view's id, so only a short plain shape is let in.
 const SESSION = /^[a-z0-9]{1,32}$/
 const MEDIA = /^[A-Za-z0-9][A-Za-z0-9._-]{0,140}$/
+const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/
 const none = () => new NextResponse(null, { status: 204, headers: { 'cache-control': 'no-store' } })
 const json = (b: unknown, status = 200) => NextResponse.json(b, { status, headers: { 'cache-control': 'no-store' } })
 
@@ -113,5 +116,35 @@ export function createRecipientsRoutes(ctx: RecipientsRoutesCtx) {
     const comments = entries.filter((e) => e.slot === COMMENTS_SLOT && e.readerKey.startsWith('r:')).map((e) => ({ readerKey: e.readerKey, at: e.at, text: String((e.value as { body?: unknown } | null)?.body ?? '') }))
     return json({ id, expireAt: rec.expireAt, keep: rec.keep, recipients: summarizeViews(rec, await ctx.recipients.views(id), comments) })
   }
-  return { SEEN, RECIPIENTS, VIEWS }
+  /** The daily sweep: deletes only pages whose recipients record carries an expireAt that is a
+   *  well-formed time in the past and is not kept. An unparseable expireAt is never deleted (the
+   *  gate already shuts the page); it is reported in `skipped`. A page that fails midway stays
+   *  listed (the expiry record is forgotten last) and is retried by the next sweep. */
+  async function sweepExpired(now: Date = new Date()): Promise<{ pages: number; files: number; skipped: string[]; failed: string[] }> {
+    const out = { pages: 0, files: 0, skipped: [] as string[], failed: [] as string[] }
+    if (!ctx.recipients) return out
+    const log = ctx.log ?? ((m: string) => console.warn(m))
+    for (const id of await ctx.recipients.expiring(now.toISOString())) {
+      try {
+        const rec = await ctx.recipients.get(id)
+        const at = rec && !rec.keep && typeof rec.expireAt === 'string' && ISO.test(rec.expireAt) ? Date.parse(rec.expireAt) : NaN
+        if (!rec || rec.keep || !(at <= now.getTime())) {
+          if (rec && !rec.keep) { out.skipped.push(id); log(`sweepExpired: not deleting ${id}, expireAt is not a past ISO time`) }
+          continue
+        }
+        const files = (await ctx.assets?.deletePage?.(id)) ?? 0
+        // Reader text expires with the page: every comment and answer, whoever wrote it.
+        if (ctx.state) for (const key of new Set((await ctx.state.entries(id)).map((e) => e.readerKey))) await ctx.state.removeReader(id, key)
+        await ctx.store.delete(id)
+        await ctx.recipients.forget(id)
+        out.pages++
+        out.files += files
+      } catch (e) {
+        out.failed.push(id)
+        log(`sweepExpired: ${id} not finished, will retry: ${e instanceof Error ? e.message : String(e)}`)
+      }
+    }
+    return out
+  }
+  return { SEEN, RECIPIENTS, VIEWS, sweepExpired }
 }
