@@ -2,11 +2,19 @@ import { describe, it, expect } from 'vitest'
 import { memoryRecipientsStore, summarizeViews, createRecipientsStore, type RecipientsStore } from './recipients-store.js'
 
 /** The smallest Firestore the store touches: collection().doc().get/set/delete, where().get. */
-function fakeDb() {
+const isObj = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null && !Array.isArray(x) && !(x instanceof Date)
+/** Firestore's merge: nested maps merge key by key, everything else is replaced. */
+function deepMerge(a: Record<string, unknown>, b: Record<string, unknown>): Record<string, unknown> {
+  const out = { ...a }
+  for (const [k, v] of Object.entries(b)) out[k] = isObj(v) && isObj(out[k]) ? deepMerge(out[k] as Record<string, unknown>, v) : v
+  return out
+}
+
+function fakeDb(onRead?: (path: string) => Promise<void> | void) {
   const data = new Map<string, Record<string, unknown>>()
   const doc = (path: string) => ({
-    get: async () => ({ exists: data.has(path), data: () => data.get(path) }),
-    set: async (v: Record<string, unknown>, o?: { merge?: boolean }) => { data.set(path, o?.merge ? { ...(data.get(path) ?? {}), ...v } : v) },
+    get: async () => { const snap = { exists: data.has(path), data: () => structuredClone(data.get(path)) }; await onRead?.(path); return snap },
+    set: async (v: Record<string, unknown>, o?: { merge?: boolean }) => { data.set(path, o?.merge ? deepMerge(data.get(path) ?? {}, v) : v) },
     create: async (v: Record<string, unknown>) => { if (data.has(path)) throw Object.assign(new Error('exists'), { code: 6 }); data.set(path, v) },
     delete: async () => { data.delete(path) },
   })
@@ -71,6 +79,33 @@ for (const [name, make] of [['memory', () => memoryRecipientsStore()], ['firesto
     })
   })
 }
+
+describe('recipients store (firestore) under a concurrent Keep', () => {
+  it('add and revoke leave a Keep that lands between their read and write alone', async () => {
+    let s: RecipientsStore | undefined
+    let once: (() => Promise<void>) | undefined
+    const { db } = fakeDb(async (path) => { if (path.startsWith('tenants/t/artifactRecipients/') && once) { const f = once; once = undefined; await f() } })
+    s = createRecipientsStore(db as never, 'tenants/t/artifact')
+    const [a] = await s.add('abcd2345', [{ label: 'A' }])
+    await s.setExpiry('abcd2345', '2026-10-12T00:00:00.000Z')
+    once = () => s!.setExpiry('abcd2345', null)
+    await s.add('abcd2345', [{ label: 'B' }])
+    expect((await s.get('abcd2345'))).toMatchObject({ keep: true, expireAt: null })
+    once = () => s!.setExpiry('abcd2345', null)
+    await s.setExpiry('abcd2345', '2026-10-12T00:00:00.000Z')
+    once = () => s!.setExpiry('abcd2345', null)
+    await s.revoke('abcd2345', [a.rid])
+    const r = (await s.get('abcd2345'))!
+    expect(r).toMatchObject({ keep: true, expireAt: null })
+    expect(r.recipients[a.rid].revokedAt).toBeTruthy()
+    expect(Object.keys(r.recipients)).toHaveLength(2)
+  })
+  it('a render token is stored with a real Date so a TTL policy can read it', async () => {
+    const f = fakeDb()
+    await createRecipientsStore(f.db as never, 'tenants/t/artifact').useToken('k1', Date.now() + 1000)
+    expect(f.data.get('tenants/t/artifactRecipientTokens/k1')?.expireAt).toBeInstanceOf(Date)
+  })
+})
 
 describe('summarizeViews', () => {
   const rec = { expireAt: null, keep: false, recipients: {

@@ -104,22 +104,28 @@ export function createRecipientsStore(db: Firestore, base: string): RecipientsSt
     async add(id, input) {
       const rec = (await read(id)) ?? { recipients: {}, expireAt: null, keep: false }
       const out = makeRecipients(input, new Set(Object.keys(rec.recipients)))
-      for (const r of out) rec.recipients[r.rid] = r
-      await recsCol().doc(id).set(rec)
+      // Write only the readers: a merge deep-merges the map and leaves expireAt/keep alone, so a
+      // Keep that landed after the read above is never put back to keep:false.
+      const patch: Record<string, unknown> = { recipients: Object.fromEntries(out.map((r) => [r.rid, r])) }
+      await recsCol().doc(id).set(patch, { merge: true })
       return out
     },
     async revoke(id, rids) {
       const rec = await read(id)
       if (!rec) return []
       const hit = revokeIn(rec, rids)
-      await recsCol().doc(id).set(rec)
+      if (!hit.length && rids !== '*') return hit
+      const patch: Record<string, unknown> = { recipients: Object.fromEntries(hit.map((rid) => [rid, { revokedAt: rec.recipients[rid].revokedAt }])) }
+      if (rec.revokedAll) patch.revokedAll = rec.revokedAll
+      await recsCol().doc(id).set(patch, { merge: true })
       return hit
     },
     async setExpiry(id, expireAt) {
       await recsCol().doc(id).set({ expireAt, keep: expireAt === null }, { merge: true })
     },
     async useToken(key, expiresAt) {
-      try { await tokensCol().doc(key).create({ expireAt: new Date(expiresAt).toISOString() }); return true }
+      // A Date is a Firestore Timestamp, which is what a TTL policy on `expireAt` reads.
+      try { await tokensCol().doc(key).create({ expireAt: new Date(expiresAt) }); return true }
       catch (e) { if ((e as { code?: number }).code === 6) return false; throw e }
     },
     async recordView(v) {
