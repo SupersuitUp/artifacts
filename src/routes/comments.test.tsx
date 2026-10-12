@@ -11,6 +11,8 @@ import type { ArtifactStore, ArtifactRecord } from '../artifacts/store.js'
 import type { ReadersStore } from '../artifacts/readers-store.js'
 import { createMemoryStateStore } from '../artifacts/state-store.js'
 import { GRANT_COOKIE, mintGrant, type Reader } from '../artifacts/reader.js'
+import { memoryRecipientsStore } from '../artifacts/recipients-store.js'
+import { ridSig } from '../artifacts/recipients.js'
 import { mergeCommentsState, type CommentsMode, type CommentsVisible } from '../artifacts/comments.js'
 
 const SECRET = 'sekrit'
@@ -33,6 +35,7 @@ const RECORDS: Record<string, ArtifactRecord> = {
   // Gated: `anyone` is forced to signed-in.
   cmg23456: page('cmg23456', 'anyone', 'readers', { access: 'invite' }),
   // Comments from anyone beside votes from signed-in readers only.
+  prr23456: page('prr23456', 'anyone', 'owner', { links: 'per-reader' }),
   cmv23456: page('cmv23456', 'anyone', 'owner', { state: { writers: 'signed-in', visibility: 'private', slots: { vote: { shape: 'one' } } } }),
 }
 
@@ -52,12 +55,12 @@ function fakeReaders(): ReadersStore {
     acknowledged: vi.fn(async () => true), acknowledge: vi.fn(async () => {}), acks: vi.fn(async () => []),
   }
 }
-function build(as: Reader | null = null, keepsAnswers = true) {
+function build(as: Reader | null = null, keepsAnswers = true, extra: Partial<Parameters<typeof createArtifactRoutes>[0]> = {}) {
   const state = createMemoryStateStore()
   const routes = createArtifactRoutes({
     readCookie: async (name) => (name === GRANT_COOKIE && as ? mintGrant(SECRET, as) : undefined),
     store: fakeStore(), state: keepsAnswers ? state : undefined, readers: fakeReaders(), brand: freedomDefault, siteUrl: 'https://artifacts.example.com', publishKey: () => 'k',
-    readerSecret: () => SECRET, signInOrigin: 'https://accounts.example.com', ownerEmail: 'Owner@Example.com', admins: ['Admin@Example.com'],
+    readerSecret: () => SECRET, signInOrigin: 'https://accounts.example.com', ownerEmail: 'Owner@Example.com', admins: ['Admin@Example.com'], ...extra,
   })
   return { routes, state }
 }
@@ -267,3 +270,65 @@ describe('the page tells the comment layer what this reader may do', () => {
   })
 })
 
+describe('comments through a per-reader link', () => {
+  const RS = 'r'.repeat(40)
+  async function setup() {
+    const recipients = memoryRecipientsStore()
+    const [ada] = await recipients.add('prr23456', [{ label: 'Reader A' }])
+    const [bea] = await recipients.add('prr23456', [{ label: 'Reader B' }])
+    const { routes, state } = build(null, true, { recipients, recipientSecret: () => RS })
+    const cookie = (r: { rid: string }) => `artifact_r_prr23456=${r.rid}.${ridSig(RS, 'prr23456', r.rid)}`
+    return { recipients, routes, state, ada, bea, cookie }
+  }
+  it('a comment through a valid link is written as that reader, by label', async () => {
+    const { recipients, routes, state, ada, cookie } = await setup()
+    expect((await routes.STATE_POST(post('prr23456', comment('This moved me.'), cookie(ada)), params('prr23456'))).status).toBe(200)
+    const [e] = (await state.entries('prr23456')).filter((x) => x.slot === 'comments')
+    expect(e.readerKey).toBe(`r:${ada.rid}`)
+    expect(e.writer.name).toBe('Reader A')
+    await recipients.revoke('prr23456', [ada.rid])
+    expect((await routes.STATE_POST(post('prr23456', comment('Again.'), cookie(ada)), params('prr23456'))).status).toBe(403)
+  })
+  it('after a reload the reader still sees their own comment as theirs, and can remove it', async () => {
+    const { routes, ada, bea, cookie } = await setup()
+    await routes.STATE_POST(post('prr23456', comment('Mine.'), cookie(ada)), params('prr23456'))
+    const mine = await (await routes.STATE_GET(get('prr23456', cookie(ada)), params('prr23456'))).json()
+    expect(mine.canWrite).toBe(true)
+    expect(JSON.stringify(mine.slots.comments.mine)).toContain('Mine.')
+    const other = await (await routes.STATE_GET(get('prr23456', cookie(bea)), params('prr23456'))).json()
+    expect(JSON.stringify(other.slots.comments.mine ?? [])).not.toContain('Mine.')
+    const id = mine.slots.comments.mine[0].id
+    expect((await routes.STATE_POST(post('prr23456', { slot: 'comments', op: 'remove', entry: id }, cookie(bea)), params('prr23456'))).status).toBe(404)
+    expect((await routes.STATE_POST(post('prr23456', { slot: 'comments', op: 'remove', entry: id }, cookie(ada)), params('prr23456'))).status).toBe(200)
+  })
+  it('the signed-in owner and an admin reach the page\'s answers with no link, and their comments are theirs', async () => {
+    const { routes, state } = await setup()
+    for (const who of [owner, admin]) {
+      expect((await routes.STATE_GET(get('prr23456', grant(who)), params('prr23456'))).status).toBe(200)
+      expect((await routes.STATE_POST(post('prr23456', comment(`From ${who.name}.`), grant(who)), params('prr23456'))).status).toBe(200)
+    }
+    const keys = (await state.entries('prr23456')).filter((x) => x.slot === 'comments').map((x) => x.readerKey)
+    expect(keys).toHaveLength(2)
+    expect(keys.some((k) => k.startsWith('r:'))).toBe(false)
+  })
+  it('a signed-in stranger still needs a link', async () => {
+    const { routes } = await setup()
+    expect((await routes.STATE_GET(get('prr23456', grant(sam)), params('prr23456'))).status).toBe(403)
+  })
+  it('a page with no valid link answers nothing', async () => {
+    const { routes } = await setup()
+    expect((await routes.STATE_GET(get('prr23456'), params('prr23456'))).status).toBe(403)
+  })
+  it('reader A never sees reader B\'s comment, even when the page says readers may', async () => {
+    const { routes, state, ada, bea, cookie } = await setup()
+    RECORDS.prr23456 = page('prr23456', 'anyone', 'readers', { links: 'per-reader' })
+    try {
+      await routes.STATE_POST(post('prr23456', comment('Reader B private note.'), cookie(bea)), params('prr23456'))
+      const view = await (await routes.STATE_GET(get('prr23456', cookie(ada)), params('prr23456'))).json()
+      expect(view.slots.comments.mine).toEqual([])
+      expect(view.slots.comments.shared).toBeUndefined()
+      expect(JSON.stringify(view)).not.toContain('Reader B private note.')
+      expect((await state.entries('prr23456')).filter((x) => x.slot === 'comments')).toHaveLength(1)
+    } finally { RECORDS.prr23456 = page('prr23456', 'anyone', 'owner', { links: 'per-reader' }) }
+  })
+})

@@ -163,3 +163,31 @@ describe('to', () => {
     expect(sixty.ok && sixty.meta.to).toBe('x'.repeat(60))
   })
 })
+
+describe('links and media', () => {
+  it('links: per-reader and media: private are kept', () => {
+    const r = parseArtifactSource('---\ntitle: T\nsummary: S\nlinks: per-reader\nmedia: private\n---\nbody')
+    expect(r.ok && r.meta.links).toBe('per-reader')
+    expect(r.ok && r.meta.privateMedia).toBe(true)
+  })
+  it('any other value is refused in words', () => {
+    const a = parseArtifactSource('---\ntitle: T\nsummary: S\nlinks: everyone\n---\nbody')
+    expect(a.ok).toBe(false)
+    expect(!a.ok && a.error).toMatch(/links must be per-reader/)
+    const b = parseArtifactSource('---\ntitle: T\nsummary: S\nmedia: secret\n---\nbody')
+    expect(!b.ok && b.error).toMatch(/media must be private/)
+  })
+  it('media: private without links: per-reader is refused', () => {
+    const r = parseArtifactSource('---\ntitle: T\nsummary: S\nmedia: private\n---\nbody')
+    expect(!r.ok && r.error).toMatch(/media: private needs links: per-reader/)
+  })
+  it('per-reader cannot be combined with password or access', () => {
+    const r = parseArtifactSource('---\ntitle: T\nsummary: S\nlinks: per-reader\npassword: x\n---\nbody')
+    expect(!r.ok && r.error).toMatch(/per-reader links stand alone/)
+  })
+  it('a per-reader page refuses comments_visible: readers', () => {
+    const r = parseArtifactSource('---\ntitle: T\nsummary: S\nlinks: per-reader\ncomments: anyone\ncomments_visible: readers\n---\nbody')
+    expect(!r.ok && r.error).toMatch(/per-reader/)
+    expect(parseArtifactSource('---\ntitle: T\nsummary: S\nlinks: per-reader\ncomments: anyone\ncomments_visible: owner\n---\nbody').ok).toBe(true)
+  })
+})

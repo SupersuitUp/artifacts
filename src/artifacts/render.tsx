@@ -101,7 +101,13 @@ const VIDEO = /\.mp4(?:[?#].*)?$/i
 /** `![caption](x.mp3)` is a clip the reader plays: an annotated conversation, a voice note, a
  *  quote heard rather than read. Native controls, and `preload="none"` so a page of clips fetches
  *  nothing until one is pressed. The alt is its caption, shown above the player. */
-const AUDIO = /\.mp3(?:[?#].*)?$/i
+const AUDIO = /\.(mp3|m4a)(?:[?#].*)?$/i
+/** The stored file's name, for play tracking: the last path segment before any query. */
+const mediaName = (src: string) => {
+  const last = src.split(/[?#]/)[0].split('/').pop() ?? ''
+  try { return decodeURIComponent(last) } catch { return last }
+}
+const SOUND = /^sound:\s*/i
 const VIDEO_IN_MD = /\]\([^)\s]+\.mp4(?:[?#][^)]*)?\)/i
 // A fenced block, which `links` and `notes` fences are too; mounting for those costs one
 // no-op effect and is cheaper than parsing the markdown twice to find out.
@@ -113,12 +119,16 @@ const escapeAttr = (s: string) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;
 // iPhone from going full screen. No `autoplay`: VideoAutoplay starts each one as it nears the
 // screen, so a page of videos does not download them all on open.
 function InlineVideo({ src, label }: { src: string; label: string }) {
-  const html = `<video src="${escapeAttr(src)}" aria-label="${escapeAttr(label)}" data-artifact-video muted loop playsinline preload="metadata" disablepictureinpicture class="block w-full"></video>`
+  const name = escapeAttr(mediaName(src))
+  // `sound:` in the alt is a moment to watch: controls and sound, started by the reader.
+  const html = SOUND.test(label)
+    ? `<video src="${escapeAttr(src)}" aria-label="${escapeAttr(label.replace(SOUND, ''))}" data-artifact-media="${name}" controls playsinline preload="metadata" class="block w-full"></video>`
+    : `<video src="${escapeAttr(src)}" aria-label="${escapeAttr(label)}" data-artifact-video data-artifact-media="${name}" muted loop playsinline preload="metadata" disablepictureinpicture class="block w-full"></video>`
   return <span className="my-6 block overflow-hidden rounded-lg border border-[color:var(--a-line)]" dangerouslySetInnerHTML={{ __html: html }} />
 }
 
 function InlineAudio({ src, label }: { src: string; label: string }) {
-  const html = `<audio src="${escapeAttr(src)}" aria-label="${escapeAttr(label)}" data-artifact-audio controls preload="none" class="block w-full"></audio>`
+  const html = `<audio src="${escapeAttr(src)}" aria-label="${escapeAttr(label)}" data-artifact-audio data-artifact-media="${escapeAttr(mediaName(src))}" controls preload="none" class="block w-full"></audio>`
   return (
     <span className="my-6 block rounded-lg border border-[color:var(--a-line)] bg-[color:var(--a-surface)] px-4 py-3">
       {label ? <span className="mb-2 block text-sm text-[color:var(--a-strong)]">{label}</span> : null}

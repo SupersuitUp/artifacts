@@ -251,6 +251,8 @@ summary: Three bets, what each costs, and what we stop doing to afford them.
 | `pack` | A brand pack the host registered by name (`packs` in the routes config). An unknown name renders in the host's default pack; a republish without the line goes back to it |
 | `toc` | The table of contents. Absent, it appears once the page has four `##` sections; `false` never; `true` from one |
 | `definitions` | Terms defined inline (below). A republish without it removes them |
+| `links` | `per-reader`: the page opens only through a link made for one reader (see Per-reader links). Sticky: a republish whose file leaves the line out changes nothing |
+| `media` | `private`: the page's body media is kept private and served through short-lived signed URLs. Needs `links: per-reader`. Sticky like `links` |
 | `change` | One line saying what this version changed (see Version history) |
 | `template` | `document`, the only one so far |
 
@@ -830,6 +832,44 @@ composite index: **`slot` ascending, `at` ascending**, collection scope. Without
 refuses the query and the error names a link that creates the index. A host with its own
 `StateStore` implements `slotSince(slot, after, limit)`; without it the feed answers 501.
 
+## Per-reader links
+
+One page, sent to many people, where every person gets their own link. The link names an opaque reader id and a signature over the page and that id, so a link cannot be guessed or carried to another page. The host knows an opaque id, a label you gave it and that link's views and comments, and nothing else about the reader.
+
+```markdown
+---
+title: The river
+summary: Eleven minutes on the water.
+links: per-reader
+media: private
+---
+![sound: the first night](river.mp4)
+![a voice note, as it came](note.m4a)
+```
+
+`links: per-reader` shuts the page to everyone who does not arrive through a valid, unrevoked, unexpired link. It cannot be combined with `password`, `access` or `comments_visible: readers` (readers never see each other's comments). `media: private` keeps body media under the page's private prefix; `.mp4` and `.m4a` (and `.mp3`) are supported, and `sound:` at the start of a video's alt makes it a clip with controls and sound. Both lines are sticky: republishing a file that leaves them out changes nothing.
+
+Routes (spread into your route files by `createArtifactRoutes`): `RECIPIENTS`, `VIEWS`, `SEEN`, and `sweepExpired`.
+
+| Route | Who | What |
+|---|---|---|
+| `GET /api/artifacts/<id>/recipients` | publish key | Every reader, with the working link for each |
+| `POST /api/artifacts/<id>/recipients` | publish key | Body `{ add?: [{ label, note?, group? }], revoke?: [rid] or '*', expires?: ISO time or null }`. `add` answers each new reader's link; `expires: null` is Keep |
+| `GET /api/artifacts/<id>/views` | publish key | One line per reader: opened, came back, active seconds, plays, devices, comments. A page with no readers yet answers 200 with an empty list; a missing page answers 404 |
+| `POST /api/artifacts/<id>/seen` | the page itself (public) | The reader's own signal, below |
+
+Config, both on `createArtifactRoutes`: `recipients` (a store from `createRecipientsStore(db, '<collection path>')`, or `memoryRecipientsStore()` in tests) and `recipientSecret`, a function returning the signing secret, read on every request. A secret shorter than 32 characters is treated as unset: per-reader pages stay shut and the routes answer 404 or 501. Signing with an empty secret throws.
+
+The `Page` route must stay `force-dynamic` (the package's `dynamic` export says so; re-export it), because the page carries a fresh render token and answers per link.
+
+### What counts as a view
+
+A view is the page rendered in a real browser, visible, for at least 2 seconds. The page then sends one signal carrying a single-use render token minted for that render; the token is spent on first use and expires after a day. Known unfurl fetchers (and any request with no user agent) are ignored, and so is a signal for a revoked or expired reader. The owner's own opens record zero. After the first signal the page sends a beat every few seconds while it stays visible (and a final one on hide, by `sendBeacon`), and a play signal when a clip starts. A signed-in owner or admin opens the page with no link and no tracking, so test a reader's link in a signed-out browser, never in the browser you are signed in to.
+
+### Expiry
+
+`expires` sets the date the page, its media, its readers, their views and their comments go. `sweepExpired()` (call it daily from a cron route) deletes them and returns `{ pages, files, skipped, failed }`: pages removed, media files removed, ids it refused to delete (an expiry that is not a past ISO time, or a page republished without per-reader links), and ids that failed and will be retried by the next run. Your `assets` must provide `deletePage`, or every expired page lands in `failed` and nothing is deleted. A Keep that lands mid-sweep is honored. Deleting a page also removes every prior version of its body.
+
 ## Brand packs
 
 A `BrandPack` is data plus at most two components: colours, type, the kicker line above a title,
@@ -881,6 +921,7 @@ the page's pack.
 | your publish key (named by you, read in `publishKey`) | Authorises publish, delete and access changes |
 | `ARTIFACT_PASS_SECRET` (named by you, read in `readerSecret`) | Verifies reader passes and signs grants; shared with your sign-in side |
 | a publisher-pass secret (named by you, read in `publisherSecret`; may be the same one) | Verifies publisher passes; shared with whatever mints them |
+| a recipient secret (named by you, read in `recipientSecret`; at least 32 characters) | Signs per-reader links and render tokens; shorter is treated as unset |
 | Firebase Admin credentials | The store and readers store |
 
 ## Contributing

@@ -41,6 +41,14 @@ const meta = { title: 'T', summary: 'S', template: 'document' as const }
 
 describe('artifact store', () => {
   beforeEach(() => docs.clear())
+  it('links and private media are sticky: a re-publish without the lines keeps the page per-reader', async () => {
+    const r = await saveArtifact({ meta: { ...meta, links: 'per-reader', privateMedia: true }, markdown: 'b' })
+    if ('notFound' in r) throw new Error('unexpected')
+    await saveArtifact({ id: r.id, meta, markdown: 'b2' })
+    const got = await getArtifact(r.id)
+    expect(got?.links).toBe('per-reader')
+    expect(got?.privateMedia).toBe(true)
+  })
   it('a password rides through, and a re-publish without one takes the door down', async () => {
     const r = await saveArtifact({ meta: { ...meta, password: 'day ones' }, markdown: 'b' })
     if ('notFound' in r) throw new Error('unexpected')
@@ -99,6 +107,14 @@ describe('artifact store', () => {
   })
   it('reports notFound when updating an unknown id', async () => {
     expect(await saveArtifact({ id: 'zzzzzzzz', meta, markdown: 'x' })).toEqual({ notFound: true })
+  })
+  it('deleting a page deletes every prior body too', async () => {
+    const r = (await saveArtifact({ meta, markdown: 'v1' })) as { id: string }
+    await saveArtifact({ id: r.id, meta, markdown: 'v2' })
+    await saveArtifact({ id: r.id, meta, markdown: 'v3' })
+    expect([...docs.keys()].some((k) => k.startsWith(`${r.id}/versions/`))).toBe(true)
+    expect(await deleteArtifact(r.id)).toBe(true)
+    expect([...docs.keys()].filter((k) => k.startsWith(`${r.id}`))).toEqual([])
   })
   it('deletes', async () => {
     const r = (await saveArtifact({ meta, markdown: 'x' })) as { id: string }

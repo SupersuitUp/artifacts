@@ -5,6 +5,7 @@
 import { createHash } from 'node:crypto'
 import type { Bucket } from '@google-cloud/storage'
 import { MAX_AUDIO_BYTES } from './audio.js'
+import { ARTIFACT_ID_RE } from '../routes/ids.js'
 
 export interface ArtifactAssets {
   /** Store `bytes` for artifact `id` under `name`; return the public URL. */
@@ -30,7 +31,24 @@ export interface ArtifactAssets {
   readAudio?(id: string, path: string): Promise<Buffer | null>
   /** A signed URL to play the recording, valid for about an hour. */
   audioUrl?(id: string, path: string): Promise<string>
+
+  // PRIVATE MEDIA. A page with `media: private` keeps its body media under `<prefix>/<id>/private/`,
+  // never made public; the page renders one-hour signed read URLs for an allowed reader only.
+  // Every method is optional; a host without them answers 501 to `?private=1` uploads.
+  /** Store bytes privately; return `private:<stored name>`. */
+  putPrivate?(id: string, name: string, bytes: Buffer, contentType: string): Promise<string>
+  /** Like signUpload, to the private key; `url` is `private:<stored name>`. */
+  signPrivateUpload?(id: string, name: string, digest: string, contentType: string): Promise<{ uploadUrl: string; headers: Record<string, string>; url: string }>
+  /** After a signed private upload: `private:<stored name>`, or null if nothing arrived. */
+  finishPrivateUpload?(id: string, name: string, digest: string): Promise<string | null>
+  /** A signed read URL for a stored private name, valid one hour. */
+  privateUrl?(id: string, stored: string): Promise<string>
+  /** Delete every object under `<prefix>/<id>/`; returns how many. */
+  deletePage?(id: string): Promise<number>
 }
+
+/** A reference to a private file as it appears in a page: `private:<stored name>`. */
+export const PRIVATE_REF = /^private:([A-Za-z0-9][A-Za-z0-9._-]{0,140})$/
 
 /** The digest half of a stored name: the first 8 hex of the bytes' sha256. */
 export const ASSET_DIGEST = /^[0-9a-f]{8}$/
@@ -48,6 +66,7 @@ export const ASSET_TYPES: Record<string, string> = {
   jpeg: 'image/jpeg',
   gif: 'image/gif',
   mp3: 'audio/mpeg',
+  m4a: 'audio/mp4',
   mp4: 'video/mp4',
   json: 'application/json',
 }
@@ -161,6 +180,34 @@ export function createArtifactAssets(bucket: Bucket, prefix: string): ArtifactAs
     async audioUrl(id, path) {
       const [url] = await bucket.file(`${clean}/${id}/${path}`).getSignedUrl({ version: 'v4', action: 'read', expires: Date.now() + 60 * 60 * 1000 })
       return url
+    },
+    async putPrivate(id, name, bytes, contentType) {
+      const stored = hashedName(name, bytes)
+      await bucket.file(`${clean}/${id}/private/${stored}`).save(bytes, { contentType, resumable: false, metadata: { cacheControl: 'private, max-age=3600' } })
+      return `private:${stored}`
+    },
+    async signPrivateUpload(id, name, digest, contentType) {
+      const stored = storedName(name, digest)
+      const headers = { 'content-type': contentType, 'cache-control': 'private, max-age=3600' }
+      const [uploadUrl] = await bucket.file(`${clean}/${id}/private/${stored}`).getSignedUrl({ version: 'v4', action: 'write', expires: Date.now() + 15 * 60 * 1000, contentType, extensionHeaders: { 'cache-control': headers['cache-control'] } })
+      return { uploadUrl, headers, url: `private:${stored}` }
+    },
+    async finishPrivateUpload(id, name, digest) {
+      const stored = storedName(name, digest)
+      const [there] = await bucket.file(`${clean}/${id}/private/${stored}`).exists()
+      return there ? `private:${stored}` : null
+    },
+    async privateUrl(id, stored) {
+      if (!PRIVATE_REF.test(`private:${stored}`)) throw new Error('not a private file name')
+      const [url] = await bucket.file(`${clean}/${id}/private/${stored}`).getSignedUrl({ version: 'v4', action: 'read', expires: Date.now() + 60 * 60 * 1000 })
+      return url
+    },
+    async deletePage(id) {
+      // An empty or path-shaped id would make the prefix wider than one page.
+      if (!ARTIFACT_ID_RE.test(id)) throw new Error('not an artifact id')
+      const [files] = await bucket.getFiles({ prefix: `${clean}/${id}/` })
+      for (const f of files) await f.delete()
+      return files.length
     },
   }
 }

@@ -27,6 +27,9 @@ import { ArtifactReader, type WordTiming } from '../reader/artifact-reader.js'
 import { CommentLayer } from '../reader/comment-layer.js'
 import { ReaderWatch } from '../reader/reader-watch.js'
 import { UpdatedTime } from '../reader/updated-time.js'
+import { perReaderGate, withPrivateUrls, NO_LINK, UNAVAILABLE } from './per-reader.js'
+import { ridCookieName, mintRenderToken, usableSecret, RID_COOKIE_MAX_AGE } from '../artifacts/recipients.js'
+import type { RecipientsStore } from '../artifacts/recipients-store.js'
 import { PageMenu, type PageRole } from '../reader/page-menu.js'
 import type { PageSettings, SettingsFact } from '../reader/settings-sheet.js'
 import { COMMENTS_MODES } from '../artifacts/comments.js'
@@ -42,6 +45,8 @@ import type { ResolveEvent } from '../artifacts/resolve-digest.js'
 import { AckDoor, ConfidentialBanner, NO_PRINT_CSS, NotAllowedDoor, SignInDoor, Watermark, ackText } from '../artifacts/confidential.js'
 import { ARTIFACT_ID_RE } from './ids.js'
 import { createStateRoutes } from './state-routes.js'
+import { createRecipientsRoutes } from './recipients-routes.js'
+import { QuietView } from '../reader/quiet-view.js'
 import { createPersonalRoutes } from './personal-routes.js'
 import { createVoiceRoutes } from './voice-routes.js'
 import type { PersonalStore } from '../artifacts/personal-store.js'
@@ -140,15 +145,20 @@ export type ArtifactRoutesConfig = {
    *  bare URL sees, and search engines). Called only for the owner and admins; a throw falls back
    *  to the package's rows. */
   shareFacts?: (artifact: ArtifactRecord) => SettingsFact[] | Promise<SettingsFact[]>
+  /** Who each per-reader page was sent to (recipients-store.ts). Without it, or without
+   *  `recipientSecret`, a `links: per-reader` page is shut to everyone. */
+  recipients?: RecipientsStore
+  /** Signs per-reader links and render tokens. At least 32 characters. Read at request time. */
+  recipientSecret?: () => string | undefined
 }
 
 /** Ids are 8 chars from the safe alphabet; anything else is not a page and never reaches the store. */
 export const ARTIFACT_ID = ARTIFACT_ID_RE
 
 type Params = { params: Promise<{ id: string }> }
-type PageProps = Params & { searchParams?: Promise<{ key?: string | string[] }> }
+type PageProps = Params & { searchParams?: Promise<{ key?: string | string[]; r?: string | string[] }> }
 type VersionParams = { params: Promise<{ id: string; n: string }> }
-type VersionProps = VersionParams & { searchParams?: Promise<{ key?: string | string[] }> }
+type VersionProps = VersionParams & { searchParams?: Promise<{ key?: string | string[]; r?: string | string[] }> }
 type Rec = NonNullable<Awaited<ReturnType<ArtifactStore['get']>>>
 /** A version number as it appears in a URL: no zero, no leading zero, so each version has one address. */
 const VERSION_N = /^[1-9]\d{0,5}$/
@@ -202,9 +212,13 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
   const publishAuth = { publishKey: config.publishKey, publisherSecret: config.publisherSecret, publisherHost: config.publisherHost }
   const authed = (request: Request) => isPublisherAuthed(request, publishAuth)
   const stateRoutes = createStateRoutes({
-    store, state: config.state, readers: config.readers, readerSecret, publishKey: config.publishKey,
+    store, state: config.state, readers: config.readers, readerSecret, recipients: config.recipients, recipientSecret: config.recipientSecret, publishKey: config.publishKey,
     publisherSecret: config.publisherSecret, publisherHost: config.publisherHost, pageUrl, signInOrigin, siteUrl,
     clientIp: config.clientIp, ownerEmail: config.ownerEmail, admins: config.admins, audioUrl, onResolve: config.onResolve,
+  })
+  const recipientsRoutes = createRecipientsRoutes({
+    store, recipients: config.recipients, recipientSecret: config.recipientSecret, publishKey: config.publishKey,
+    state: config.state, assets: config.assets, pageUrl, authed,
   })
   const personalRoutes = createPersonalRoutes({ store, personal: config.personal, readers: config.readers, readerSecret, pageUrl, signInOrigin, siteUrl, audioUrl })
   const voiceRoutes = createVoiceRoutes({
@@ -406,6 +420,40 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     const { pack, brand } = lookOf(a)
     const render = (top: boolean, reader: Reader | null) => (n === null ? Body(a, { top, reader }) : VersionBody(a, n, { top, reader }))
     if (a.access) return GatedPage(a, id, render, n)
+    if (a.links === 'per-reader') {
+      if (n !== null) notFound() // a past version of a per-reader page is never served
+      const sp = (await searchParams) ?? {}
+      const param = Array.isArray(sp.r) ? sp.r[0] : sp.r
+      const readCookie = config.readCookie ?? defaultReadCookie
+      const privateUrl = config.assets?.privateUrl?.bind(config.assets)
+      // A signed-in owner or admin gets through as the owner, with no link and no tracking.
+      const me = readerSecret() ? verifyGrant(readerSecret(), await readCookie(GRANT_COOKIE).catch(() => undefined)) : null
+      if (isAdmin(me)) {
+        const markdown = a.privateMedia ? await withPrivateUrls(a.markdown, id, privateUrl) : a.markdown
+        return <BrandGround pack={pack} mode={a.theme}>{await Body({ ...a, markdown }, { top: true, reader: me })}</BrandGround>
+      }
+      const secret = usableSecret(config.recipientSecret?.())
+      const g = await perReaderGate({ id, param, cookie: await readCookie(ridCookieName(id)).catch(() => undefined), secret, recipients: config.recipients })
+      if (g.state === 'shut') {
+        return (
+          <BrandGround pack={pack} mode={a.theme}>
+            <p data-per-reader-shut className="mx-auto max-w-xl px-6 pt-32 text-center text-lg opacity-80">{g.why === 'no-link' ? NO_LINK : UNAVAILABLE}</p>
+          </BrandGround>
+        )
+      }
+      const token = mintRenderToken(secret!, id, g.rid)
+      const remember = g.fromLink
+        ? [pagePath(id), `/api/artifacts/${id}`].map((p) => `document.cookie=${JSON.stringify(`${ridCookieName(id)}=${g.rid}.${g.sig}; Path=${p}; Max-Age=${RID_COOKIE_MAX_AGE}; SameSite=Lax; Secure`)}`).join(';')
+        : null
+      const markdown = a.privateMedia ? await withPrivateUrls(a.markdown, id, privateUrl) : a.markdown
+      const body = await Body({ ...a, markdown }, { top: true, reader: null, perReader: { rid: g.rid, sig: g.sig, label: g.label, note: g.note, owner: g.owner, token } })
+      return (
+        <BrandGround pack={pack} mode={a.theme}>
+          {remember ? <script dangerouslySetInnerHTML={{ __html: remember }} /> : null}
+          {body}
+        </BrandGround>
+      )
+    }
     // A password shuts the body, never the title: the header stays so the reader knows which
     // page they were sent, and the unfurl (generateMetadata) keeps reading as the page.
     const sp = (await searchParams) ?? {}
@@ -627,7 +675,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
   }
 
   /** The page itself, shared by open and gated pages. */
-  async function Body(a: Rec, { top, reader }: { top: boolean; reader: Reader | null }) {
+  async function Body(a: Rec, { top, reader, perReader }: { top: boolean; reader: Reader | null; perReader?: { rid: string; sig: string; label: string; note: string | null; owner: boolean; token: string } }) {
     const { pack, brand } = lookOf(a)
     let words: WordTiming[] = []
     if (a.narration && a.timings) {
@@ -693,6 +741,9 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
                 toc={toc.length ? <TocInline items={toc} /> : null}
                 cover={
                   <>
+                    {perReader?.note ? (
+                      <p data-for-reader className="mx-auto mt-6 mb-0 max-w-2xl px-6 text-lg">{`For ${perReader.label}: ${perReader.note}`}</p>
+                    ) : null}
                     {header}
                     {a.cover ? (
                       <div className="mx-auto max-w-2xl px-6 pb-8">
@@ -730,6 +781,8 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
           ground={brand.ground}
           signIn={signInOrigin ? signInUrl(signInOrigin, pageUrl(a.id)) : null}
         />
+        {/* A reader's own link reports that it was looked at; the owner's opens never do. */}
+        {perReader && !perReader.owner ? <QuietView id={a.id} rid={perReader.rid} sig={perReader.sig} token={perReader.token} /> : null}
         {a.narration && words.length > 0 ? (
           <ArtifactReader
             src={a.narration}
@@ -839,6 +892,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     if (!a) return NextResponse.json({ error: `no artifact with id ${id}` }, { status: 404 })
     if (request.method === 'GET') return NextResponse.json({ id, access: a.access ?? null, readers: await config.readers.allowList(id) })
     const b = (await request.json().catch(() => null)) as { add?: unknown; remove?: unknown; access?: unknown } | null
+    if (a.links === 'per-reader' && b?.access !== undefined) return NextResponse.json({ error: 'a per-reader page opens only from its own links, so its access and password cannot be changed' }, { status: 409 })
     let access = a.access ?? null
     if (b?.access !== undefined) {
       if (b.access !== 'public' && !ACCESS_LEVELS.includes(b.access as Access))
@@ -888,6 +942,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     let b: Record<string, unknown>
     try { b = JSON.parse(raw) } catch { return no('the body is not JSON', 400) }
     if (!b || typeof b !== 'object' || Array.isArray(b)) return no('the body is an object', 400)
+    if (a.links === 'per-reader' && (b.access !== undefined || b.password !== undefined)) return no('a per-reader page opens only from its own links, so its access and password cannot be changed', 409)
     const KEYS = ['access', 'password', 'comments', 'commentsVisible', 'add', 'remove']
     const unknown = Object.keys(b).filter((k) => !KEYS.includes(k))
     if (unknown.length) return no(`unknown setting: ${unknown.join(', ')}`, 400)
@@ -1001,6 +1056,8 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
   async function PUT_ASSET(request: NextRequest, { params }: { params: Promise<{ id: string; name: string }> }) {
     if (!authed(request)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     if (!config.assets) return NextResponse.json({ error: 'this host does not store assets' }, { status: 501 })
+    const priv = request.nextUrl.searchParams.get('private') === '1'
+    if (priv && !config.assets.putPrivate) return NextResponse.json({ error: 'this host keeps no private media' }, { status: 501 })
     const { id, name } = await params
     if (!ARTIFACT_ID.test(id)) return NextResponse.json({ error: `no artifact with id ${id}` }, { status: 404 })
     if (!(await store.get(id))) return NextResponse.json({ error: `no artifact with id ${id}` }, { status: 404 })
@@ -1010,7 +1067,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     const bytes = Buffer.from(await request.arrayBuffer())
     if (bytes.length === 0) return NextResponse.json({ error: 'empty body' }, { status: 400 })
     if (bytes.length > 16 * 1024 * 1024) return NextResponse.json({ error: 'asset over 16 MiB' }, { status: 413 })
-    const url = await config.assets.put(id, name, bytes, type)
+    const url = priv ? await config.assets.putPrivate!(id, name, bytes, type) : await config.assets.put(id, name, bytes, type)
     return NextResponse.json({ id, name, url }, { status: 201 })
   }
 
@@ -1036,7 +1093,10 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     }
     if (!authed(request)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     const assets = config.assets
-    if (!assets?.signUpload || !assets.finishUpload) return NextResponse.json({ error: 'this host does not take direct uploads' }, { status: 501 })
+    const priv = request.nextUrl.searchParams.get('private') === '1'
+    if (priv) {
+      if (!assets?.signPrivateUpload || !assets.finishPrivateUpload) return NextResponse.json({ error: 'this host keeps no private media' }, { status: 501 })
+    } else if (!assets?.signUpload || !assets.finishUpload) return NextResponse.json({ error: 'this host does not take direct uploads' }, { status: 501 })
     const { id, name } = await params
     if (!ARTIFACT_ID.test(id)) return NextResponse.json({ error: `no artifact with id ${id}` }, { status: 404 })
     if (!(await store.get(id))) return NextResponse.json({ error: `no artifact with id ${id}` }, { status: 404 })
@@ -1046,11 +1106,12 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     const digest = typeof body.digest === 'string' ? body.digest : ''
     if (!ASSET_DIGEST.test(digest)) return NextResponse.json({ error: 'digest must be the first 8 hex of the sha256 of the bytes' }, { status: 400 })
     if (body.done === true) {
-      const url = await assets.finishUpload(id, name, digest)
+      const url = priv ? await assets!.finishPrivateUpload!(id, name, digest) : await assets!.finishUpload!(id, name, digest)
       if (!url) return NextResponse.json({ error: 'nothing was uploaded to that url' }, { status: 409 })
       return NextResponse.json({ id, name, url }, { status: 201 })
     }
-    return NextResponse.json({ id, name, ...(await assets.signUpload(id, name, digest, type)) }, { status: 201 })
+    const signed = priv ? await assets!.signPrivateUpload!(id, name, digest, type) : await assets!.signUpload!(id, name, digest, type)
+    return NextResponse.json({ id, name, ...signed }, { status: 201 })
   }
 
   /** GET /<id>/share.png: the page's title card. 404 when the pack draws none, so a
@@ -1091,5 +1152,5 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     return NextResponse.json({ deleted: true })
   }
 
-  return { Page, generateMetadata, VersionPage, generateVersionMetadata, VERSIONS, POST, GET, DELETE, PUT_ASSET, UPLOAD, SHARE_IMAGE, ENTER, LEAVE, TRACK, ACK, ACCESS, SETTINGS, READS, sweepReaders, TRANSCRIBE: voiceRoutes.TRANSCRIBE, ...stateRoutes, ...personalRoutes, dynamic: 'force-dynamic' as const, maxDuration: 30 }
+  return { Page, generateMetadata, VersionPage, generateVersionMetadata, VERSIONS, POST, GET, DELETE, PUT_ASSET, UPLOAD, SHARE_IMAGE, ENTER, LEAVE, TRACK, ACK, ACCESS, SETTINGS, READS, sweepReaders, TRANSCRIBE: voiceRoutes.TRANSCRIBE, ...stateRoutes, ...personalRoutes, ...recipientsRoutes, dynamic: 'force-dynamic' as const, maxDuration: 30 }
 }

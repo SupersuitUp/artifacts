@@ -24,3 +24,6 @@ export { deepgramTranscriber, openaiTranscriber, type Transcriber } from './tran
 export { AUDIO_TYPES, audioExtFor, audioTypeFor, baseMime, MAX_AUDIO_BYTES, MAX_MEMO_MS, MEMO_NAME, commentAudioPath, isCommentAudioPath, personalAudioPath, isPersonalAudioPath } from './audio.js'
 export { settleOnPublish, applySettingsPatch, withComments, declaredOf, passwordDigest, newPageKey, type DeclaredSettings, type LiveSettings, type SettingsPatch } from './settings.js'
 export type { PageSettings, SettingsFact, AccessLevel } from '../reader/settings-sheet.js'
+// Per-reader links: the host-facing surface only. The signing and token primitives stay internal.
+export { ridLink, parseRidParam, verifyRid, isUnfurlAgent, usableSecret, RECIPIENT_SECRET_MIN } from './recipients.js'
+export { createRecipientsStore, memoryRecipientsStore, summarizeViews, type RecipientsStore, type Recipient, type RecipientsRecord, type ViewDoc, type RecipientSummary } from './recipients-store.js'
