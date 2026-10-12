@@ -163,6 +163,9 @@ type Rec = NonNullable<Awaited<ReturnType<ArtifactStore['get']>>>
 /** A version number as it appears in a URL: no zero, no leading zero, so each version has one address. */
 const VERSION_N = /^[1-9]\d{0,5}$/
 
+/** What a host with no private store answers to private media, in words that say what to set up. */
+const NO_PRIVATE_STORE = 'this host keeps no private store, so media: private is refused and nothing was published. Give createArtifactAssets a privateBucket (its own bucket, never the public one) to keep private media'
+
 async function defaultReadCookie(name: string): Promise<string | undefined> {
   const { cookies } = await import('next/headers')
   return (await cookies()).get(name)?.value
@@ -1003,12 +1006,20 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     return NextResponse.json({ id, title: a.title, access: a.access ?? null, views: a.views, ...summarize(sessions, flags), acks: acks.map((k) => ({ email: k.email, name: k.name, at: k.at })) }, { headers: { 'cache-control': 'no-store' } })
   }
 
+  /** Whether this host can store and serve private media: both halves come from a private bucket. */
+  const keepsPrivateMedia = () => Boolean(config.assets?.putPrivate && config.assets.privateUrl)
+
   async function POST(request: NextRequest) {
     if (!authed(request)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     const text = await request.text()
     const parsed = parseArtifactSource(text)
     if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 })
     const id = request.nextUrl.searchParams.get('id') ?? parsed.meta.id ?? undefined
+    // Fail closed: private media needs a private store. Without one the media would have to sit in
+    // the public bucket, which may carry a bucket-wide public read grant, so nothing is saved.
+    // `media:` is sticky, so a stored page that already keeps private media counts too.
+    if (!keepsPrivateMedia() && (parsed.meta.privateMedia || (id && (await store.get(id))?.privateMedia)))
+      return NextResponse.json({ error: NO_PRIVATE_STORE }, { status: 501 })
     if (id && parsed.meta.state) {
       const existing = await store.get(id)
       const changed = shapeChanges(existing?.state, parsed.meta.state)
@@ -1057,7 +1068,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     if (!authed(request)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     if (!config.assets) return NextResponse.json({ error: 'this host does not store assets' }, { status: 501 })
     const priv = request.nextUrl.searchParams.get('private') === '1'
-    if (priv && !config.assets.putPrivate) return NextResponse.json({ error: 'this host keeps no private media' }, { status: 501 })
+    if (priv && !config.assets.putPrivate) return NextResponse.json({ error: NO_PRIVATE_STORE }, { status: 501 })
     const { id, name } = await params
     if (!ARTIFACT_ID.test(id)) return NextResponse.json({ error: `no artifact with id ${id}` }, { status: 404 })
     if (!(await store.get(id))) return NextResponse.json({ error: `no artifact with id ${id}` }, { status: 404 })
@@ -1095,7 +1106,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     const assets = config.assets
     const priv = request.nextUrl.searchParams.get('private') === '1'
     if (priv) {
-      if (!assets?.signPrivateUpload || !assets.finishPrivateUpload) return NextResponse.json({ error: 'this host keeps no private media' }, { status: 501 })
+      if (!assets?.signPrivateUpload || !assets.finishPrivateUpload) return NextResponse.json({ error: NO_PRIVATE_STORE }, { status: 501 })
     } else if (!assets?.signUpload || !assets.finishUpload) return NextResponse.json({ error: 'this host does not take direct uploads' }, { status: 501 })
     const { id, name } = await params
     if (!ARTIFACT_ID.test(id)) return NextResponse.json({ error: `no artifact with id ${id}` }, { status: 404 })

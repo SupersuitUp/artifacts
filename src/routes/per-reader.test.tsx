@@ -97,6 +97,23 @@ describe('the page', () => {
     expect(beaHtml).not.toContain('You were there.')
     expect(beaHtml).not.toContain(ada.rid)
   })
+  // A signed URL is minted on a real render that passed the gate, once per render, and never for
+  // a reader the gate shut: a revoked or expired link costs the bucket nothing and leaks nothing.
+  it('mints a fresh signed URL on every passing render, and none for a revoked or expired link', async () => {
+    const { recipients, ada, bea, link } = await seeded()
+    const signer = vi.fn(async (_i: string, s: string) => `https://signed.example.com/${s}`)
+    const r = routes(recipients, { assets: { put: async () => '', privateUrl: signer } as never })
+    await r.Page(props(link(ada.rid)))
+    await r.Page(props(link(ada.rid)))
+    expect(signer).toHaveBeenCalledTimes(2)
+    signer.mockClear()
+    await recipients.revoke('abcd2345', [ada.rid])
+    expect(renderToStaticMarkup(await r.Page(props(link(ada.rid))))).toContain(UNAVAILABLE)
+    expect(signer).not.toHaveBeenCalled()
+    await recipients.setExpiry('abcd2345', '2026-01-01T00:00:00.000Z')
+    expect(renderToStaticMarkup(await r.Page(props(link(bea.rid))))).toContain(UNAVAILABLE)
+    expect(signer).not.toHaveBeenCalled()
+  })
   it('no link, or no store, or no secret: shut to everyone', async () => {
     const { recipients, link, ada } = await seeded()
     expect(renderToStaticMarkup(await routes(recipients).Page(props()))).toContain(NO_LINK)

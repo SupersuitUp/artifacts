@@ -32,18 +32,20 @@ export interface ArtifactAssets {
   /** A signed URL to play the recording, valid for about an hour. */
   audioUrl?(id: string, path: string): Promise<string>
 
-  // PRIVATE MEDIA. A page with `media: private` keeps its body media under `<prefix>/<id>/private/`,
-  // never made public; the page renders one-hour signed read URLs for an allowed reader only.
-  // Every method is optional; a host without them answers 501 to `?private=1` uploads.
+  // PRIVATE MEDIA. A page with `media: private` keeps its body media in a SEPARATE private bucket,
+  // under `<prefix>/<id>/private/`; the page renders signed read URLs (PRIVATE_READ_TTL_MS) for an
+  // allowed reader only. Every method is optional, and createArtifactAssets defines them only when
+  // it is given a private bucket, so a host without one refuses private media (501) rather than
+  // putting it in a bucket that may carry a bucket-wide public read grant.
   /** Store bytes privately; return `private:<stored name>`. */
   putPrivate?(id: string, name: string, bytes: Buffer, contentType: string): Promise<string>
   /** Like signUpload, to the private key; `url` is `private:<stored name>`. */
   signPrivateUpload?(id: string, name: string, digest: string, contentType: string): Promise<{ uploadUrl: string; headers: Record<string, string>; url: string }>
   /** After a signed private upload: `private:<stored name>`, or null if nothing arrived. */
   finishPrivateUpload?(id: string, name: string, digest: string): Promise<string | null>
-  /** A signed read URL for a stored private name, valid one hour. */
+  /** A V4 signed read URL for a stored private name, valid PRIVATE_READ_TTL_MS (one hour). */
   privateUrl?(id: string, stored: string): Promise<string>
-  /** Delete every object under `<prefix>/<id>/`; returns how many. */
+  /** Delete every object under `<prefix>/<id>/`, in the public bucket and the private one; returns how many. */
   deletePage?(id: string): Promise<number>
 }
 
@@ -54,6 +56,20 @@ export const PRIVATE_REF = /^private:([A-Za-z0-9][A-Za-z0-9._-]{0,140})$/
 export const ASSET_DIGEST = /^[0-9a-f]{8}$/
 
 const CACHE_CONTROL = 'public, max-age=31536000, immutable'
+
+/** How long a signed read URL for private media stays valid: one hour. A reader revoked after a
+ *  render can keep loading a URL already handed to them for at most this long. */
+export const PRIVATE_READ_TTL_MS = 60 * 60 * 1000
+
+export interface ArtifactAssetsOptions {
+  /**
+   * The bucket private media lives in. It must be a different bucket from the public one, with
+   * uniform access, public access prevention enforced, and object access granted only to the
+   * host's own service account. Without it the private methods are not defined at all, so a
+   * `media: private` page is refused instead of being stored where anyone could read it by URL.
+   */
+  privateBucket?: Bucket
+}
 
 
 /** Names are one path segment: letters, digits, dot, dash, underscore. */
@@ -103,9 +119,12 @@ export function storedName(name: string, digest: string): string {
   return dot <= 0 ? `${name}.${digest}` : `${name.slice(0, dot)}.${digest}${name.slice(dot)}`
 }
 
-export function createArtifactAssets(bucket: Bucket, prefix: string): ArtifactAssets {
+export function createArtifactAssets(bucket: Bucket, prefix: string, options: ArtifactAssetsOptions = {}): ArtifactAssets {
   const clean = prefix.replace(/^\/+|\/+$/g, '')
-  return {
+  const priv = options.privateBucket
+  // The same bucket twice would put "private" media back where a public read grant reaches it.
+  if (priv && priv.name === bucket.name) throw new Error('the private bucket must be a different bucket from the public one')
+  const assets: ArtifactAssets = {
     async put(id, name, bytes, contentType) {
       const key = `${clean}/${id}/${hashedName(name, bytes)}`
       const file = bucket.file(key)
@@ -181,33 +200,42 @@ export function createArtifactAssets(bucket: Bucket, prefix: string): ArtifactAs
       const [url] = await bucket.file(`${clean}/${id}/${path}`).getSignedUrl({ version: 'v4', action: 'read', expires: Date.now() + 60 * 60 * 1000 })
       return url
     },
+    async deletePage(id) {
+      // An empty or path-shaped id would make the prefix wider than one page.
+      if (!ARTIFACT_ID_RE.test(id)) throw new Error('not an artifact id')
+      let n = 0
+      for (const b of priv ? [bucket, priv] : [bucket]) {
+        const [files] = await b.getFiles({ prefix: `${clean}/${id}/` })
+        for (const f of files) await f.delete()
+        n += files.length
+      }
+      return n
+    },
+  }
+  if (!priv) return assets
+  const privateFile = (id: string, stored: string) => priv.file(`${clean}/${id}/private/${stored}`)
+  return {
+    ...assets,
     async putPrivate(id, name, bytes, contentType) {
       const stored = hashedName(name, bytes)
-      await bucket.file(`${clean}/${id}/private/${stored}`).save(bytes, { contentType, resumable: false, metadata: { cacheControl: 'private, max-age=3600' } })
+      await privateFile(id, stored).save(bytes, { contentType, resumable: false, metadata: { cacheControl: 'private, max-age=3600' } })
       return `private:${stored}`
     },
     async signPrivateUpload(id, name, digest, contentType) {
       const stored = storedName(name, digest)
       const headers = { 'content-type': contentType, 'cache-control': 'private, max-age=3600' }
-      const [uploadUrl] = await bucket.file(`${clean}/${id}/private/${stored}`).getSignedUrl({ version: 'v4', action: 'write', expires: Date.now() + 15 * 60 * 1000, contentType, extensionHeaders: { 'cache-control': headers['cache-control'] } })
+      const [uploadUrl] = await privateFile(id, stored).getSignedUrl({ version: 'v4', action: 'write', expires: Date.now() + 15 * 60 * 1000, contentType, extensionHeaders: { 'cache-control': headers['cache-control'] } })
       return { uploadUrl, headers, url: `private:${stored}` }
     },
     async finishPrivateUpload(id, name, digest) {
       const stored = storedName(name, digest)
-      const [there] = await bucket.file(`${clean}/${id}/private/${stored}`).exists()
+      const [there] = await privateFile(id, stored).exists()
       return there ? `private:${stored}` : null
     },
     async privateUrl(id, stored) {
       if (!PRIVATE_REF.test(`private:${stored}`)) throw new Error('not a private file name')
-      const [url] = await bucket.file(`${clean}/${id}/private/${stored}`).getSignedUrl({ version: 'v4', action: 'read', expires: Date.now() + 60 * 60 * 1000 })
+      const [url] = await privateFile(id, stored).getSignedUrl({ version: 'v4', action: 'read', expires: Date.now() + PRIVATE_READ_TTL_MS })
       return url
-    },
-    async deletePage(id) {
-      // An empty or path-shaped id would make the prefix wider than one page.
-      if (!ARTIFACT_ID_RE.test(id)) throw new Error('not an artifact id')
-      const [files] = await bucket.getFiles({ prefix: `${clean}/${id}/` })
-      for (const f of files) await f.delete()
-      return files.length
     },
   }
 }

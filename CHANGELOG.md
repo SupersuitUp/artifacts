@@ -3,6 +3,36 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.36.0
+
+**Private media moves to its own private bucket, and a host without one refuses it.** 0.35.0 kept
+`media: private` files under `<prefix>/<id>/private/` in the same bucket as public assets and
+never called `makePublic` on them. That is no protection on a bucket that carries a bucket-wide
+public read grant: every "private" object was readable by anyone holding its URL.
+
+- `createArtifactAssets(bucket, prefix, { privateBucket })`. With `privateBucket`, `putPrivate`,
+  `signPrivateUpload`, `finishPrivateUpload` and `privateUrl` use it (same `<prefix>/<id>/private/`
+  keys); `put`, `signUpload`, `finishUpload`, covers and narration stay on `bucket`. `deletePage`
+  clears the page from both. Passing the public bucket again as the private one throws.
+- Without `privateBucket` the four private methods are not defined, so the host fails closed:
+  `POST /api/artifacts` refuses a page with `media: private` (or a republish of a page that already
+  keeps private media) with 501 and saves nothing, and `?private=1` uploads answer 501, all with
+  the same words naming `privateBucket`.
+- `PRIVATE_READ_TTL_MS` (exported, `60 * 60 * 1000`): the life of a signed V4 read URL. One is
+  minted per private file on every render that passed the per-reader gate, and none for a revoked
+  or expired link.
+- DETECTOR: your host passes `media: private` pages and calls `createArtifactAssets(bucket, prefix)`
+  with two arguments; or `gcloud storage buckets get-iam-policy` on your bucket lists `allUsers`
+  and you have objects under `*/private/`.
+- REMEDY: create a separate bucket (uniform access, public access prevention enforced, object
+  access for the host's service account only), pass it as `privateBucket`, give it CORS for `PUT`
+  from your origin if browsers upload to it directly, and republish any page whose private media
+  sits in the public bucket (then delete those old objects). A host that publishes no private
+  media needs nothing; until it adds a private bucket, `media: private` is refused.
+- TESTS: `src/artifacts/assets.test.ts` (private media), `src/routes/private-media.test.tsx`
+  (publishing media: private), `src/routes/per-reader.test.tsx` (mints a fresh signed URL on every
+  passing render), `src/artifacts/index.test.ts`.
+
 ## 0.35.0
 
 **Per-reader links, private media, video with sound, quiet views, and expiry.** A page can now go
