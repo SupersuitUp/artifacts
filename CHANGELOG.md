@@ -3,6 +3,43 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.39.0
+
+**A session demo's frame fits its player, and is wider than the reading column on a wide screen.**
+A ```` ```simulator ```` block drew its player in a frame of one fixed height (`height:`, 720px
+unless the block said). A session demo draws a different device for each viewer, a short laptop on
+a desktop and a tall phone on a phone, so one height suited neither: on a desktop a band of
+nothing, some 300px, sat between the laptop and the caption.
+
+- The frame now asks its embed page `fit=content` (the address gains `&fit=content`), and a page
+  that understands posts `{ type: 'embed:fit', height: <px> }` to its parent. The frame takes that
+  height (`EmbedFrame`, a client component; `fitFrom`, `FIT_MESSAGE`): only that message, only from
+  the frame's own window and the origin of the page it loaded, held between 240 and 2000px.
+- `height:` still means what it meant: the height the frame opens at, and so the room the player is
+  given. A page that posts nothing keeps it. No published page needs a change.
+- From 1024px a framed session demo is up to 64rem wide, centred on the column and clear of the
+  contents rail in the left margin from 1280px, with its caption centred under it. In a broadcast's
+  card, below 1024px, for the Messages phone, and for a caption with no player, the column is the
+  width, as before.
+
+DETECTOR: open a page with a ```` ```simulator ```` block on a desktop. Affected: the frame is the
+block's height whatever the device in it, with empty space under a laptop. Or
+`curl -s <page> | grep -o 'simulator/embed[^"]*'` shows no `fit=content`.
+
+REMEDY: take 0.39.0. A host whose embed page is not its own does nothing more: an unknown query key
+is ignored and the frame keeps the block's height. A host that serves its own embed page makes it
+answer `fit=content` in two steps, in this order: hold the player at the height the frame opened
+with (inside a frame the viewport IS the frame, so a player sized from it shrinks as the frame
+does and the two chase each other), then post its content's height as `embed:fit` whenever it
+changes. Centre the player in the frame as well, for hosts that never listen.
+
+Tests: `simulator.test.ts` (the address asks to fit and the Messages one does not; `fitFrom` takes
+the message from the right origin, refuses every other shape, and clamps), `embed-frame.test.tsx`
+(the frame opens at the block's height, takes a reported one, and ignores another window, origin
+and message), `render.test.tsx` (the opening height with and without `height:`; the wide rule is on
+a framed session demo only, never the Messages phone or a caption with no player). The wide rule
+itself is CSS and is not run by a test here: it was checked in a browser at 390, 1100 and 1440px.
+
 ## 0.38.0
 
 **Readers' voice memos live in the private bucket.** A memo left on a page (`comments/<memo>`, or a

@@ -168,10 +168,28 @@ describe('the simulator block', () => {
   it('plays the demo inline when the host names its embed page', () => {
     const out = renderToStaticMarkup(<ArtifactMarkdown markdown={md} simulator={{ embed: 'https://example.com/simulator/embed' }} />)
     expect(out).toContain('<iframe')
-    expect(out).toContain('src="https://example.com/simulator/embed?scenario=diane-meeting-prep&amp;timeline=off"')
+    expect(out).toContain('src="https://example.com/simulator/embed?scenario=diane-meeting-prep&amp;timeline=off&amp;fit=content"')
     expect(out).toContain('loading="lazy"')
     expect(out).toContain('Step into the hour before the meeting.')
     expect(out).not.toContain('<pre')
+  })
+  it('opens at the block\'s height (720px unless the block says), so a page published with height: keeps it', () => {
+    const at = (m: string) => renderToStaticMarkup(<ArtifactMarkdown markdown={m} simulator={{ embed: 'https://example.com/simulator/embed' }} />)
+    expect(at(md)).toMatch(/<iframe[^>]*style="height:720px/)
+    expect(at(md.replace('caption:', 'height: 760px\ncaption:'))).toMatch(/<iframe[^>]*style="height:760px/)
+  })
+  it('on a wide screen the demo is wider than the reading column, never inside a broadcast card, and the Messages phone stays in the column', () => {
+    const out = renderToStaticMarkup(<ArtifactMarkdown markdown={md} simulator={{ embed: 'https://example.com/simulator/embed' }} />)
+    expect(out).toContain('@media (min-width:1024px){[data-artifact-embed="simulator"][data-wide]{width:max(100%,min(64rem,calc(100vw - 4rem)))')
+    expect(out).toContain('[data-broadcast] [data-artifact-embed="simulator"][data-wide]{width:auto')
+    expect(out).not.toMatch(/\[data-artifact-embed="messages"\]\{width/)
+    expect(out).not.toMatch(/\[data-artifact-embed\]\{width/)
+    expect(out).toMatch(/<figure[^>]*data-wide=""/)
+    // No player over it (a host with no demo): the caption stays in the column, with no sheet.
+    expect(html(md)).not.toContain('data-wide')
+    expect(html(md)).not.toContain('<style')
+    const phone = renderToStaticMarkup(<ArtifactMarkdown markdown={'```messages\nchat: fritz\ncaption: In his own words.\n```\n'} messages={{ embed: 'https://example.com/messages/embed' }} />)
+    expect(phone).not.toContain('data-wide')
   })
   it('on a host with no demo, shows the caption and never the block as code', () => {
     const out = html(md)

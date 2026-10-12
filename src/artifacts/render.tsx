@@ -19,6 +19,7 @@ import type { ChecklistBlock } from './checklist.js'
 import { HeadingNotes, NoteToggle, NotesEarlier, NotesProvider } from '../widgets/notes.js'
 import { Checklist } from '../widgets/checklist.js'
 import { embedSrc, parseEmbedFence, type EmbedKind } from './simulator.js'
+import { EmbedFrame } from './embed-frame.js'
 import { VideoAutoplay } from '../reader/video-autoplay.js'
 import { CodeCopy } from '../reader/code-copy.js'
 import { DefinitionLayer } from '../reader/definition-layer.js'
@@ -141,6 +142,19 @@ type Positioned = { position?: { start: { offset?: number } } } | undefined
 type SimulatorCtx = { embed: string }
 type EmbedCtx = Partial<Record<EmbedKind, SimulatorCtx>>
 
+// A session demo on a wide screen is wider than the reading column, so the device it draws (a
+// laptop, or a phone beside what was made) has room: up to 64rem, centred on the column, and clear
+// of the contents rail fixed in the left margin from 1280px (w-56 at left-6, w-64 at left-12).
+// Below 1024px, in a broadcast's card, for the Messages phone, and for a caption with no player
+// over it (a host that names no embed page), the column is the width.
+const WIDE = '[data-artifact-embed="simulator"][data-wide]'
+const WIDE_EMBED_CSS =
+  `@media (min-width:1024px){${WIDE}{width:max(100%,min(64rem,calc(100vw - 4rem)));margin-left:50%;transform:translateX(-50%)}` +
+  `${WIDE} figcaption{text-align:center}` +
+  `[data-broadcast] ${WIDE}{width:auto;margin-left:0;transform:none}[data-broadcast] ${WIDE} figcaption{text-align:inherit}}` +
+  `@media (min-width:1280px){${WIDE}{width:max(100%,min(64rem,calc(100vw - 36rem)))}}` +
+  `@media (min-width:1536px){${WIDE}{width:max(100%,min(64rem,calc(100vw - 40rem)))}}`
+
 /** An embed block (```simulator, ```messages): the player in a frame when the host names one, its
  *  caption alone when it does not, and nothing when the block does not parse (a page published
  *  before validation existed). */
@@ -148,12 +162,11 @@ function EmbedFence({ kind, source, ctx }: { kind: EmbedKind; source: string; ct
   const r = parseEmbedFence(kind, source.replace(/\n$/, ''), 0)
   if (!r.ok) return null
   const src = ctx ? embedSrc(kind, ctx.embed, r.block.value) : null
+  const wide = kind === 'simulator' && src != null
   return (
-    <figure data-artifact-embed={kind} {...(kind === 'simulator' ? { 'data-artifact-simulator': '' } : {})} className="my-8">
-      {src ? (
-        <iframe src={src} title={r.block.caption} loading="lazy" allow="microphone; autoplay; fullscreen"
-          className="block w-full rounded-xl border border-[color:var(--a-line)]" style={{ height: r.block.height, border: 0 }} />
-      ) : null}
+    <figure data-artifact-embed={kind} {...(kind === 'simulator' ? { 'data-artifact-simulator': '' } : {})} {...(wide ? { 'data-wide': '' } : {})} className="my-8">
+      {wide ? <style>{WIDE_EMBED_CSS}</style> : null}
+      {src ? <EmbedFrame src={src} title={r.block.caption} height={r.block.height} /> : null}
       <figcaption className="mt-2 text-sm opacity-80">{r.block.caption}</figcaption>
     </figure>
   )
