@@ -327,6 +327,9 @@ async function deleteArtifact(col: Col, id: string): Promise<boolean> {
   const ref = col().doc(id)
   const snap = await ref.get()
   if (!snap.exists) return false
+  // Every prior body lives in the versions subcollection and outlives the page doc unless it goes too.
+  const past = await ref.collection('versions').get()
+  await Promise.all(past.docs.map((d) => ref.collection('versions').doc(d.id).delete()))
   await ref.delete()
   return true
 }

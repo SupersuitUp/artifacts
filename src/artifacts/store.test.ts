@@ -108,6 +108,14 @@ describe('artifact store', () => {
   it('reports notFound when updating an unknown id', async () => {
     expect(await saveArtifact({ id: 'zzzzzzzz', meta, markdown: 'x' })).toEqual({ notFound: true })
   })
+  it('deleting a page deletes every prior body too', async () => {
+    const r = (await saveArtifact({ meta, markdown: 'v1' })) as { id: string }
+    await saveArtifact({ id: r.id, meta, markdown: 'v2' })
+    await saveArtifact({ id: r.id, meta, markdown: 'v3' })
+    expect([...docs.keys()].some((k) => k.startsWith(`${r.id}/versions/`))).toBe(true)
+    expect(await deleteArtifact(r.id)).toBe(true)
+    expect([...docs.keys()].filter((k) => k.startsWith(`${r.id}`))).toEqual([])
+  })
   it('deletes', async () => {
     const r = (await saveArtifact({ meta, markdown: 'x' })) as { id: string }
     expect(await deleteArtifact(r.id)).toBe(true)
