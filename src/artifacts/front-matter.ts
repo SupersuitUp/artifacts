@@ -36,6 +36,10 @@ export type ArtifactMeta = {
    *  ABSENT CHANGES NOTHING: the level is host-side state, so a republish that omits the line
    *  (or a publisher that strips unknown keys) can never reopen a confidential page. */
   access?: Access | 'public'
+  /** `per-reader`: the page opens only through a link made for one reader (recipients.ts). */
+  links?: 'per-reader'
+  /** `media: private` in the file: body media are stored unlisted and served only to a valid reader. */
+  privateMedia?: true
   /** What readers may put into the page. Content, like the body: a republish without it removes
    *  the slots from the page and KEEPS the answers already given. */
   state?: StateConfig
@@ -67,7 +71,7 @@ export const PACK_NAME = /^[a-z0-9][a-z0-9-]{0,39}$/
 /** The longest `to:` a page may carry: a name or two, never a sentence. */
 export const MAX_TO_CHARS = 60
 
-const KNOWN = new Set(['title', 'summary', 'subtitle', 'to', 'template', 'audience', 'cover', 'id', 'voice', 'narration', 'timings', 'narrationHash', 'password', 'access', 'state', 'theme', 'pack', 'toc', 'definitions', 'change', 'comments', 'comments_visible'])
+const KNOWN = new Set(['title', 'summary', 'subtitle', 'to', 'template', 'audience', 'cover', 'id', 'voice', 'narration', 'timings', 'narrationHash', 'password', 'access', 'state', 'theme', 'pack', 'toc', 'definitions', 'change', 'comments', 'comments_visible', 'links', 'media'])
 
 export function parseArtifactSource(
   text: string,
@@ -105,6 +109,15 @@ export function parseArtifactSource(
     if (d.access !== 'public' && !ACCESS_LEVELS.includes(d.access as Access))
       return { ok: false, error: `access must be one of: public, ${ACCESS_LEVELS.join(', ')}` }
     meta.access = d.access as Access | 'public'
+  }
+  if (d.links !== undefined && d.links !== null) {
+    if (d.links !== 'per-reader') return { ok: false, error: 'links must be per-reader' }
+    if (meta.password || meta.access) return { ok: false, error: 'per-reader links stand alone: drop password and access' }
+    meta.links = 'per-reader'
+  }
+  if (d.media !== undefined && d.media !== null) {
+    if (d.media !== 'private') return { ok: false, error: 'media must be private' }
+    meta.privateMedia = true
   }
   if (d.theme !== undefined) {
     if (!THEME_MODES.includes(d.theme as ThemeMode)) return { ok: false, error: `theme must be one of: ${THEME_MODES.join(', ')}` }

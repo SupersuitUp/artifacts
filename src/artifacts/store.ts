@@ -33,6 +33,10 @@ export type ArtifactRecord = {
   narrationHash?: string
   password?: string
   access?: Access
+  /** `per-reader`: opens only through a link made for one reader. */
+  links?: 'per-reader'
+  /** Body media are stored unlisted and served only to a valid reader. */
+  privateMedia?: true
   state?: StateConfig
   theme?: ThemeMode
   /** The brand pack the page asked for by name; see ArtifactMeta.pack. */
@@ -272,6 +276,8 @@ async function saveArtifact(col: Col, input: SaveInput): Promise<SaveResult> {
     const to = input.meta.to ? {} : { to: FieldValue.delete() }
     // How the page looks is content too: a line the file no longer carries goes back to the default.
     const look = {
+      ...(input.meta.links ? { links: input.meta.links } : { links: FieldValue.delete() }),
+      ...(input.meta.privateMedia ? { privateMedia: true } : { privateMedia: FieldValue.delete() }),
       ...(input.meta.theme ? {} : { theme: FieldValue.delete() }),
       ...(input.meta.pack ? {} : { pack: FieldValue.delete() }),
       ...(input.meta.toc !== undefined ? {} : { toc: FieldValue.delete() }),
@@ -298,6 +304,8 @@ async function saveArtifact(col: Col, input: SaveInput): Promise<SaveResult> {
     ...fields,
     ...(live.access ? { access: live.access } : {}),
     ...(live.password ? { password: live.password } : {}),
+    ...(input.meta.links ? { links: input.meta.links } : {}),
+    ...(input.meta.privateMedia ? { privateMedia: true } : {}),
     ...(live.state ? { state: live.state } : {}),
     ...(live.comments ? { comments: live.comments } : {}),
     ...(live.commentsVisible ? { commentsVisible: live.commentsVisible } : {}),

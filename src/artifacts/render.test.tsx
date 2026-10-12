@@ -196,3 +196,23 @@ describe('the messages block', () => {
   })
 })
 
+
+describe('broadcast media', () => {
+  it('a sound: video plays with controls and sound, never muted or looping', () => {
+    const out = html('![sound: At the river](https://cdn.example.com/x/river.abc12345.mp4?X-Goog-Signature=1)')
+    expect(out).toContain('controls')
+    expect(out).not.toMatch(/\bmuted\b/)
+    expect(out).not.toMatch(/\bloop\b/)
+    expect(out).toContain('data-artifact-media="river.abc12345.mp4"')
+    expect(out).toContain('aria-label="At the river"')
+  })
+  it('a plain mp4 is still the silent loop', () => {
+    const out = html('![The stack](https://cdn.example.com/02-the-stack.abc12345.mp4)')
+    expect(out).toContain('muted loop')
+  })
+  it('an m4a voice note plays as audio and is tracked by name', () => {
+    const out = html('![Voice note](https://cdn.example.com/x/note.abc12345.m4a)')
+    expect(out).toContain('<audio')
+    expect(out).toContain('data-artifact-media="note.abc12345.m4a"')
+  })
+})

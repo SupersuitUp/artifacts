@@ -48,6 +48,7 @@ export const ASSET_TYPES: Record<string, string> = {
   jpeg: 'image/jpeg',
   gif: 'image/gif',
   mp3: 'audio/mpeg',
+  m4a: 'audio/mp4',
   mp4: 'video/mp4',
   json: 'application/json',
 }
