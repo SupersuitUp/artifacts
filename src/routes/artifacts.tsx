@@ -27,6 +27,9 @@ import { ArtifactReader, type WordTiming } from '../reader/artifact-reader.js'
 import { CommentLayer } from '../reader/comment-layer.js'
 import { ReaderWatch } from '../reader/reader-watch.js'
 import { UpdatedTime } from '../reader/updated-time.js'
+import { perReaderGate, withPrivateUrls, NO_LINK, UNAVAILABLE } from './per-reader.js'
+import { ridCookieName, mintRenderToken, RID_COOKIE_MAX_AGE } from '../artifacts/recipients.js'
+import type { RecipientsStore } from '../artifacts/recipients-store.js'
 import { PageMenu, type PageRole } from '../reader/page-menu.js'
 import type { PageSettings, SettingsFact } from '../reader/settings-sheet.js'
 import { COMMENTS_MODES } from '../artifacts/comments.js'
@@ -140,15 +143,20 @@ export type ArtifactRoutesConfig = {
    *  bare URL sees, and search engines). Called only for the owner and admins; a throw falls back
    *  to the package's rows. */
   shareFacts?: (artifact: ArtifactRecord) => SettingsFact[] | Promise<SettingsFact[]>
+  /** Who each per-reader page was sent to (recipients-store.ts). Without it, or without
+   *  `recipientSecret`, a `links: per-reader` page is shut to everyone. */
+  recipients?: RecipientsStore
+  /** Signs per-reader links and render tokens. At least 32 characters. Read at request time. */
+  recipientSecret?: () => string | undefined
 }
 
 /** Ids are 8 chars from the safe alphabet; anything else is not a page and never reaches the store. */
 export const ARTIFACT_ID = ARTIFACT_ID_RE
 
 type Params = { params: Promise<{ id: string }> }
-type PageProps = Params & { searchParams?: Promise<{ key?: string | string[] }> }
+type PageProps = Params & { searchParams?: Promise<{ key?: string | string[]; r?: string | string[] }> }
 type VersionParams = { params: Promise<{ id: string; n: string }> }
-type VersionProps = VersionParams & { searchParams?: Promise<{ key?: string | string[] }> }
+type VersionProps = VersionParams & { searchParams?: Promise<{ key?: string | string[]; r?: string | string[] }> }
 type Rec = NonNullable<Awaited<ReturnType<ArtifactStore['get']>>>
 /** A version number as it appears in a URL: no zero, no leading zero, so each version has one address. */
 const VERSION_N = /^[1-9]\d{0,5}$/
@@ -406,6 +414,40 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     const { pack, brand } = lookOf(a)
     const render = (top: boolean, reader: Reader | null) => (n === null ? Body(a, { top, reader }) : VersionBody(a, n, { top, reader }))
     if (a.access) return GatedPage(a, id, render, n)
+    if (a.links === 'per-reader') {
+      if (n !== null) notFound() // a past version of a per-reader page is never served
+      const sp = (await searchParams) ?? {}
+      const param = Array.isArray(sp.r) ? sp.r[0] : sp.r
+      const readCookie = config.readCookie ?? defaultReadCookie
+      const privateUrl = config.assets?.privateUrl?.bind(config.assets)
+      // A signed-in owner or admin gets through as the owner, with no link and no tracking.
+      const me = readerSecret() ? verifyGrant(readerSecret(), await readCookie(GRANT_COOKIE).catch(() => undefined)) : null
+      if (isAdmin(me)) {
+        const markdown = a.privateMedia ? await withPrivateUrls(a.markdown, id, privateUrl) : a.markdown
+        return <BrandGround pack={pack} mode={a.theme}>{await Body({ ...a, markdown }, { top: true, reader: me })}</BrandGround>
+      }
+      const secret = config.recipientSecret?.()
+      const g = await perReaderGate({ id, param, cookie: await readCookie(ridCookieName(id)).catch(() => undefined), secret, recipients: config.recipients })
+      if (g.state === 'shut') {
+        return (
+          <BrandGround pack={pack} mode={a.theme}>
+            <p data-per-reader-shut className="mx-auto max-w-xl px-6 pt-32 text-center text-lg opacity-80">{g.why === 'no-link' ? NO_LINK : UNAVAILABLE}</p>
+          </BrandGround>
+        )
+      }
+      const token = mintRenderToken(secret!, id, g.rid)
+      const remember = g.fromLink
+        ? [pagePath(id), `/api/artifacts/${id}`].map((p) => `document.cookie=${JSON.stringify(`${ridCookieName(id)}=${g.rid}.${g.sig}; Path=${p}; Max-Age=${RID_COOKIE_MAX_AGE}; SameSite=Lax; Secure`)}`).join(';')
+        : null
+      const markdown = a.privateMedia ? await withPrivateUrls(a.markdown, id, privateUrl) : a.markdown
+      const body = await Body({ ...a, markdown }, { top: true, reader: null, perReader: { rid: g.rid, sig: g.sig, label: g.label, note: g.note, owner: g.owner, token } })
+      return (
+        <BrandGround pack={pack} mode={a.theme}>
+          {remember ? <script dangerouslySetInnerHTML={{ __html: remember }} /> : null}
+          {body}
+        </BrandGround>
+      )
+    }
     // A password shuts the body, never the title: the header stays so the reader knows which
     // page they were sent, and the unfurl (generateMetadata) keeps reading as the page.
     const sp = (await searchParams) ?? {}
@@ -627,7 +669,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
   }
 
   /** The page itself, shared by open and gated pages. */
-  async function Body(a: Rec, { top, reader }: { top: boolean; reader: Reader | null }) {
+  async function Body(a: Rec, { top, reader, perReader }: { top: boolean; reader: Reader | null; perReader?: { rid: string; sig: string; label: string; note: string | null; owner: boolean; token: string } }) {
     const { pack, brand } = lookOf(a)
     let words: WordTiming[] = []
     if (a.narration && a.timings) {
@@ -693,6 +735,9 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
                 toc={toc.length ? <TocInline items={toc} /> : null}
                 cover={
                   <>
+                    {perReader?.note ? (
+                      <p data-for-reader className="mx-auto mt-6 mb-0 max-w-2xl px-6 text-lg">{`For ${perReader.label}: ${perReader.note}`}</p>
+                    ) : null}
                     {header}
                     {a.cover ? (
                       <div className="mx-auto max-w-2xl px-6 pb-8">
