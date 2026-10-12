@@ -276,8 +276,10 @@ async function saveArtifact(col: Col, input: SaveInput): Promise<SaveResult> {
     const to = input.meta.to ? {} : { to: FieldValue.delete() }
     // How the page looks is content too: a line the file no longer carries goes back to the default.
     const look = {
-      ...(input.meta.links ? { links: input.meta.links } : { links: FieldValue.delete() }),
-      ...(input.meta.privateMedia ? { privateMedia: true } : { privateMedia: FieldValue.delete() }),
+      // Who may open the page is a door, not content: like `access`, a file that leaves these lines
+      // out changes nothing, so a publisher that strips unknown keys can never reopen the page.
+      ...(input.meta.links ? { links: input.meta.links } : {}),
+      ...(input.meta.privateMedia ? { privateMedia: true } : {}),
       ...(input.meta.theme ? {} : { theme: FieldValue.delete() }),
       ...(input.meta.pack ? {} : { pack: FieldValue.delete() }),
       ...(input.meta.toc !== undefined ? {} : { toc: FieldValue.delete() }),
