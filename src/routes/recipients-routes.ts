@@ -132,7 +132,16 @@ export function createRecipientsRoutes(ctx: RecipientsRoutesCtx) {
           if (rec && !rec.keep) { out.skipped.push(id); log(`sweepExpired: not deleting ${id}, expireAt is not a past ISO time`) }
           continue
         }
-        const files = (await ctx.assets?.deletePage?.(id)) ?? 0
+        const page = await ctx.store.get(id)
+        // The page is gone already: only the leftover record is cleaned up.
+        if (!page) { await ctx.recipients.forget(id); continue }
+        // A page republished without per-reader links keeps its old record; it is no longer a broadcast page.
+        if ((page as { links?: string }).links !== 'per-reader') { out.skipped.push(id); log(`sweepExpired: not deleting ${id}, it is not a per-reader page`); continue }
+        if (!ctx.assets?.deletePage) throw new Error('media deletion is not configured, page record kept so no media is orphaned')
+        const files = await ctx.assets.deletePage(id)
+        // Keep may have landed while the files were being removed: the page record and comments stay.
+        const again = await ctx.recipients.get(id)
+        if (!again || again.keep) { log(`sweepExpired: ${id} was kept during the sweep`); continue }
         // Reader text expires with the page: every comment and answer, whoever wrote it.
         if (ctx.state) for (const key of new Set((await ctx.state.entries(id)).map((e) => e.readerKey))) await ctx.state.removeReader(id, key)
         await ctx.store.delete(id)

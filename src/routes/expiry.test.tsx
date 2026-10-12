@@ -78,4 +78,37 @@ describe('sweepExpired', () => {
     expect(store.pages.has('aaaa2222')).toBe(true)
     expect(await recipients.expiring(NOW.toISOString())).toEqual(['aaaa2222'])
   })
+
+  it('forgets the record of a page that no longer exists, and skips a page republished without per-reader links', async () => {
+    const { r, recipients, store, deleted, state } = setup(['bbbb3333'])
+    store.pages.set('cccc4444', { ...store.pages.get('bbbb3333')!, id: 'cccc4444', links: undefined } as never)
+    for (const id of ['aaaa2222', 'cccc4444']) { await recipients.add(id, [{ label: 'X' }]); await recipients.setExpiry(id, '2026-10-01T00:00:00.000Z') }
+    await comment(state, 'cccc4444', 'one')
+    const out = await r.sweepExpired(NOW)
+    expect(out).toMatchObject({ pages: 0, skipped: ['cccc4444'] })
+    expect(await recipients.get('aaaa2222')).toBeNull()
+    expect(store.pages.has('cccc4444')).toBe(true)
+    expect(deleted).toEqual([])
+    expect(await state.entries('cccc4444')).toHaveLength(1)
+  })
+
+  it('aborts a page whose Keep landed during the sweep', async () => {
+    const { recipients, state, store } = setup(['aaaa2222'])
+    await recipients.add('aaaa2222', [{ label: 'X' }]); await recipients.setExpiry('aaaa2222', '2026-10-01T00:00:00.000Z')
+    const r = createRecipientsRoutes({
+      store, recipients, state, publishKey: () => 'k', pageUrl: (i) => i, authed: () => true, log: () => {},
+      assets: { put: async () => '', deletePage: async () => { await recipients.setExpiry('aaaa2222', null); return 2 } } as never,
+    })
+    expect(await r.sweepExpired(NOW)).toMatchObject({ pages: 0 })
+    expect(store.pages.has('aaaa2222')).toBe(true)
+    expect((await recipients.get('aaaa2222'))?.keep).toBe(true)
+  })
+
+  it('refuses to delete a page record when media deletion is not configured', async () => {
+    const { recipients, state, store } = setup(['aaaa2222'])
+    await recipients.add('aaaa2222', [{ label: 'X' }]); await recipients.setExpiry('aaaa2222', '2026-10-01T00:00:00.000Z')
+    const r = createRecipientsRoutes({ store, recipients, state, publishKey: () => 'k', pageUrl: (i) => i, authed: () => true, log: () => {} })
+    expect(await r.sweepExpired(NOW)).toMatchObject({ pages: 0, failed: ['aaaa2222'] })
+    expect(store.pages.has('aaaa2222')).toBe(true)
+  })
 })
