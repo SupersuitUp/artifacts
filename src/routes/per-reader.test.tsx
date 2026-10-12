@@ -18,46 +18,46 @@ import { ridCookieName } from '../artifacts/recipients.js'
 const S = 's'.repeat(40)
 async function seeded() {
   const recipients = memoryRecipientsStore()
-  const [tim, ann] = await recipients.add('abcd2345', [{ label: 'Tim', note: 'You were there.' }, { label: 'Ann' }])
-  return { recipients, tim, ann, link: (rid: string) => `${rid}.${ridSig(S, 'abcd2345', rid)}` }
+  const [ada, bea] = await recipients.add('abcd2345', [{ label: 'Reader A', note: 'You were there.' }, { label: 'Reader B' }])
+  return { recipients, ada, bea, link: (rid: string) => `${rid}.${ridSig(S, 'abcd2345', rid)}` }
 }
 
 describe('perReaderGate', () => {
   it('opens for a valid link, and for the cookie that link set', async () => {
-    const { recipients, tim, link } = await seeded()
-    const a = await perReaderGate({ id: 'abcd2345', param: link(tim.rid), cookie: undefined, secret: S, recipients })
-    expect(a).toMatchObject({ state: 'open', label: 'Tim', note: 'You were there.', fromLink: true })
-    const b = await perReaderGate({ id: 'abcd2345', param: undefined, cookie: link(tim.rid), secret: S, recipients })
+    const { recipients, ada, link } = await seeded()
+    const a = await perReaderGate({ id: 'abcd2345', param: link(ada.rid), cookie: undefined, secret: S, recipients })
+    expect(a).toMatchObject({ state: 'open', label: 'Reader A', note: 'You were there.', fromLink: true })
+    const b = await perReaderGate({ id: 'abcd2345', param: undefined, cookie: link(ada.rid), secret: S, recipients })
     expect(b).toMatchObject({ state: 'open', fromLink: false })
   })
   it('is shut with no link, a forged link, a revoked rid, an expired page, or no secret', async () => {
-    const { recipients, tim, ann, link } = await seeded()
+    const { recipients, ada, bea, link } = await seeded()
     expect(await perReaderGate({ id: 'abcd2345', param: undefined, cookie: undefined, secret: S, recipients })).toEqual({ state: 'shut', why: 'no-link' })
-    expect(await perReaderGate({ id: 'abcd2345', param: `${tim.rid}.0000000000000000`, cookie: undefined, secret: S, recipients })).toEqual({ state: 'shut', why: 'no-link' })
-    await recipients.revoke('abcd2345', [tim.rid])
-    expect(await perReaderGate({ id: 'abcd2345', param: link(tim.rid), cookie: undefined, secret: S, recipients })).toEqual({ state: 'shut', why: 'revoked' })
-    expect((await perReaderGate({ id: 'abcd2345', param: link(ann.rid), cookie: undefined, secret: S, recipients })).state).toBe('open')
+    expect(await perReaderGate({ id: 'abcd2345', param: `${ada.rid}.0000000000000000`, cookie: undefined, secret: S, recipients })).toEqual({ state: 'shut', why: 'no-link' })
+    await recipients.revoke('abcd2345', [ada.rid])
+    expect(await perReaderGate({ id: 'abcd2345', param: link(ada.rid), cookie: undefined, secret: S, recipients })).toEqual({ state: 'shut', why: 'revoked' })
+    expect((await perReaderGate({ id: 'abcd2345', param: link(bea.rid), cookie: undefined, secret: S, recipients })).state).toBe('open')
     await recipients.setExpiry('abcd2345', '2026-01-01T00:00:00.000Z')
-    expect(await perReaderGate({ id: 'abcd2345', param: link(ann.rid), cookie: undefined, secret: S, recipients, now: Date.parse('2026-02-01') })).toEqual({ state: 'shut', why: 'expired' })
-    expect(await perReaderGate({ id: 'abcd2345', param: link(ann.rid), cookie: undefined, secret: undefined, recipients })).toEqual({ state: 'shut', why: 'closed' })
+    expect(await perReaderGate({ id: 'abcd2345', param: link(bea.rid), cookie: undefined, secret: S, recipients, now: Date.parse('2026-02-01') })).toEqual({ state: 'shut', why: 'expired' })
+    expect(await perReaderGate({ id: 'abcd2345', param: link(bea.rid), cookie: undefined, secret: undefined, recipients })).toEqual({ state: 'shut', why: 'closed' })
   })
   it('never treats an empty secret as valid, even for a link signed with the empty string', async () => {
-    const { recipients, tim } = await seeded()
-    const forged = `${tim.rid}.${createHmac('sha256', '').update(`abcd2345\n${tim.rid}`).digest('hex').slice(0, 16)}`
+    const { recipients, ada } = await seeded()
+    const forged = `${ada.rid}.${createHmac('sha256', '').update(`abcd2345\n${ada.rid}`).digest('hex').slice(0, 16)}`
     expect(await perReaderGate({ id: 'abcd2345', param: forged, cookie: undefined, secret: '', recipients })).toEqual({ state: 'shut', why: 'closed' })
   })
 })
 
 describe('fail-closed edges', () => {
   it('a malformed expireAt is expired, not unlimited', async () => {
-    const { recipients, ann, link } = await seeded()
+    const { recipients, bea, link } = await seeded()
     await recipients.setExpiry('abcd2345', 'not-a-date')
-    expect(await perReaderGate({ id: 'abcd2345', param: link(ann.rid), cookie: undefined, secret: S, recipients })).toEqual({ state: 'shut', why: 'expired' })
+    expect(await perReaderGate({ id: 'abcd2345', param: link(bea.rid), cookie: undefined, secret: S, recipients })).toEqual({ state: 'shut', why: 'expired' })
   })
   it('a revoked rid held only in the cookie is refused', async () => {
-    const { recipients, tim, link } = await seeded()
-    await recipients.revoke('abcd2345', [tim.rid])
-    expect(await perReaderGate({ id: 'abcd2345', param: undefined, cookie: link(tim.rid), secret: S, recipients })).toEqual({ state: 'shut', why: 'revoked' })
+    const { recipients, ada, link } = await seeded()
+    await recipients.revoke('abcd2345', [ada.rid])
+    expect(await perReaderGate({ id: 'abcd2345', param: undefined, cookie: link(ada.rid), secret: S, recipients })).toEqual({ state: 'shut', why: 'revoked' })
   })
 })
 
@@ -81,28 +81,28 @@ describe('the page', () => {
     assets: { put: async () => '', privateUrl: async (_i: string, s: string) => `https://signed.example.com/${s}` } as never, ...over,
   }))
   it('a revoked reader sees only that it is no longer available, and no media', async () => {
-    const { recipients, tim, link } = await seeded()
-    await recipients.revoke('abcd2345', [tim.rid])
-    const html = renderToStaticMarkup(await routes(recipients).Page(props(link(tim.rid))))
+    const { recipients, ada, link } = await seeded()
+    await recipients.revoke('abcd2345', [ada.rid])
+    const html = renderToStaticMarkup(await routes(recipients).Page(props(link(ada.rid))))
     expect(html).toContain(UNAVAILABLE)
     expect(html).not.toContain('signed.example.com')
   })
   it('a valid reader sees their own note and the signed video, and never another reader\'s note', async () => {
-    const { recipients, tim, ann, link } = await seeded()
+    const { recipients, ada, bea, link } = await seeded()
     const r = routes(recipients)
-    const timHtml = renderToStaticMarkup(await r.Page(props(link(tim.rid))))
-    expect(timHtml).toContain('For Tim: You were there.')
-    expect(timHtml).toContain('https://signed.example.com/river-1234abcd.mp4')
-    const annHtml = renderToStaticMarkup(await r.Page(props(link(ann.rid))))
-    expect(annHtml).not.toContain('You were there.')
-    expect(annHtml).not.toContain(tim.rid)
+    const adaHtml = renderToStaticMarkup(await r.Page(props(link(ada.rid))))
+    expect(adaHtml).toContain('For Reader A: You were there.')
+    expect(adaHtml).toContain('https://signed.example.com/river-1234abcd.mp4')
+    const beaHtml = renderToStaticMarkup(await r.Page(props(link(bea.rid))))
+    expect(beaHtml).not.toContain('You were there.')
+    expect(beaHtml).not.toContain(ada.rid)
   })
   it('no link, or no store, or no secret: shut to everyone', async () => {
-    const { recipients, link, tim } = await seeded()
+    const { recipients, link, ada } = await seeded()
     expect(renderToStaticMarkup(await routes(recipients).Page(props()))).toContain(NO_LINK)
-    expect(renderToStaticMarkup(await routes(undefined).Page(props(link(tim.rid))))).toContain(UNAVAILABLE)
-    expect(renderToStaticMarkup(await routes(recipients, { recipientSecret: () => '' }).Page(props(link(tim.rid))))).toContain(UNAVAILABLE)
-    expect(renderToStaticMarkup(await routes(recipients).Page(props(link(tim.rid))))).not.toContain(UNAVAILABLE)
+    expect(renderToStaticMarkup(await routes(undefined).Page(props(link(ada.rid))))).toContain(UNAVAILABLE)
+    expect(renderToStaticMarkup(await routes(recipients, { recipientSecret: () => '' }).Page(props(link(ada.rid))))).toContain(UNAVAILABLE)
+    expect(renderToStaticMarkup(await routes(recipients).Page(props(link(ada.rid))))).not.toContain(UNAVAILABLE)
   })
   it('the owner signed in gets through without a link, with media but no reader note', async () => {
     const { recipients } = await seeded()
@@ -134,9 +134,9 @@ describe('owner bypass and settings', () => {
     expect(renderToStaticMarkup(await createArtifactRoutes(cfg(dana, recipients)).Page(props))).toContain(NO_LINK)
   })
   it('a revoked rid opened by cookie only is refused on the page', async () => {
-    const { recipients, tim, link } = await seeded()
-    await recipients.revoke('abcd2345', [tim.rid])
-    const r = createArtifactRoutes(cfg(null, recipients, { readCookie: async (n: string) => (n === ridCookieName('abcd2345') ? link(tim.rid) : undefined) }))
+    const { recipients, ada, link } = await seeded()
+    await recipients.revoke('abcd2345', [ada.rid])
+    const r = createArtifactRoutes(cfg(null, recipients, { readCookie: async (n: string) => (n === ridCookieName('abcd2345') ? link(ada.rid) : undefined) }))
     expect(renderToStaticMarkup(await r.Page(props))).toContain(UNAVAILABLE)
   })
   it('settings refuses an access or password change on a per-reader page, in words', async () => {

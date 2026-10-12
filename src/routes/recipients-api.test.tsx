@@ -29,11 +29,11 @@ describe('recipients API', () => {
   })
   it('adds readers and answers each one its own working link', async () => {
     const { call } = setup()
-    const res = await (await call('POST', 'RECIPIENTS', { add: [{ label: 'Tim', note: 'Yours.' }, { label: 'Obedient Friends', group: true }] })).json()
+    const res = await (await call('POST', 'RECIPIENTS', { add: [{ label: 'Reader A', note: 'Yours.' }, { label: 'Example Group', group: true }] })).json()
     expect(res.added).toHaveLength(2)
     const p = parseRidParam(new URL(res.added[0].url).searchParams.get('r'))!
     expect(verifyRid(S, 'abcd2345', p.rid, p.sig)).toBe(true)
-    expect(res.recipients.find((x: { label: string }) => x.label === 'Obedient Friends').group).toBe(true)
+    expect(res.recipients.find((x: { label: string }) => x.label === 'Example Group').group).toBe(true)
   })
   it('revokes one, then all, and Keep clears the expiry', async () => {
     const { call } = setup()
@@ -62,11 +62,11 @@ describe('recipients API', () => {
   })
   it('views answer one line per reader, with their comments', async () => {
     const { call, recipients, comments } = setup()
-    const { added } = await (await call('POST', 'RECIPIENTS', { add: [{ label: 'Tim' }] })).json()
+    const { added } = await (await call('POST', 'RECIPIENTS', { add: [{ label: 'Reader A' }] })).json()
     await recipients.recordView({ artifactId: 'abcd2345', rid: added[0].rid, session: 's1', device: 'd1', at: '2026-10-11T10:00:00.000Z', addSeconds: 2 })
     comments.splice(0, 1, { slot: 'comments', readerKey: `r:${added[0].rid}`, at: '2026-10-11T10:01:00.000Z', value: { body: 'Beautiful' } })
     const v = await (await call('GET', 'VIEWS')).json()
-    expect(v.recipients[0]).toMatchObject({ label: 'Tim', opened: true, comments: [{ text: 'Beautiful' }] })
+    expect(v.recipients[0]).toMatchObject({ label: 'Reader A', opened: true, comments: [{ text: 'Beautiful' }] })
   })
   it('refuses an empty label or a null element with 400, and an expiry in the past', async () => {
     const { call } = setup()

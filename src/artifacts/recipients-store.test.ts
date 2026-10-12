@@ -30,13 +30,13 @@ for (const [name, make] of [['memory', () => memoryRecipientsStore()], ['firesto
     let s: RecipientsStore
     it('adds readers with their own rids and labels, and revokes one without touching the others', async () => {
       s = make()
-      const [tim, ann] = await s.add('abcd2345', [{ label: 'Reader A', note: 'For Reader A: this one is yours.' }, { label: 'Reader B' }])
-      expect(tim.rid).not.toBe(ann.rid)
-      expect(await s.revoke('abcd2345', [tim.rid])).toEqual([tim.rid])
+      const [ada, bea] = await s.add('abcd2345', [{ label: 'Reader A', note: 'For Reader A: this one is yours.' }, { label: 'Reader B' }])
+      expect(ada.rid).not.toBe(bea.rid)
+      expect(await s.revoke('abcd2345', [ada.rid])).toEqual([ada.rid])
       const r = (await s.get('abcd2345'))!
-      expect(r.recipients[tim.rid].revokedAt).toBeTruthy()
-      expect(r.recipients[ann.rid].revokedAt).toBeUndefined()
-      expect(r.recipients[tim.rid].note).toBe('For Reader A: this one is yours.')
+      expect(r.recipients[ada.rid].revokedAt).toBeTruthy()
+      expect(r.recipients[bea.rid].revokedAt).toBeUndefined()
+      expect(r.recipients[ada.rid].note).toBe('For Reader A: this one is yours.')
     })
     it('revoking everyone shuts every rid', async () => {
       s = make()
