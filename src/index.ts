@@ -1,5 +1,5 @@
 export * from './artifacts/index.js'
 export * from './brand/index.js'
 export * from './gate.js'
-export { createArtifactRoutes, type ArtifactRoutesConfig } from './routes/artifacts.js'
+export { createArtifactRoutes, BROADCAST_TTL_MS, type ArtifactRoutesConfig } from './routes/artifacts.js'
 export { ANON_COOKIE } from './routes/state-routes.js'

@@ -3,6 +3,46 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.37.0
+
+**A broadcast is its own page kind.** `template: broadcast` in front matter makes a page one
+message sent to several people, each through their own link, instead of a document with extra
+lines. Documents are unchanged: an ordinary page renders byte for byte as before (the golden render
+test is untouched) and lists as it always would have.
+
+- The message card: the sender's words, then the media in the order written (a video with sound
+  and controls, photos, a voice note's player, link cards), then the reader's own note. No table of
+  contents, no version line, no read-along player, no page menu for a reader.
+- The kind's defaults: per-reader links implied; private media implied wherever the body has a
+  stored private file or a local one (a remote URL alone stores nothing); the kind is sticky like
+  `links:` (a republish leaving `template:` out stays a broadcast, `template: document` is refused
+  with 409); `access`, `password` and `comments_visible: readers` refused in words; comments off unless
+  the file turns them on; no narration player (a voice note is its own audio). A body pointing at a
+  local file without `media: private` is refused, because that line is what makes the publisher
+  upload it privately.
+- Expiry: `POST /api/artifacts` gives a broadcast with no date one 90 days out (`BROADCAST_TTL_MS`)
+  and answers it as `expireAt`. A date already set stands; Keep holds.
+- `GET /api/artifacts?kind=broadcast|document` (`LIST`, publish key or the owner or an admin signed
+  in): the owner's two lists. A broadcast's line carries `readers` (live links) and `revoked`; a
+  recipients store that fails fails the list. `ArtifactStore.list(kind)` (optional; the Firestore store has it),
+  `kindOf`, `listOfKind`, `ARTIFACT_KINDS`.
+- An unfurl fetcher never gets a signed media URL. DETECTOR: a per-reader page fetched with a
+  preview agent's user agent rendered its private media's signed URLs into the HTML, which a
+  preview service may cache. REMEDY: none in the host; the page now renders its text only to a
+  known fetcher or a request with no agent (`readHeader`, default through `next/headers`).
+- `DELETE /api/artifacts/<id>` removes the page's files from both buckets (`deletePage`), then its
+  readers, their notes and views and every comment on it, before the record. DETECTOR: a deleted
+  page's media stayed in the bucket, and a kept broadcast's per-person notes and comments outlived
+  it. REMEDY: none; a failure to remove either answers 502 and keeps the record so the delete can be run again. An id that is not a
+  page id is refused before the bucket is touched.
+- `shutPageResponse(request)`: a revoked or expired per-reader link answers 410 Gone with the same
+  quiet words. DETECTOR: a revoked link answered 200. REMEDY: call it from your `proxy.ts` (README,
+  Broadcasts: skip requests with no link or rid cookie before loading anything, and catch every
+  failure); without it the page still says the same words with a 200.
+- Documents: the one output change is the bot rule above, on per-reader documents only.
+- TESTS: `src/routes/broadcast.test.tsx`, `src/artifacts/store.test.ts` (listing one kind),
+  `src/artifacts/index.test.ts`, `src/artifacts/front-matter.test.ts`.
+
 ## 0.36.0
 
 **Private media moves to its own private bucket, and a host without one refuses it.** 0.35.0 kept

@@ -120,6 +120,17 @@ export function createRecipientsRoutes(given: RecipientsRoutesCtx) {
     const comments = entries.filter((e) => e.slot === COMMENTS_SLOT && e.readerKey.startsWith('r:')).map((e) => ({ readerKey: e.readerKey, at: e.at, text: String((e.value as { body?: unknown } | null)?.body ?? '') }))
     return json({ id, expireAt: rec.expireAt, keep: rec.keep, recipients: summarizeViews(rec, await ctx.recipients.views(id), comments) })
   }
+  /** Reader text goes with the page: every comment and answer on it, whoever wrote it. */
+  async function clearReaderText(id: string) {
+    if (ctx.state) for (const key of new Set((await ctx.state.entries(id)).map((e) => e.readerKey))) await ctx.state.removeReader(id, key)
+  }
+  /** Everything a page holds about its readers: their comments and answers, then who it was sent
+   *  to, each person's note and their views. DELETE calls it before removing the page record, so a
+   *  failure leaves the record and the delete can be run again. */
+  async function forgetReaders(id: string) {
+    await clearReaderText(id)
+    await ctx.recipients?.forget(id)
+  }
   /** The daily sweep: deletes only pages whose recipients record carries an expireAt that is a
    *  well-formed time in the past and is not kept. An unparseable expireAt is never deleted (the
    *  gate already shuts the page); it is reported in `skipped`. A page that fails midway stays
@@ -146,8 +157,7 @@ export function createRecipientsRoutes(given: RecipientsRoutesCtx) {
         // Keep may have landed while the files were being removed: the page record and comments stay.
         const again = await ctx.recipients.get(id)
         if (!again || again.keep) { log(`sweepExpired: ${id} was kept during the sweep`); continue }
-        // Reader text expires with the page: every comment and answer, whoever wrote it.
-        if (ctx.state) for (const key of new Set((await ctx.state.entries(id)).map((e) => e.readerKey))) await ctx.state.removeReader(id, key)
+        await clearReaderText(id)
         await ctx.store.delete(id)
         await ctx.recipients.forget(id)
         out.pages++
@@ -159,5 +169,5 @@ export function createRecipientsRoutes(given: RecipientsRoutesCtx) {
     }
     return out
   }
-  return { SEEN, RECIPIENTS, VIEWS, sweepExpired }
+  return { SEEN, RECIPIENTS, VIEWS, sweepExpired, forgetReaders }
 }

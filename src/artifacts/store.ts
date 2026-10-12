@@ -9,7 +9,7 @@
 // first save of a page still carrying the array moves it into the subcollection.
 import { randomInt } from 'node:crypto'
 import { FieldValue, type Firestore } from 'firebase-admin/firestore'
-import type { ArtifactMeta } from './front-matter.js'
+import type { ArtifactKind, ArtifactMeta } from './front-matter.js'
 import type { Access } from './reader.js'
 import type { StateConfig } from './state.js'
 import type { ThemeMode } from '../brand/theme.js'
@@ -21,7 +21,8 @@ export type ArtifactRecord = {
   id: string
   title: string
   summary: string
-  template: 'document'
+  /** The page kind; see ArtifactMeta.template. Pages saved before kinds existed carry `document`. */
+  template: ArtifactKind
   subtitle?: string
   /** Who the page is for; see ArtifactMeta.to. */
   to?: string
@@ -85,6 +86,21 @@ export function newArtifactId(): string {
   return s
 }
 
+/** One line of the owner's list of pages: no body, no settings. */
+export type ArtifactListItem = { id: string; title: string; summary: string; template: ArtifactKind; createdAt: string; updatedAt: string; views: number }
+
+/** The kind a stored page is: anything not saved as a broadcast is a document, so pages saved
+ *  before kinds existed list where they always would have. */
+export const kindOf = (a: { template?: string }): ArtifactKind => (a.template === 'broadcast' ? 'broadcast' : 'document')
+
+/** The owner's list of one kind, newest first: the same rule every store applies. */
+export function listOfKind(pages: Iterable<Partial<ArtifactRecord> & { id: string }>, kind: ArtifactKind): ArtifactListItem[] {
+  return [...pages]
+    .filter((p) => kindOf(p) === kind)
+    .map((p) => ({ id: p.id, title: p.title ?? '', summary: p.summary ?? '', template: kind, createdAt: p.createdAt ?? '', updatedAt: p.updatedAt ?? '', views: p.views ?? 0 }))
+    .sort((x, y) => y.updatedAt.localeCompare(x.updatedAt) || x.id.localeCompare(y.id))
+}
+
 export type SaveResult = { id: string; version: number; created: boolean } | { notFound: true }
 
 export type SaveInput = {
@@ -114,6 +130,9 @@ export interface ArtifactStore {
   version?(id: string, n: number): Promise<VersionRecord | null>
   /** Write (or, with null, clear) the change note on one version after the fact. */
   setNote?(id: string, n: number, note: string | null): Promise<boolean>
+  /** Every page of one kind, newest first, without bodies (0.37.0): the owner's documents and the
+   *  owner's broadcasts are two lists. */
+  list?(kind: ArtifactKind): Promise<ArtifactListItem[]>
 }
 
 /** The Firestore-backed store. The instance hands in its own Firestore, so the shell
@@ -146,6 +165,11 @@ export function createArtifactStore(db: Firestore, collection = 'artifacts'): Ar
     history: (id) => historyOf(col, id),
     version: (id, n) => versionOf(col, id, n),
     setNote: (id, n, note) => setNote(col, id, n, note),
+    list: async (kind) => {
+      // `select` keeps every body out of the listing; a tenant's pages number in the hundreds.
+      const snap = await col().select('title', 'summary', 'template', 'createdAt', 'updatedAt', 'views').get()
+      return listOfKind(snap.docs.map((d) => ({ ...(d.data() as Partial<ArtifactRecord>), id: d.id })), kind)
+    },
   }
 }
 

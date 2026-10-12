@@ -331,3 +331,20 @@ describe('settings changed on the page (0.31.0)', () => {
     expect((await getArtifact(r.id))?.declared).toMatchObject({ comments: 'anyone' })
   })
 })
+
+describe('listing one kind (0.37.0)', () => {
+  beforeEach(() => docs.clear())
+  it('lists broadcasts and documents apart, newest first, with no body; a page saved before kinds is a document', async () => {
+    const listed = { collection: () => ({ doc: (id: string) => fakeDoc(id), select: (...fields: string[]) => listing('', fields) }) } as unknown as import('firebase-admin/firestore').Firestore
+    const s = createArtifactStore(listed)
+    docs.set('dcma2345', { title: 'Doc A', summary: 'S', template: 'document', markdown: 'long body', createdAt: '2026-10-01T00:00:00Z', updatedAt: '2026-10-01T00:00:00Z', views: 3 })
+    docs.set('dcmb2345', { title: 'Doc B', summary: 'S', markdown: 'old', createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-10-05T00:00:00Z', views: 0 })
+    docs.set('bcsa2345', { title: 'Lake', summary: 'S', template: 'broadcast', markdown: 'x', createdAt: '2026-10-02T00:00:00Z', updatedAt: '2026-10-02T00:00:00Z', views: 0 })
+    const b = await s.list!('broadcast')
+    expect(b.map((p) => p.id)).toEqual(['bcsa2345'])
+    const d = await s.list!('document')
+    expect(d.map((p) => p.id)).toEqual(['dcmb2345', 'dcma2345'])
+    expect(d[1]).toEqual({ id: 'dcma2345', title: 'Doc A', summary: 'S', template: 'document', createdAt: '2026-10-01T00:00:00Z', updatedAt: '2026-10-01T00:00:00Z', views: 3 })
+    expect(JSON.stringify(d)).not.toContain('long body')
+  })
+})
