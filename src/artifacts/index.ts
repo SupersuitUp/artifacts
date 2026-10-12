@@ -25,3 +25,4 @@ export { AUDIO_TYPES, audioExtFor, audioTypeFor, baseMime, MAX_AUDIO_BYTES, MAX_
 export { settleOnPublish, applySettingsPatch, withComments, declaredOf, passwordDigest, newPageKey, type DeclaredSettings, type LiveSettings, type SettingsPatch } from './settings.js'
 export type { PageSettings, SettingsFact, AccessLevel } from '../reader/settings-sheet.js'
 export * from './recipients.js'
+export * from './recipients-store.js'
