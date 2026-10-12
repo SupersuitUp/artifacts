@@ -21,7 +21,8 @@ export async function perReaderGate(o: { id: string; param: string | undefined; 
   const r = rec?.recipients[pick.rid]
   if (!rec || !r) return { state: 'shut', why: 'no-link' }
   if (r.revokedAt) return { state: 'shut', why: 'revoked' }
-  if (rec.expireAt && Date.parse(rec.expireAt) <= (o.now ?? Date.now())) return { state: 'shut', why: 'expired' }
+  // A malformed expireAt parses to NaN: treat it as expired, never as no expiry.
+  if (rec.expireAt && !(Date.parse(rec.expireAt) > (o.now ?? Date.now()))) return { state: 'shut', why: 'expired' }
   return { state: 'open', rid: pick.rid, sig: pick.sig, label: r.label, note: r.note ?? null, owner: r.owner === true, fromLink: pick.fromLink }
 }
 

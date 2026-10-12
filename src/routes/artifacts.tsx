@@ -884,6 +884,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     if (!a) return NextResponse.json({ error: `no artifact with id ${id}` }, { status: 404 })
     if (request.method === 'GET') return NextResponse.json({ id, access: a.access ?? null, readers: await config.readers.allowList(id) })
     const b = (await request.json().catch(() => null)) as { add?: unknown; remove?: unknown; access?: unknown } | null
+    if (a.links === 'per-reader' && b?.access !== undefined) return NextResponse.json({ error: 'a per-reader page opens only from its own links, so its access and password cannot be changed' }, { status: 409 })
     let access = a.access ?? null
     if (b?.access !== undefined) {
       if (b.access !== 'public' && !ACCESS_LEVELS.includes(b.access as Access))
@@ -933,6 +934,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     let b: Record<string, unknown>
     try { b = JSON.parse(raw) } catch { return no('the body is not JSON', 400) }
     if (!b || typeof b !== 'object' || Array.isArray(b)) return no('the body is an object', 400)
+    if (a.links === 'per-reader' && (b.access !== undefined || b.password !== undefined)) return no('a per-reader page opens only from its own links, so its access and password cannot be changed', 409)
     const KEYS = ['access', 'password', 'comments', 'commentsVisible', 'add', 'remove']
     const unknown = Object.keys(b).filter((k) => !KEYS.includes(k))
     if (unknown.length) return no(`unknown setting: ${unknown.join(', ')}`, 400)

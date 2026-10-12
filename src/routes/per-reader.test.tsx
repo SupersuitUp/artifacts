@@ -11,6 +11,8 @@ import { ridSig } from '../artifacts/recipients.js'
 import { createArtifactRoutes } from './artifacts.js'
 import { testConfig, memoryArtifactStore } from './test-config.js'
 import { GRANT_COOKIE, mintGrant } from '../artifacts/reader.js'
+import { NextRequest } from 'next/server'
+import { ridCookieName } from '../artifacts/recipients.js'
 
 const S = 's'.repeat(40)
 async function seeded() {
@@ -42,6 +44,19 @@ describe('perReaderGate', () => {
     const { recipients, tim } = await seeded()
     const forged = `${tim.rid}.${ridSig('', 'abcd2345', tim.rid)}`
     expect(await perReaderGate({ id: 'abcd2345', param: forged, cookie: undefined, secret: '', recipients })).toEqual({ state: 'shut', why: 'closed' })
+  })
+})
+
+describe('fail-closed edges', () => {
+  it('a malformed expireAt is expired, not unlimited', async () => {
+    const { recipients, ann, link } = await seeded()
+    await recipients.setExpiry('abcd2345', 'not-a-date')
+    expect(await perReaderGate({ id: 'abcd2345', param: link(ann.rid), cookie: undefined, secret: S, recipients })).toEqual({ state: 'shut', why: 'expired' })
+  })
+  it('a revoked rid held only in the cookie is refused', async () => {
+    const { recipients, tim, link } = await seeded()
+    await recipients.revoke('abcd2345', [tim.rid])
+    expect(await perReaderGate({ id: 'abcd2345', param: undefined, cookie: link(tim.rid), secret: S, recipients })).toEqual({ state: 'shut', why: 'revoked' })
   })
 })
 
@@ -100,5 +115,46 @@ describe('the page', () => {
     expect(html).not.toContain(NO_LINK)
     expect(html).toContain('https://signed.example.com/river-1234abcd.mp4')
     expect(html).not.toContain('You were there.')
+  })
+})
+
+describe('owner bypass and settings', () => {
+  const page = { id: 'abcd2345', title: 'T', summary: 'S', links: 'per-reader' as const, markdown: 'x' }
+  const RS = 'rs'
+  const cfg = (who: { uid: string; email: string; name: string; member: boolean } | null, recipients: unknown, over = {}) => testConfig({
+    store: { ...memoryArtifactStore([page]), setSettings: async () => null, setAccess: async () => {} } as never,
+    recipients: recipients as never, recipientSecret: () => S, readerSecret: () => RS, ownerEmail: 'robin@example.com', admins: ['casey@example.com'],
+    readCookie: async (n: string) => (who && n === GRANT_COOKIE ? mintGrant(RS, who) : undefined), ...over,
+  })
+  const props = { params: Promise.resolve({ id: 'abcd2345' }), searchParams: Promise.resolve({}) }
+  it('a signed-in reader who is neither owner nor admin does not get the bypass', async () => {
+    const { recipients } = await seeded()
+    const dana = { uid: 'u3', email: 'dana@example.com', name: 'Dana', member: true }
+    expect(renderToStaticMarkup(await createArtifactRoutes(cfg(dana, recipients)).Page(props))).toContain(NO_LINK)
+  })
+  it('a revoked rid opened by cookie only is refused on the page', async () => {
+    const { recipients, tim, link } = await seeded()
+    await recipients.revoke('abcd2345', [tim.rid])
+    const r = createArtifactRoutes(cfg(null, recipients, { readCookie: async (n: string) => (n === ridCookieName('abcd2345') ? link(tim.rid) : undefined) }))
+    expect(renderToStaticMarkup(await r.Page(props))).toContain(UNAVAILABLE)
+  })
+  it('settings refuses an access or password change on a per-reader page, in words', async () => {
+    const { recipients } = await seeded()
+    const owner = { uid: 'u1', email: 'robin@example.com', name: 'Robin', member: true }
+    const site = 'https://artifacts.example.com'
+    for (const body of [{ access: 'freedom' }, { password: 'on' }]) {
+      const res = await createArtifactRoutes(cfg(owner, recipients, { readers: {} as never })).SETTINGS(
+        new NextRequest(`${site}/api/artifacts/abcd2345/settings`, { method: 'POST', headers: { 'content-type': 'application/json', origin: site, cookie: `${GRANT_COOKIE}=${mintGrant(RS, owner)}` }, body: JSON.stringify(body) }),
+        { params: Promise.resolve({ id: 'abcd2345' }) })
+      expect(res.status).toBe(409)
+      expect(((await res.json()) as { error: string }).error).toContain('per-reader page opens only from its own links')
+    }
+  })
+  it('the access route refuses an access change on a per-reader page', async () => {
+    const { recipients } = await seeded()
+    const res = await createArtifactRoutes(cfg(null, recipients, { readers: {} as never })).ACCESS(
+      new NextRequest('https://artifacts.example.com/api/artifacts/abcd2345/access', { method: 'POST', headers: { authorization: 'Bearer test-key', 'content-type': 'application/json' }, body: JSON.stringify({ access: 'invite' }) }),
+      { params: Promise.resolve({ id: 'abcd2345' }) })
+    expect(res.status).toBe(409)
   })
 })
