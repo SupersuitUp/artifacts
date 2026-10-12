@@ -151,6 +151,9 @@ export function parseArtifactSource(
     if (d.comments_visible !== 'owner' && d.comments_visible !== 'readers') return { ok: false, error: 'comments_visible must be owner or readers' }
     meta.commentsVisible = d.comments_visible
   }
+  // People on one broadcast never see each other's comments, so a per-reader page cannot share them.
+  if (meta.links === 'per-reader' && meta.commentsVisible === 'readers')
+    return { ok: false, error: 'a per-reader page keeps each reader\'s comments to the owner: drop comments_visible: readers' }
   // Widgets declare their own slots, so a notes block (and a checklist with send) is merged into state: here, before the
   // page is stored, and the state API and the republish shape checks see it like any slot.
   // Errors name the line in the FILE: the body's lines are counted after the front matter's.

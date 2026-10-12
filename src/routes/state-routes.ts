@@ -158,7 +158,10 @@ export function createStateRoutes(ctx: StateRoutesContext) {
     const allow = reader && ctx.readers && a.access ? await ctx.readers.allowList(a.id) : []
     const entries = await ctx.state!.entries(a.id)
     const slots = stateView(a.state!, entries, readerKey)
-    const owner = isOwner(reader)
+    // A reader who came through their own link sees only their own answers: whatever the page's
+    // settings say, nothing of another reader's is shared with them.
+    if (canWriteAs) for (const v of Object.values(slots)) { v.visibility = 'private'; delete v.shared; delete v.tally }
+    const owner = !canWriteAs && isOwner(reader)
     // The owner reads every comment with its writer's full name, whatever the page shows readers.
     if (owner && commentsOn(a)) {
       slots[COMMENTS_SLOT].shared = entries.filter((e) => e.slot === COMMENTS_SLOT)
@@ -180,8 +183,8 @@ export function createStateRoutes(ctx: StateRoutesContext) {
 
   /** The comments a writer can see, by id: every one on a readers-visible page, else their own,
    *  and every one for the owner. A reply may name only a comment its writer was shown. */
-  async function visibleComments(a: ArtifactRecord, writerKey: string, reader: Reader | null) {
-    const all = slotVisibility(a.state!, COMMENTS_SLOT) === 'shared' || isOwner(reader)
+  async function visibleComments(a: ArtifactRecord, writerKey: string, reader: Reader | null, perReader = false) {
+    const all = !perReader && (slotVisibility(a.state!, COMMENTS_SLOT) === 'shared' || isOwner(reader))
     const byId = new Map<string, CommentValue>()
     for (const e of await ctx.state!.entries(a.id))
       if (e.slot === COMMENTS_SLOT && (all || e.readerKey === writerKey)) byId.set(e.id, e.value as CommentValue)
@@ -282,7 +285,7 @@ export function createStateRoutes(ctx: StateRoutesContext) {
       if (bad) return json({ error: bad }, 400)
       let value: unknown = b.value
       if (isComments) {
-        const seen = await visibleComments(a, writer.key, reader)
+        const seen = await visibleComments(a, writer.key, reader, !!recipient)
         const c = validateComment(b.value, (cid) => seen.get(cid) ?? null)
         if (!c.ok) return json({ error: c.error }, 400)
         // A shared comment's recording is one uploaded as a comment, never a path elsewhere under the

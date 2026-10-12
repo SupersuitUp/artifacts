@@ -305,4 +305,16 @@ describe('comments through a per-reader link', () => {
     const { routes } = await setup()
     expect((await routes.STATE_GET(get('prr23456'), params('prr23456'))).status).toBe(403)
   })
+  it('reader A never sees reader B\'s comment, even when the page says readers may', async () => {
+    const { routes, state, tim, ann, cookie } = await setup()
+    RECORDS.prr23456 = page('prr23456', 'anyone', 'readers', { links: 'per-reader' })
+    try {
+      await routes.STATE_POST(post('prr23456', comment('Ann private note.'), cookie(ann)), params('prr23456'))
+      const view = await (await routes.STATE_GET(get('prr23456', cookie(tim)), params('prr23456'))).json()
+      expect(view.slots.comments.mine).toEqual([])
+      expect(view.slots.comments.shared).toBeUndefined()
+      expect(JSON.stringify(view)).not.toContain('Ann private note.')
+      expect((await state.entries('prr23456')).filter((x) => x.slot === 'comments')).toHaveLength(1)
+    } finally { RECORDS.prr23456 = page('prr23456', 'anyone', 'owner', { links: 'per-reader' }) }
+  })
 })

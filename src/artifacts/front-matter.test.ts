@@ -181,4 +181,9 @@ describe('links and media', () => {
     const r = parseArtifactSource('---\ntitle: T\nsummary: S\nlinks: per-reader\npassword: x\n---\nbody')
     expect(!r.ok && r.error).toMatch(/per-reader links stand alone/)
   })
+  it('a per-reader page refuses comments_visible: readers', () => {
+    const r = parseArtifactSource('---\ntitle: T\nsummary: S\nlinks: per-reader\ncomments: anyone\ncomments_visible: readers\n---\nbody')
+    expect(!r.ok && r.error).toMatch(/per-reader/)
+    expect(parseArtifactSource('---\ntitle: T\nsummary: S\nlinks: per-reader\ncomments: anyone\ncomments_visible: owner\n---\nbody').ok).toBe(true)
+  })
 })

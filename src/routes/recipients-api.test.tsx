@@ -53,4 +53,11 @@ describe('recipients API', () => {
     const v = await (await call('GET', 'VIEWS')).json()
     expect(v.recipients[0]).toMatchObject({ label: 'Tim', opened: true, comments: [{ text: 'Beautiful' }] })
   })
+  it('refuses an empty label or a null element with 400, and an expiry in the past', async () => {
+    const { call } = setup()
+    expect((await call('POST', 'RECIPIENTS', { add: [{ label: '  ' }] })).status).toBe(400)
+    expect((await call('POST', 'RECIPIENTS', { add: [null] })).status).toBe(400)
+    expect((await call('POST', 'RECIPIENTS', { expires: '2020-01-01T00:00:00.000Z' })).status).toBe(400)
+    expect((await call('POST', 'RECIPIENTS', { expires: 'nonsense' })).status).toBe(400)
+  })
 })

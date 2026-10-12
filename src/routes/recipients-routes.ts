@@ -86,6 +86,10 @@ export function createRecipientsRoutes(ctx: RecipientsRoutesCtx) {
     if (!b) return json({ error: 'body must be JSON' }, 400)
     const secret = ctx.recipientSecret()!
     let added: { rid: string; label: string; url: string }[] = []
+    if (Array.isArray(b.add) && b.add.some((x) => !x || typeof x !== 'object' || typeof (x as { label?: unknown }).label !== 'string' || !(x as { label: string }).label.trim()))
+      return json({ error: 'each reader to add needs a label' }, 400)
+    if (typeof b.expires === 'string' && Number.isNaN(Date.parse(b.expires))) return json({ error: 'expires must be an ISO time or null' }, 400)
+    if (typeof b.expires === 'string' && Date.parse(b.expires) <= Date.now()) return json({ error: 'expires must be in the future' }, 400)
     if (Array.isArray(b.add) && b.add.length) {
       const made = await ctx.recipients.add(id, b.add as { label: string; note?: string; owner?: boolean; group?: boolean }[])
       added = made.map((r) => ({ rid: r.rid, label: r.label, url: ridLink(ctx.pageUrl(id), id, r.rid, secret) }))
@@ -94,7 +98,6 @@ export function createRecipientsRoutes(ctx: RecipientsRoutesCtx) {
       ? await ctx.recipients.revoke(id, b.revoke === '*' ? '*' : (b.revoke as unknown[]).filter((x): x is string => typeof x === 'string' && RID_RE.test(x)))
       : []
     if (b.expires === null || typeof b.expires === 'string') {
-      if (typeof b.expires === 'string' && Number.isNaN(Date.parse(b.expires))) return json({ error: 'expires must be an ISO time or null' }, 400)
       await ctx.recipients.setExpiry(id, b.expires === null ? null : new Date(b.expires as string).toISOString())
     }
     return json({ ...(await listing(id)), added, revoked })
