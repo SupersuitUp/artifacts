@@ -4,7 +4,7 @@ export { narrationText, narrationTextFromMarkdown, normalizeWord } from './narra
 export { createArtifactStore, newArtifactId, cleanNote, MAX_CHANGE_NOTE_CHARS, type ArtifactStore, type ArtifactRecord, type SaveResult, type SaveInput, type VersionEntry, type VersionRecord } from './store.js'
 export { isPublishAuthed, isPublisherAuthed, type PublishAuth } from './auth.js'
 export { mintPublisherPass, verifyPublisherPass, PUBLISHER_PASS_TTL_SECONDS, type Publisher } from './publisher.js'
-export { createArtifactAssets, contentTypeFor, storedName, hashedName, ASSET_NAME, ASSET_DIGEST, type ArtifactAssets } from './assets.js'
+export { createArtifactAssets, contentTypeFor, storedName, hashedName, ASSET_NAME, ASSET_DIGEST, PRIVATE_READ_TTL_MS, type ArtifactAssets, type ArtifactAssetsOptions } from './assets.js'
 export { isUnlocked, keyHash, unlockCookieName, unlockedUrl } from './unlock.js'
 export { verifyPass, mintPass, verifyGrant, mintGrant, decide, firstName, signInUrl, safeReturnPath, GRANT_COOKIE, ACCESS_LEVELS, type Access, type Reader, type AllowEntry, type Decision } from './reader.js'
 export { createReadersStore, summarize, FLAG_KINDS, type ReadersStore, type FlagKind, type SessionDoc, type FlagDoc, type ReaderSummary } from './readers-store.js'

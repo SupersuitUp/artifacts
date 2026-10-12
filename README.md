@@ -22,7 +22,7 @@ Firestore), and optionally `@google-cloud/storage >= 7` for uploaded files.
 | `createArtifactRoutes(config)` | Every route handler: the page, its metadata, the publish API, the share card, the reader sign-in exchange, access control |
 | `createArtifactStore(db, path)` | Firestore store for pages and their version history, under any collection path |
 | `createReadersStore(db, path)` | The record for confidential pages: allowlist, agreements, reading sessions, flags |
-| `createArtifactAssets(bucket, prefix)` | Uploaded images for a page, in a Cloud Storage bucket |
+| `createArtifactAssets(bucket, prefix, { privateBucket? })` | Uploaded images for a page, in a Cloud Storage bucket; private media in a separate private bucket |
 | `freedomDefault`, `BrandPack` | The default look and the type any other look implements |
 | `BrandGround`, `BrandMark` | The pack's page backdrop and mark, for your own pages (a home, a 404) |
 | `parseArtifactSource` | The front-matter contract, as a parser you can call before publishing (widget fences included) |
@@ -849,6 +849,14 @@ media: private
 
 `links: per-reader` shuts the page to everyone who does not arrive through a valid, unrevoked, unexpired link. It cannot be combined with `password`, `access` or `comments_visible: readers` (readers never see each other's comments). `media: private` keeps body media under the page's private prefix; `.mp4` and `.m4a` (and `.mp3`) are supported, and `sound:` at the start of a video's alt makes it a clip with controls and sound. Both lines are sticky: republishing a file that leaves them out changes nothing.
 
+### Private media lives in its own bucket
+
+`media: private` needs a private store: `createArtifactAssets(bucket, prefix, { privateBucket })`. Private files go to `privateBucket` under `<prefix>/<id>/private/`; covers, images and narration stay on the public `bucket`. Without `privateBucket` the private methods are not defined, and the host refuses private media with 501 at every door: publishing a page with `media: private` (or republishing a page that already keeps it), and `?private=1` uploads. Nothing is saved. This is on purpose: a public bucket often carries a bucket-wide public read grant, so an object written there is readable by anyone who has its URL, whatever the object's own settings say.
+
+The private bucket must be a different bucket from the public one (passing the same bucket twice throws), with uniform bucket-level access, public access prevention enforced, and object access granted only to the host's own service account. The page signs a V4 read URL per private file on every render that passed the per-reader gate, valid `PRIVATE_READ_TTL_MS` (one hour); a revoked or expired link renders nothing and mints nothing. A reader revoked after a render can keep loading a URL already handed to them for at most that hour. Expiry's `deletePage` clears the page from both buckets.
+
+If the publisher uploads straight to the private bucket from a browser (`?private=1` on `UPLOAD`), give that bucket a CORS rule allowing `PUT` from your origin with the `content-type` and `cache-control` headers; a reader's browser playing a signed URL needs `GET` (and `HEAD`) from your origin only if your player fetches it with CORS.
+
 Routes (spread into your route files by `createArtifactRoutes`): `RECIPIENTS`, `VIEWS`, `SEEN`, and `sweepExpired`.
 
 | Route | Who | What |
@@ -868,7 +876,7 @@ A view is the page rendered in a real browser, visible, for at least 2 seconds. 
 
 ### Expiry
 
-`expires` sets the date the page, its media, its readers, their views and their comments go. `sweepExpired()` (call it daily from a cron route) deletes them and returns `{ pages, files, skipped, failed }`: pages removed, media files removed, ids it refused to delete (an expiry that is not a past ISO time, or a page republished without per-reader links), and ids that failed and will be retried by the next run. Your `assets` must provide `deletePage`, or every expired page lands in `failed` and nothing is deleted. A Keep that lands mid-sweep is honored. Deleting a page also removes every prior version of its body.
+`expires` sets the date the page, its media, its readers, their views and their comments go. `sweepExpired()` (call it daily from a cron route) deletes them and returns `{ pages, files, skipped, failed }`: pages removed, media files removed, ids it refused to delete (an expiry that is not a past ISO time, or a page republished without per-reader links), and ids that failed and will be retried by the next run. Your `assets` must provide `deletePage`, or every expired page lands in `failed` and nothing is deleted. With a private bucket configured it deletes from both buckets. A Keep that lands mid-sweep is honored. Deleting a page also removes every prior version of its body.
 
 ## Brand packs
 

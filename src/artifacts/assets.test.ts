@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { PRIVATE_REF, ASSET_NAME, contentTypeFor, createArtifactAssets, hashedName, storedName } from './assets.js'
+import { PRIVATE_REF, PRIVATE_READ_TTL_MS, ASSET_NAME, contentTypeFor, createArtifactAssets, hashedName, storedName } from './assets.js'
 
 describe('artifact assets', () => {
   it('accepts sane names and refuses paths', () => {
@@ -99,11 +99,11 @@ describe('artifact assets', () => {
   })
 })
 
-function fakeBucket() {
+function fakeBucket(name = 'bucket-example') {
   const calls: { op: string; key: string; action?: string; expiresIn?: number }[] = []
   const keys = new Set<string>()
   const bucket = {
-    name: 'bucket-example',
+    name,
     file: (key: string) => ({
       save: async () => { calls.push({ op: 'save', key }); keys.add(key) },
       makePublic: async () => { calls.push({ op: 'makePublic', key }) },
@@ -116,48 +116,88 @@ function fakeBucket() {
 }
 
 describe('private media', () => {
-  it('putPrivate stores under private/, never makes the file public, and answers a private: ref', async () => {
-    const { bucket, calls } = fakeBucket()
+  // The public bucket can carry a bucket-wide public read grant, so "never made public" means
+  // nothing there: private media lives in its own bucket, and with no such bucket there is none.
+  const both = () => {
+    const pub = fakeBucket('public-example')
+    const priv = fakeBucket('private-example')
+    const a = createArtifactAssets(pub.bucket as never, 'artifacts', { privateBucket: priv.bucket as never })
+    return { pub, priv, a }
+  }
+  it('without a private bucket there are no private methods, so private media cannot land in the public bucket', () => {
+    const { bucket } = fakeBucket()
     const a = createArtifactAssets(bucket as never, 'artifacts')
+    expect(a.putPrivate).toBeUndefined()
+    expect(a.signPrivateUpload).toBeUndefined()
+    expect(a.finishPrivateUpload).toBeUndefined()
+    expect(a.privateUrl).toBeUndefined()
+    expect(typeof a.deletePage).toBe('function')
+  })
+  it('refuses the public bucket passed again as the private one', () => {
+    const { bucket } = fakeBucket('same-example')
+    const again = fakeBucket('same-example').bucket
+    expect(() => createArtifactAssets(bucket as never, 'artifacts', { privateBucket: again as never })).toThrow(/private bucket/)
+  })
+  it('putPrivate writes to the private bucket under private/, never the public one, never public, and answers a private: ref', async () => {
+    const { pub, priv, a } = both()
     const ref = await a.putPrivate!('abcd2345', 'river.mp4', Buffer.from('v'), 'video/mp4')
     expect(ref).toMatch(/^private:river\.[0-9a-f]{8}\.mp4$/)
     expect(PRIVATE_REF.test(ref)).toBe(true)
-    expect(calls.some((c) => c.op === 'save' && c.key.startsWith('artifacts/abcd2345/private/'))).toBe(true)
-    expect(calls.some((c) => c.op === 'makePublic')).toBe(false)
+    expect(priv.calls.some((c) => c.op === 'save' && c.key.startsWith('artifacts/abcd2345/private/'))).toBe(true)
+    expect(pub.calls).toHaveLength(0)
+    expect(priv.calls.some((c) => c.op === 'makePublic')).toBe(false)
   })
-  it('signs a private upload to the private key and finishes only when it arrived, never public', async () => {
-    const { bucket, calls } = fakeBucket()
-    const a = createArtifactAssets(bucket as never, 'artifacts')
+  it('public assets stay on the public bucket when a private one is configured', async () => {
+    const { pub, priv, a } = both()
+    const url = await a.put('abcd2345', 'cover.webp', Buffer.from('c'), 'image/webp')
+    expect(url).toContain('https://storage.googleapis.com/public-example/artifacts/abcd2345/')
+    expect(pub.calls.some((c) => c.op === 'save')).toBe(true)
+    expect(priv.calls).toHaveLength(0)
+  })
+  it('signs a private upload to the private bucket and finishes only when it arrived there, never public', async () => {
+    const { pub, priv, a } = both()
     const out = await a.signPrivateUpload!('abcd2345', 'river.mp4', '0123abcd', 'video/mp4')
     expect(out.url).toBe('private:river.0123abcd.mp4')
-    expect(calls.find((c) => c.op === 'getSignedUrl')!.key).toBe('artifacts/abcd2345/private/river.0123abcd.mp4')
+    expect(priv.calls.find((c) => c.op === 'getSignedUrl')!.key).toBe('artifacts/abcd2345/private/river.0123abcd.mp4')
     expect(await a.finishPrivateUpload!('abcd2345', 'river.mp4', '0123abcd')).toBeNull()
-    await bucket.file('artifacts/abcd2345/private/river.0123abcd.mp4').save()
+    await pub.bucket.file('artifacts/abcd2345/private/river.0123abcd.mp4').save()
+    expect(await a.finishPrivateUpload!('abcd2345', 'river.mp4', '0123abcd')).toBeNull()
+    await priv.bucket.file('artifacts/abcd2345/private/river.0123abcd.mp4').save()
     expect(await a.finishPrivateUpload!('abcd2345', 'river.mp4', '0123abcd')).toBe('private:river.0123abcd.mp4')
-    expect(calls.some((c) => c.op === 'makePublic')).toBe(false)
+    expect(priv.calls.some((c) => c.op === 'makePublic')).toBe(false)
   })
-  it('privateUrl signs a read for one hour, refuses a path-shaped name, and deletePage removes everything under the page', async () => {
-    const { bucket, calls } = fakeBucket()
-    const a = createArtifactAssets(bucket as never, 'artifacts')
+  it('privateUrl signs a V4 read on the private bucket for PRIVATE_READ_TTL_MS (one hour), fresh on every call, and refuses a path-shaped name', async () => {
+    expect(PRIVATE_READ_TTL_MS).toBe(60 * 60 * 1000)
+    const { pub, priv, a } = both()
     const ref = await a.putPrivate!('abcd2345', 'note.m4a', Buffer.from('a'), 'audio/mp4')
     const url = await a.privateUrl!('abcd2345', ref.slice('private:'.length))
     expect(url).toContain('signed')
-    const read = calls.find((c) => c.op === 'getSignedUrl')!
-    expect(read.action).toBe('read')
-    expect(read.expiresIn).toBeLessThanOrEqual(3_600_000)
+    await a.privateUrl!('abcd2345', ref.slice('private:'.length))
+    const reads = priv.calls.filter((c) => c.op === 'getSignedUrl')
+    expect(reads).toHaveLength(2)
+    expect(reads[0].action).toBe('read')
+    expect(reads[0].key).toBe(`artifacts/abcd2345/private/${ref.slice('private:'.length)}`)
+    expect(reads[0].expiresIn).toBeLessThanOrEqual(PRIVATE_READ_TTL_MS)
+    expect(reads[0].expiresIn).toBeGreaterThan(PRIVATE_READ_TTL_MS - 5_000)
+    expect(pub.calls.filter((c) => c.op === 'getSignedUrl')).toHaveLength(0)
     await expect(a.privateUrl!('abcd2345', '../x')).rejects.toThrow()
-    expect(await a.deletePage!('abcd2345')).toBeGreaterThan(0)
   })
-  it('deletePage removes the page files, leaves a sibling page alone, and refuses a bad id', async () => {
-    const { bucket } = fakeBucket()
-    const a = createArtifactAssets(bucket as never, 'artifacts')
+  it('deletePage removes the page from both buckets, leaves a sibling page alone, and refuses a bad id', async () => {
+    const { pub, priv, a } = both()
     await a.putPrivate!('abcd2345', 'one.mp4', Buffer.from('1'), 'video/mp4')
     await a.put('abcd2345', 'cover.webp', Buffer.from('c'), 'image/webp')
     await a.putPrivate!('efgh2345', 'two.mp4', Buffer.from('2'), 'video/mp4')
     expect(await a.deletePage!('abcd2345')).toBe(2)
-    expect((await bucket.getFiles({ prefix: 'artifacts/abcd2345/' }))[0]).toHaveLength(0)
-    expect((await bucket.getFiles({ prefix: 'artifacts/efgh2345/' }))[0]).toHaveLength(1)
+    expect((await pub.bucket.getFiles({ prefix: 'artifacts/abcd2345/' }))[0]).toHaveLength(0)
+    expect((await priv.bucket.getFiles({ prefix: 'artifacts/abcd2345/' }))[0]).toHaveLength(0)
+    expect((await priv.bucket.getFiles({ prefix: 'artifacts/efgh2345/' }))[0]).toHaveLength(1)
     for (const bad of ['', '..', 'abcd2345/../x', 'ABCD2345', 'abc']) await expect(a.deletePage!(bad)).rejects.toThrow()
-    expect((await bucket.getFiles({ prefix: 'artifacts/' }))[0]).toHaveLength(1)
+    expect((await priv.bucket.getFiles({ prefix: 'artifacts/' }))[0]).toHaveLength(1)
+  })
+  it('deletePage with no private bucket still removes the public files', async () => {
+    const { bucket } = fakeBucket()
+    const a = createArtifactAssets(bucket as never, 'artifacts')
+    await a.put('abcd2345', 'cover.webp', Buffer.from('c'), 'image/webp')
+    expect(await a.deletePage!('abcd2345')).toBe(1)
   })
 })
