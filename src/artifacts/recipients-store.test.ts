@@ -22,18 +22,31 @@ for (const [name, make] of [['memory', () => memoryRecipientsStore()], ['firesto
     let s: RecipientsStore
     it('adds readers with their own rids and labels, and revokes one without touching the others', async () => {
       s = make()
-      const [tim, ann] = await s.add('abcd2345', [{ label: 'Tim', note: 'For Tim: this one is yours.' }, { label: 'Ann' }])
+      const [tim, ann] = await s.add('abcd2345', [{ label: 'Reader A', note: 'For Reader A: this one is yours.' }, { label: 'Reader B' }])
       expect(tim.rid).not.toBe(ann.rid)
       expect(await s.revoke('abcd2345', [tim.rid])).toEqual([tim.rid])
       const r = (await s.get('abcd2345'))!
       expect(r.recipients[tim.rid].revokedAt).toBeTruthy()
       expect(r.recipients[ann.rid].revokedAt).toBeUndefined()
-      expect(r.recipients[tim.rid].note).toBe('For Tim: this one is yours.')
+      expect(r.recipients[tim.rid].note).toBe('For Reader A: this one is yours.')
     })
     it('revoking everyone shuts every rid', async () => {
       s = make()
       const added = await s.add('abcd2345', [{ label: 'A' }, { label: 'B' }])
       expect((await s.revoke('abcd2345', '*')).sort()).toEqual(added.map((x) => x.rid).sort())
+    })
+    it('refuses an empty label', async () => {
+      s = make()
+      await expect(s.add('abcd2345', [{ label: '   ' }])).rejects.toThrow('label')
+    })
+    it('revoking an already-revoked rid does not re-stamp it', async () => {
+      s = make()
+      const [a] = await s.add('abcd2345', [{ label: 'Reader A' }])
+      await s.revoke('abcd2345', [a.rid])
+      const first = (await s.get('abcd2345'))!.recipients[a.rid].revokedAt
+      await new Promise((r) => setTimeout(r, 5))
+      expect(await s.revoke('abcd2345', [a.rid])).toEqual([])
+      expect((await s.get('abcd2345'))!.recipients[a.rid].revokedAt).toBe(first)
     })
     it('a render token is accepted exactly once', async () => {
       s = make()
@@ -61,9 +74,9 @@ for (const [name, make] of [['memory', () => memoryRecipientsStore()], ['firesto
 
 describe('summarizeViews', () => {
   const rec = { expireAt: null, keep: false, recipients: {
-    aaaaaaaaaaaa: { rid: 'aaaaaaaaaaaa', label: 'Tim', addedAt: 'x' },
-    bbbbbbbbbbbb: { rid: 'bbbbbbbbbbbb', label: 'Obedient Friends', group: true as const, addedAt: 'x' },
-    oooooooooooo: { rid: 'oooooooooooo', label: 'Gary', owner: true as const, addedAt: 'x' },
+    aaaaaaaaaaaa: { rid: 'aaaaaaaaaaaa', label: 'Reader A', addedAt: 'x' },
+    bbbbbbbbbbbb: { rid: 'bbbbbbbbbbbb', label: 'Example Group', group: true as const, addedAt: 'x' },
+    oooooooooooo: { rid: 'oooooooooooo', label: 'Owner', owner: true as const, addedAt: 'x' },
   } }
   const v = (rid: string, session: string, device: string, firstAt: string, secs = 10, plays = {}) =>
     ({ artifactId: 'p', rid, session, device, firstAt, lastAt: firstAt, activeSeconds: secs, plays })
@@ -75,8 +88,13 @@ describe('summarizeViews', () => {
       v('bbbbbbbbbbbb', 's4', 'd4', '2026-10-11T11:10:00.000Z'),
       v('oooooooooooo', 's5', 'd5', '2026-10-11T11:10:00.000Z'),
     ], [{ readerKey: 'r:aaaaaaaaaaaa', at: '2026-10-11T10:01:00.000Z', text: 'Wow' }])
-    expect(out.map((r) => r.label)).toEqual(['Tim', 'Obedient Friends'])
+    expect(out.map((r) => r.label)).toEqual(['Reader A', 'Example Group'])
     expect(out[0]).toMatchObject({ opened: true, cameBack: true, plays: 2, devices: 2, activeSeconds: 35, firstOpenAt: '2026-10-11T10:00:00.000Z', comments: [{ text: 'Wow' }] })
     expect(out[1]).toMatchObject({ group: true, devices: 2, cameBack: false })
+  })
+  it('marks a revoked reader as revoked', () => {
+    const out = summarizeViews({ ...rec, recipients: { ...rec.recipients, aaaaaaaaaaaa: { ...rec.recipients.aaaaaaaaaaaa, revokedAt: 'y' } } }, [], [])
+    expect(out[0]).toMatchObject({ revoked: true, opened: false })
+    expect(out[1].revoked).toBe(false)
   })
 })
