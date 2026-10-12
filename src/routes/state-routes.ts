@@ -18,7 +18,7 @@ import { isPublisherAuthed } from '../artifacts/auth.js'
 import { ARTIFACT_ID_RE } from './ids.js'
 import { GRANT_COOKIE, decide, firstName, signInUrl, verifyGrant, type Reader } from '../artifacts/reader.js'
 import { isUnlocked, unlockCookieName } from '../artifacts/unlock.js'
-import { ridCookieName } from '../artifacts/recipients.js'
+import { ridCookieName, usableSecret } from '../artifacts/recipients.js'
 import type { RecipientsStore } from '../artifacts/recipients-store.js'
 import { perReaderGate } from './per-reader.js'
 import { ANON_WRITES_PER_MINUTE, MAX_ENTRIES_PER_SLOT, checkValue, effectiveWriters, slotVisibility } from '../artifacts/state.js'
@@ -124,7 +124,7 @@ export function createStateRoutes(ctx: StateRoutesContext) {
     // reader, and what they write is theirs under that key. A revoked or expired rid is shut.
     let recipient: { rid: string; label: string } | null = null
     if (a.links === 'per-reader') {
-      const g = await perReaderGate({ id, param: undefined, cookie: req.cookies.get(ridCookieName(id))?.value, secret: ctx.recipientSecret?.(), recipients: ctx.recipients })
+      const g = await perReaderGate({ id, param: undefined, cookie: req.cookies.get(ridCookieName(id))?.value, secret: usableSecret(ctx.recipientSecret?.()), recipients: ctx.recipients })
       if (g.state === 'shut') return { error: json({ error: 'this page is locked' }, 403) }
       recipient = { rid: g.rid, label: g.label }
     }

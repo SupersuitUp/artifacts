@@ -6,10 +6,10 @@ import { memoryArtifactStore } from './test-config.js'
 import { parseRidParam, verifyRid } from '../artifacts/recipients.js'
 
 const S = 's'.repeat(40)
-function setup(page: Record<string, unknown> = { id: 'abcd2345', links: 'per-reader' }) {
+function setup(page: Record<string, unknown> = { id: 'abcd2345', links: 'per-reader' }, secret = S) {
   const recipients = memoryRecipientsStore()
   const comments: { slot: string; readerKey: string; at: string; value: unknown }[] = [{ slot: 'comments', readerKey: 'r:', at: '', value: {} }]
-  const r = createRecipientsRoutes({ store: memoryArtifactStore([page]), recipients, recipientSecret: () => S, publishKey: () => 'k', pageUrl: (id) => `https://artifacts.example.com/${id}`,
+  const r = createRecipientsRoutes({ store: memoryArtifactStore([page]), recipients, recipientSecret: () => secret, publishKey: () => 'k', pageUrl: (id) => `https://artifacts.example.com/${id}`,
     authed: (req) => req.headers.get('authorization') === 'Bearer k', state: { entries: async () => comments } as never })
   const call = (method: string, path: 'RECIPIENTS' | 'VIEWS', body?: unknown, key = 'k') => (r as unknown as Record<string, (q: NextRequest, c: unknown) => Promise<Response>>)[path](
     new NextRequest(`https://artifacts.example.com/api/artifacts/abcd2345/${path.toLowerCase()}`, { method, ...(body ? { body: JSON.stringify(body) } : {}), headers: { authorization: `Bearer ${key}` } }), { params: Promise.resolve({ id: 'abcd2345' }) })
@@ -17,6 +17,11 @@ function setup(page: Record<string, unknown> = { id: 'abcd2345', links: 'per-rea
 }
 
 describe('recipients API', () => {
+  it('a secret under 32 characters is treated as unset: the routes keep no per-reader links', async () => {
+    const { call } = setup(undefined, 'too short')
+    expect((await call('GET', 'RECIPIENTS')).status).toBe(501)
+    expect((await call('POST', 'RECIPIENTS', { add: [{ label: 'A' }] })).status).toBe(501)
+  })
   it('needs the publish key', async () => {
     const { call } = setup()
     expect((await call('GET', 'RECIPIENTS', undefined, 'wrong')).status).toBe(401)

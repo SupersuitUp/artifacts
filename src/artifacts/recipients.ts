@@ -13,7 +13,17 @@ export const VIEW_AFTER_MS = 2000
 export const TOKEN_MAX_AGE_MS = 86_400_000
 const ALPHA = 'abcdefghijklmnopqrstuvwxyz0123456789'
 
-const mac = (secret: string, text: string) => createHmac('sha256', secret).update(text).digest('hex').slice(0, 16)
+/** A signing secret shorter than this is treated as unset by the routes: the page shuts. */
+export const RECIPIENT_SECRET_MIN = 32
+export function usableSecret(secret: string | null | undefined): string | undefined {
+  return typeof secret === 'string' && secret.length >= RECIPIENT_SECRET_MIN ? secret : undefined
+}
+
+const mac = (secret: string, text: string) => {
+  // An empty key still produces a valid MAC that anyone can compute; never sign with one.
+  if (!secret) throw new Error('a signing secret is required')
+  return createHmac('sha256', secret).update(text).digest('hex').slice(0, 16)
+}
 const same = (a: string, b: string) => a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b))
 
 export function newRid(): string {
@@ -58,6 +68,7 @@ export function verifyRenderToken(secret: string, id: string, rid: string, token
   { ok: true; key: string; expiresAt: number } | { ok: false; why: string } {
   const parts = String(token ?? '').split('.')
   if (parts.length !== 3) return { ok: false, why: 'malformed' }
+  if (!secret) return { ok: false, why: 'no secret' }
   const [ts, nonce, m] = parts
   if (!/^[0-9a-z]{1,12}$/.test(ts) || !SIG_RE.test(nonce) || !SIG_RE.test(m)) return { ok: false, why: 'malformed' }
   if (!same(mac(secret, `${id}\n${rid}\n${ts}\n${nonce}`), m)) return { ok: false, why: 'not minted here' }

@@ -1,6 +1,7 @@
 // src/artifacts/recipients.test.ts
+import { createHmac } from 'node:crypto'
 import { describe, it, expect } from 'vitest'
-import { RID_RE, newRid, ridSig, ridLink, parseRidParam, verifyRid, mintRenderToken, verifyRenderToken, beatKey, isUnfurlAgent } from './recipients.js'
+import { RID_RE, newRid, ridSig, ridLink, parseRidParam, verifyRid, mintRenderToken, verifyRenderToken, beatKey, isUnfurlAgent, usableSecret } from './recipients.js'
 
 const S = 'k'.repeat(40)
 
@@ -23,6 +24,24 @@ describe('per-reader links', () => {
   })
   it('the signature depends on the secret', () => {
     expect(ridSig(S, 'abcd2345', 'r0r0r0r0r0r0')).not.toBe(ridSig('z'.repeat(40), 'abcd2345', 'r0r0r0r0r0r0'))
+  })
+})
+
+describe('an empty secret signs nothing', () => {
+  it('ridSig, ridLink, mintRenderToken and beatKey refuse it; verify refuses it', () => {
+    expect(() => ridSig('', 'abcd2345', 'r0r0r0r0r0r0')).toThrow()
+    expect(() => ridLink('https://x.example/abcd2345', 'abcd2345', 'r0r0r0r0r0r0', '')).toThrow()
+    expect(() => mintRenderToken('', 'abcd2345', 'r0r0r0r0r0r0')).toThrow()
+    expect(() => beatKey('', 'abcd2345', 'r0r0r0r0r0r0', 's1')).toThrow()
+    const forged = createHmac('sha256', '').update('abcd2345\nr0r0r0r0r0r0').digest('hex').slice(0, 16)
+    expect(verifyRid('', 'abcd2345', 'r0r0r0r0r0r0', forged)).toBe(false)
+    expect(verifyRenderToken('', 'abcd2345', 'r0r0r0r0r0r0', 'lx2.aaaaaaaaaaaaaaaa.0000000000000000').ok).toBe(false)
+  })
+  it('usableSecret keeps only a secret of at least 32 characters', () => {
+    expect(usableSecret(undefined)).toBeUndefined()
+    expect(usableSecret('short')).toBeUndefined()
+    expect(usableSecret('k'.repeat(31))).toBeUndefined()
+    expect(usableSecret(S)).toBe(S)
   })
 })
 

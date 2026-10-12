@@ -28,7 +28,7 @@ import { CommentLayer } from '../reader/comment-layer.js'
 import { ReaderWatch } from '../reader/reader-watch.js'
 import { UpdatedTime } from '../reader/updated-time.js'
 import { perReaderGate, withPrivateUrls, NO_LINK, UNAVAILABLE } from './per-reader.js'
-import { ridCookieName, mintRenderToken, RID_COOKIE_MAX_AGE } from '../artifacts/recipients.js'
+import { ridCookieName, mintRenderToken, usableSecret, RID_COOKIE_MAX_AGE } from '../artifacts/recipients.js'
 import type { RecipientsStore } from '../artifacts/recipients-store.js'
 import { PageMenu, type PageRole } from '../reader/page-menu.js'
 import type { PageSettings, SettingsFact } from '../reader/settings-sheet.js'
@@ -432,7 +432,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
         const markdown = a.privateMedia ? await withPrivateUrls(a.markdown, id, privateUrl) : a.markdown
         return <BrandGround pack={pack} mode={a.theme}>{await Body({ ...a, markdown }, { top: true, reader: me })}</BrandGround>
       }
-      const secret = config.recipientSecret?.()
+      const secret = usableSecret(config.recipientSecret?.())
       const g = await perReaderGate({ id, param, cookie: await readCookie(ridCookieName(id)).catch(() => undefined), secret, recipients: config.recipients })
       if (g.state === 'shut') {
         return (

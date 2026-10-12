@@ -1,6 +1,6 @@
 // The per-reader routes. SEEN is public (the page calls it); everything else needs the publish key.
 import { NextResponse, type NextRequest } from 'next/server'
-import { RID_RE, beatKey, isUnfurlAgent, ridLink, verifyRenderToken, verifyRid } from '../artifacts/recipients.js'
+import { RID_RE, usableSecret, beatKey, isUnfurlAgent, ridLink, verifyRenderToken, verifyRid } from '../artifacts/recipients.js'
 import { summarizeViews, type RecipientsStore } from '../artifacts/recipients-store.js'
 import { COMMENTS_SLOT } from '../artifacts/comments.js'
 import type { ArtifactStore } from '../artifacts/store.js'
@@ -28,7 +28,9 @@ const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$
 const none = () => new NextResponse(null, { status: 204, headers: { 'cache-control': 'no-store' } })
 const json = (b: unknown, status = 200) => NextResponse.json(b, { status, headers: { 'cache-control': 'no-store' } })
 
-export function createRecipientsRoutes(ctx: RecipientsRoutesCtx) {
+export function createRecipientsRoutes(given: RecipientsRoutesCtx) {
+  // A secret under the documented minimum is no secret: every route treats it as unset.
+  const ctx: RecipientsRoutesCtx = { ...given, recipientSecret: () => usableSecret(given.recipientSecret?.()) }
   /** POST /api/artifacts/<id>/seen: the page's own signal that a reader looked at it. */
   async function SEEN(req: NextRequest, { params }: Params) {
     const { id } = await params

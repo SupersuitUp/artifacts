@@ -1,3 +1,4 @@
+import { createHmac } from 'node:crypto'
 import { describe, it, expect, vi } from 'vitest'
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 vi.mock('next/navigation', () => ({
@@ -42,7 +43,7 @@ describe('perReaderGate', () => {
   })
   it('never treats an empty secret as valid, even for a link signed with the empty string', async () => {
     const { recipients, tim } = await seeded()
-    const forged = `${tim.rid}.${ridSig('', 'abcd2345', tim.rid)}`
+    const forged = `${tim.rid}.${createHmac('sha256', '').update(`abcd2345\n${tim.rid}`).digest('hex').slice(0, 16)}`
     expect(await perReaderGate({ id: 'abcd2345', param: forged, cookie: undefined, secret: '', recipients })).toEqual({ state: 'shut', why: 'closed' })
   })
 })
