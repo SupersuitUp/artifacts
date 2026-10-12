@@ -1,7 +1,8 @@
 // The per-reader routes. SEEN is public (the page calls it); everything else needs the publish key.
 import { NextResponse, type NextRequest } from 'next/server'
-import { RID_RE, beatKey, isUnfurlAgent, verifyRenderToken, verifyRid } from '../artifacts/recipients.js'
-import type { RecipientsStore } from '../artifacts/recipients-store.js'
+import { RID_RE, beatKey, isUnfurlAgent, ridLink, verifyRenderToken, verifyRid } from '../artifacts/recipients.js'
+import { summarizeViews, type RecipientsStore } from '../artifacts/recipients-store.js'
+import { COMMENTS_SLOT } from '../artifacts/comments.js'
 import type { ArtifactStore } from '../artifacts/store.js'
 import type { StateStore } from '../artifacts/state-store.js'
 import type { ArtifactAssets } from '../artifacts/assets.js'
@@ -63,5 +64,51 @@ export function createRecipientsRoutes(ctx: RecipientsRoutesCtx) {
     }
     return json({ error: 'event must be view, beat or play' }, 400)
   }
-  return { SEEN }
+  const unauth = () => json({ error: 'publish key required' }, 401)
+  async function listing(id: string) {
+    const secret = ctx.recipientSecret!()!
+    const rec = (await ctx.recipients!.get(id)) ?? { recipients: {}, expireAt: null, keep: false }
+    return {
+      id, expireAt: rec.expireAt, keep: rec.keep,
+      recipients: Object.values(rec.recipients).map((r) => ({ rid: r.rid, label: r.label, group: r.group === true, owner: r.owner === true, revoked: !!r.revokedAt, url: ridLink(ctx.pageUrl(id), id, r.rid, secret) })),
+    }
+  }
+  /** GET and POST /api/artifacts/<id>/recipients: who a per-reader page was sent to (publish key). */
+  async function RECIPIENTS(req: NextRequest, { params }: Params) {
+    const { id } = await params
+    if (!ctx.authed(req)) return unauth()
+    if (!ctx.recipients || !ctx.recipientSecret?.()) return json({ error: 'this host keeps no per-reader links' }, 501)
+    const a = ARTIFACT_ID_RE.test(id) ? await ctx.store.get(id) : null
+    if (!a) return json({ error: `no artifact with id ${id}` }, 404)
+    if (req.method === 'GET') return json(await listing(id))
+    if (a.links !== 'per-reader') return json({ error: 'this page is not links: per-reader' }, 409)
+    const b = (await req.json().catch(() => null)) as { add?: unknown; revoke?: unknown; expires?: unknown } | null
+    if (!b) return json({ error: 'body must be JSON' }, 400)
+    const secret = ctx.recipientSecret()!
+    let added: { rid: string; label: string; url: string }[] = []
+    if (Array.isArray(b.add) && b.add.length) {
+      const made = await ctx.recipients.add(id, b.add as { label: string; note?: string; owner?: boolean; group?: boolean }[])
+      added = made.map((r) => ({ rid: r.rid, label: r.label, url: ridLink(ctx.pageUrl(id), id, r.rid, secret) }))
+    }
+    const revoked = b.revoke === '*' || Array.isArray(b.revoke)
+      ? await ctx.recipients.revoke(id, b.revoke === '*' ? '*' : (b.revoke as unknown[]).filter((x): x is string => typeof x === 'string' && RID_RE.test(x)))
+      : []
+    if (b.expires === null || typeof b.expires === 'string') {
+      if (typeof b.expires === 'string' && Number.isNaN(Date.parse(b.expires))) return json({ error: 'expires must be an ISO time or null' }, 400)
+      await ctx.recipients.setExpiry(id, b.expires === null ? null : new Date(b.expires as string).toISOString())
+    }
+    return json({ ...(await listing(id)), added, revoked })
+  }
+  /** GET /api/artifacts/<id>/views: one line per reader, with their comments (publish key). */
+  async function VIEWS(req: NextRequest, { params }: Params) {
+    const { id } = await params
+    if (!ctx.authed(req)) return unauth()
+    if (!ctx.recipients) return json({ error: 'this host keeps no per-reader links' }, 501)
+    const rec = await ctx.recipients.get(id)
+    if (!rec) return json({ error: `no readers for ${id}` }, 404)
+    const entries = ctx.state ? await ctx.state.entries(id) : []
+    const comments = entries.filter((e) => e.slot === COMMENTS_SLOT && e.readerKey.startsWith('r:')).map((e) => ({ readerKey: e.readerKey, at: e.at, text: String((e.value as { body?: unknown } | null)?.body ?? '') }))
+    return json({ id, expireAt: rec.expireAt, keep: rec.keep, recipients: summarizeViews(rec, await ctx.recipients.views(id), comments) })
+  }
+  return { SEEN, RECIPIENTS, VIEWS }
 }

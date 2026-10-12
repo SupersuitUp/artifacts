@@ -212,7 +212,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
   const publishAuth = { publishKey: config.publishKey, publisherSecret: config.publisherSecret, publisherHost: config.publisherHost }
   const authed = (request: Request) => isPublisherAuthed(request, publishAuth)
   const stateRoutes = createStateRoutes({
-    store, state: config.state, readers: config.readers, readerSecret, publishKey: config.publishKey,
+    store, state: config.state, readers: config.readers, readerSecret, recipients: config.recipients, recipientSecret: config.recipientSecret, publishKey: config.publishKey,
     publisherSecret: config.publisherSecret, publisherHost: config.publisherHost, pageUrl, signInOrigin, siteUrl,
     clientIp: config.clientIp, ownerEmail: config.ownerEmail, admins: config.admins, audioUrl, onResolve: config.onResolve,
   })

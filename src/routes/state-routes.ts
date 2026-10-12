@@ -18,6 +18,9 @@ import { isPublisherAuthed } from '../artifacts/auth.js'
 import { ARTIFACT_ID_RE } from './ids.js'
 import { GRANT_COOKIE, decide, firstName, signInUrl, verifyGrant, type Reader } from '../artifacts/reader.js'
 import { isUnlocked, unlockCookieName } from '../artifacts/unlock.js'
+import { ridCookieName } from '../artifacts/recipients.js'
+import type { RecipientsStore } from '../artifacts/recipients-store.js'
+import { perReaderGate } from './per-reader.js'
 import { ANON_WRITES_PER_MINUTE, MAX_ENTRIES_PER_SLOT, checkValue, effectiveWriters, slotVisibility } from '../artifacts/state.js'
 import { COMMENTS_SLOT, MAX_COMMENT_NAME_CHARS, cleanResolveNote, resolutionOf, validateComment, type CommentResolution, type CommentValue } from '../artifacts/comments.js'
 import { isCommentAudioPath } from '../artifacts/audio.js'
@@ -61,6 +64,10 @@ export type StateRoutesContext = {
   state?: StateStore
   readers?: ReadersStore
   readerSecret: () => string | undefined
+  /** Who each per-reader page was sent to, and the secret their links are signed with. Without
+   *  both, a `links: per-reader` page takes no answers. */
+  recipients?: RecipientsStore
+  recipientSecret?: () => string | undefined
   publishKey: () => string | undefined
   /** Publisher passes, as in ArtifactRoutesConfig. Both absent means passes are refused. */
   publisherSecret?: () => string | undefined
@@ -113,9 +120,17 @@ export function createStateRoutes(ctx: StateRoutesContext) {
       // The page shows its body only after the agreement, so its answers wait for it too.
       if (!(await ctx.readers.acknowledged(id, reader.email))) return { error: json({ error: 'accept the agreement first' }, 403) }
     }
+    // A per-reader page is answered through the link it was sent with: the rid cookie names the
+    // reader, and what they write is theirs under that key. A revoked or expired rid is shut.
+    let recipient: { rid: string; label: string } | null = null
+    if (a.links === 'per-reader') {
+      const g = await perReaderGate({ id, param: undefined, cookie: req.cookies.get(ridCookieName(id))?.value, secret: ctx.recipientSecret?.(), recipients: ctx.recipients })
+      if (g.state === 'shut') return { error: json({ error: 'this page is locked' }, 403) }
+      recipient = { rid: g.rid, label: g.label }
+    }
     const rawAnon = req.cookies.get(ANON_COOKIE)?.value
     const anonId = rawAnon && ANON_ID.test(rawAnon) ? rawAnon : null
-    return { a, reader, anonId, signIn }
+    return { a, reader, anonId, signIn, recipient }
   }
 
   const ownerEmail = ctx.ownerEmail?.trim().toLowerCase()
@@ -139,7 +154,7 @@ export function createStateRoutes(ctx: StateRoutesContext) {
     return rows
   }
 
-  async function viewBody(a: ArtifactRecord, reader: Reader | null, readerKey: string | null) {
+  async function viewBody(a: ArtifactRecord, reader: Reader | null, readerKey: string | null, canWriteAs = false) {
     const allow = reader && ctx.readers && a.access ? await ctx.readers.allowList(a.id) : []
     const entries = await ctx.state!.entries(a.id)
     const slots = stateView(a.state!, entries, readerKey)
@@ -157,7 +172,7 @@ export function createStateRoutes(ctx: StateRoutesContext) {
     }
     return {
       reader: reader ? { firstName: firstName(reader, allow) } : null,
-      canWrite: !!reader || effectiveWriters(a.state!, a.access) === 'anyone',
+      canWrite: !!reader || canWriteAs || effectiveWriters(a.state!, a.access) === 'anyone',
       ...(owner ? { owner: true } : {}),
       slots,
     }
@@ -182,14 +197,14 @@ export function createStateRoutes(ctx: StateRoutesContext) {
     const { id } = await params
     const o = await open(req, id)
     if ('error' in o) return o.error
-    const { a, reader, anonId, signIn } = o
+    const { a, reader, anonId, signIn, recipient } = o
     let clearAnon = false
-    if (reader && anonId) {
+    if (reader && anonId && !recipient) {
       await ctx.state!.moveReader(readerKeyFor.anonymous(anonId), writerFor(reader))
       clearAnon = true
     }
-    const key = reader ? readerKeyFor.signedIn(reader.uid) : anonId ? readerKeyFor.anonymous(anonId) : null
-    const res = json({ ...(await viewBody(a, reader, key)), ...(reader ? {} : { signIn }) })
+    const key = recipient ? readerKeyFor.recipient(recipient.rid) : reader ? readerKeyFor.signedIn(reader.uid) : anonId ? readerKeyFor.anonymous(anonId) : null
+    const res = json({ ...(await viewBody(a, reader, key, !!recipient)), ...(reader || recipient ? {} : { signIn }) })
     if (clearAnon) res.headers.append('set-cookie', anonCookie('', 0))
     return res
   }
@@ -218,7 +233,7 @@ export function createStateRoutes(ctx: StateRoutesContext) {
     }
     const o = await open(req, id)
     if ('error' in o) return o.error
-    const { a, reader, signIn } = o
+    const { a, reader, signIn, recipient } = o
     let { anonId } = o
     const slot = typeof b.slot === 'string' ? b.slot : ''
     // Object.hasOwn, never a bracket read: `slots['__proto__']` or `slots['constructor']`
@@ -235,7 +250,8 @@ export function createStateRoutes(ctx: StateRoutesContext) {
     const isComments = slot === COMMENTS_SLOT && commentsOn(a)
     let setCookie: string | null = null
     let writer: Writer
-    if (reader) writer = writerFor(reader)
+    if (recipient) writer = { key: readerKeyFor.recipient(recipient.rid), name: recipient.label, anonymous: true }
+    else if (reader) writer = writerFor(reader)
     else {
       if (effectiveWriters(a.state!, a.access, slot) !== 'anyone') return json({ error: 'sign in to answer', signIn }, 401)
       // A remove adds nothing, so it is never counted and never mints a cookie: with no cookie
@@ -283,7 +299,7 @@ export function createStateRoutes(ctx: StateRoutesContext) {
       if (op === 'replace') {
         const r = await ctx.state!.replace!({ artifactId: id, slot, readerKey: writer.key, entryId: entryId!, value })
         if (!r) return json({ error: 'no answer of yours with that id' }, 404)
-        const res = json(await viewBody(a, reader, writer.key))
+        const res = json(await viewBody(a, reader, writer.key, !!recipient))
         if (setCookie) res.headers.append('set-cookie', setCookie)
         return res
       }
@@ -300,7 +316,7 @@ export function createStateRoutes(ctx: StateRoutesContext) {
         : await ctx.state!.append({ artifactId: id, slot, writer, value })
       if ('full' in r) return json({ error: 'you have left the most answers this page takes here' }, 409)
     }
-    const res = json(await viewBody(a, reader, writer.key))
+    const res = json(await viewBody(a, reader, writer.key, !!recipient))
     if (setCookie) res.headers.append('set-cookie', setCookie)
     return res
   }

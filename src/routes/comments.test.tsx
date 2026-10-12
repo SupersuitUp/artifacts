@@ -11,6 +11,8 @@ import type { ArtifactStore, ArtifactRecord } from '../artifacts/store.js'
 import type { ReadersStore } from '../artifacts/readers-store.js'
 import { createMemoryStateStore } from '../artifacts/state-store.js'
 import { GRANT_COOKIE, mintGrant, type Reader } from '../artifacts/reader.js'
+import { memoryRecipientsStore } from '../artifacts/recipients-store.js'
+import { ridSig } from '../artifacts/recipients.js'
 import { mergeCommentsState, type CommentsMode, type CommentsVisible } from '../artifacts/comments.js'
 
 const SECRET = 'sekrit'
@@ -33,6 +35,7 @@ const RECORDS: Record<string, ArtifactRecord> = {
   // Gated: `anyone` is forced to signed-in.
   cmg23456: page('cmg23456', 'anyone', 'readers', { access: 'invite' }),
   // Comments from anyone beside votes from signed-in readers only.
+  prr23456: page('prr23456', 'anyone', 'owner', { links: 'per-reader' }),
   cmv23456: page('cmv23456', 'anyone', 'owner', { state: { writers: 'signed-in', visibility: 'private', slots: { vote: { shape: 'one' } } } }),
 }
 
@@ -52,12 +55,12 @@ function fakeReaders(): ReadersStore {
     acknowledged: vi.fn(async () => true), acknowledge: vi.fn(async () => {}), acks: vi.fn(async () => []),
   }
 }
-function build(as: Reader | null = null, keepsAnswers = true) {
+function build(as: Reader | null = null, keepsAnswers = true, extra: Partial<Parameters<typeof createArtifactRoutes>[0]> = {}) {
   const state = createMemoryStateStore()
   const routes = createArtifactRoutes({
     readCookie: async (name) => (name === GRANT_COOKIE && as ? mintGrant(SECRET, as) : undefined),
     store: fakeStore(), state: keepsAnswers ? state : undefined, readers: fakeReaders(), brand: freedomDefault, siteUrl: 'https://artifacts.example.com', publishKey: () => 'k',
-    readerSecret: () => SECRET, signInOrigin: 'https://accounts.example.com', ownerEmail: 'Owner@Example.com', admins: ['Admin@Example.com'],
+    readerSecret: () => SECRET, signInOrigin: 'https://accounts.example.com', ownerEmail: 'Owner@Example.com', admins: ['Admin@Example.com'], ...extra,
   })
   return { routes, state }
 }
@@ -267,3 +270,39 @@ describe('the page tells the comment layer what this reader may do', () => {
   })
 })
 
+describe('comments through a per-reader link', () => {
+  const RS = 'r'.repeat(40)
+  async function setup() {
+    const recipients = memoryRecipientsStore()
+    const [tim] = await recipients.add('prr23456', [{ label: 'Tim' }])
+    const [ann] = await recipients.add('prr23456', [{ label: 'Ann' }])
+    const { routes, state } = build(null, true, { recipients, recipientSecret: () => RS })
+    const cookie = (r: { rid: string }) => `artifact_r_prr23456=${r.rid}.${ridSig(RS, 'prr23456', r.rid)}`
+    return { recipients, routes, state, tim, ann, cookie }
+  }
+  it('a comment through a valid link is written as that reader, by label', async () => {
+    const { recipients, routes, state, tim, cookie } = await setup()
+    expect((await routes.STATE_POST(post('prr23456', comment('This moved me.'), cookie(tim)), params('prr23456'))).status).toBe(200)
+    const [e] = (await state.entries('prr23456')).filter((x) => x.slot === 'comments')
+    expect(e.readerKey).toBe(`r:${tim.rid}`)
+    expect(e.writer.name).toBe('Tim')
+    await recipients.revoke('prr23456', [tim.rid])
+    expect((await routes.STATE_POST(post('prr23456', comment('Again.'), cookie(tim)), params('prr23456'))).status).toBe(403)
+  })
+  it('after a reload the reader still sees their own comment as theirs, and can remove it', async () => {
+    const { routes, tim, ann, cookie } = await setup()
+    await routes.STATE_POST(post('prr23456', comment('Mine.'), cookie(tim)), params('prr23456'))
+    const mine = await (await routes.STATE_GET(get('prr23456', cookie(tim)), params('prr23456'))).json()
+    expect(mine.canWrite).toBe(true)
+    expect(JSON.stringify(mine.slots.comments.mine)).toContain('Mine.')
+    const other = await (await routes.STATE_GET(get('prr23456', cookie(ann)), params('prr23456'))).json()
+    expect(JSON.stringify(other.slots.comments.mine ?? [])).not.toContain('Mine.')
+    const id = mine.slots.comments.mine[0].id
+    expect((await routes.STATE_POST(post('prr23456', { slot: 'comments', op: 'remove', entry: id }, cookie(ann)), params('prr23456'))).status).toBe(404)
+    expect((await routes.STATE_POST(post('prr23456', { slot: 'comments', op: 'remove', entry: id }, cookie(tim)), params('prr23456'))).status).toBe(200)
+  })
+  it('a page with no valid link answers nothing', async () => {
+    const { routes } = await setup()
+    expect((await routes.STATE_GET(get('prr23456'), params('prr23456'))).status).toBe(403)
+  })
+})
