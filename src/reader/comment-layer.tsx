@@ -30,9 +30,9 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, 
 import { createPortal } from 'react-dom'
 import { PINS_SET, announcePins, signInBack } from './page-bridge.js'
 import { MAX_QUOTE_CHARS, textAnchorFrom, type Anchor } from '../artifacts/anchor.js'
-import { COMMENTS_SLOT, MAX_RESOLVE_NOTE_CHARS, resolutionOf, type CommentResolution, type CommentValue, type CommentsMode } from '../artifacts/comments.js'
+import { COMMENTS_SLOT, MAX_COMMENT_NAME_CHARS, MAX_RESOLVE_NOTE_CHARS, resolutionOf, type CommentResolution, type CommentValue, type CommentsMode } from '../artifacts/comments.js'
 import type { PersonalNote } from '../artifacts/personal-store.js'
-import { CommentCard, type SavedMemo } from './comment-card.js'
+import { CommentCard, recallName, rememberName, type SavedMemo } from './comment-card.js'
 import { AudioPlay, hostVoice, newMemoId, type VoiceHost } from './voice-recorder.js'
 import { deviceAudio as defaultDeviceAudio, isDeviceAudio, type DeviceAudio } from './device-audio.js'
 import { audioExtFor } from '../artifacts/audio.js'
@@ -156,7 +156,14 @@ export function CommentLayer({
     const ms = Date.parse(closesAt) - Date.now()
     if (!(ms > 0)) { setClosed(true); return }
     setClosed(false)
-    const t = setTimeout(() => setClosed(true), Math.min(ms, 2_147_000_000))
+    // setTimeout cannot wait longer than about 24 days: past that, wake early and look at the clock again.
+    let t: ReturnType<typeof setTimeout>
+    const arm = () => {
+      const left = Date.parse(closesAt) - Date.now()
+      if (!(left > 0)) { setClosed(true); return }
+      t = setTimeout(arm, Math.min(left, 2_147_000_000))
+    }
+    t = setTimeout(arm, Math.min(ms, 2_147_000_000))
     return () => clearTimeout(t)
   }, [closesAt])
   const share = canShare && !closed
@@ -478,8 +485,9 @@ export function CommentLayer({
     return null
   }
 
-  const reply = async (parent: Item, body: string): Promise<string | null> => {
-    const value: CommentValue = { anchor: parent.value.anchor, body, version, parent: parent.id }
+  const reply = async (parent: Item, body: string, by?: string): Promise<string | null> => {
+    const value: CommentValue = { anchor: parent.value.anchor, body, version, parent: parent.id, ...(requireName && by ? { by } : {}) }
+    if (requireName && by) rememberName(by)
     const r = await call(stateUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ slot: COMMENTS_SLOT, op: 'append', value }) })
     if (r.status !== 200) return typeof r.body.error === 'string' ? r.body.error : 'that did not save; try again'
     setShared(sharedFrom(r.body))
@@ -541,7 +549,7 @@ export function CommentLayer({
       ) : null}
       {openItem && open ? (
         <Floating x={open.left + 28} y={open.top}>
-          <Thread key={openItem.id} item={openItem} replies={items.filter((i) => i.value.parent === openItem.id)} canReply={openItem.kind === 'shared' && share} awaiting={closesAt != null} onJump={jump}
+          <Thread key={openItem.id} item={openItem} replies={items.filter((i) => i.value.parent === openItem.id)} canReply={openItem.kind === 'shared' && share} awaiting={closesAt != null} askName={requireName} onJump={jump}
             canResolve={openItem.kind === 'shared' && isOwner} startExpanded={expanded === openItem.id}
             accent={accent} audioDb={audioDb} onClose={() => { setThread(null); setExpanded(null) }} onRemove={remove} onEdit={edit} onReply={reply} onResolve={resolveThread} />
         </Floating>
@@ -619,9 +627,9 @@ function Floating({ x, y, children }: { x: number; y: number; children: ReactNod
   return <div className="absolute z-50" style={{ left, top: y }}>{children}</div>
 }
 
-function Thread({ item, replies, canReply, awaiting = false, onJump, canResolve = false, startExpanded = false, accent, audioDb, onClose, onRemove, onEdit, onReply, onResolve }: {
-  item: Item; replies: Item[]; canReply: boolean; awaiting?: boolean; onJump?: (i: Item) => void; canResolve?: boolean; startExpanded?: boolean; accent: string; audioDb: DeviceAudio
-  onClose: () => void; onRemove: (i: Item) => Promise<void>; onEdit: (i: Item, body: string) => Promise<string | null>; onReply: (i: Item, body: string) => Promise<string | null>
+function Thread({ item, replies, canReply, awaiting = false, askName = false, onJump, canResolve = false, startExpanded = false, accent, audioDb, onClose, onRemove, onEdit, onReply, onResolve }: {
+  item: Item; replies: Item[]; canReply: boolean; awaiting?: boolean; askName?: boolean; onJump?: (i: Item) => void; canResolve?: boolean; startExpanded?: boolean; accent: string; audioDb: DeviceAudio
+  onClose: () => void; onRemove: (i: Item) => Promise<void>; onEdit: (i: Item, body: string) => Promise<string | null>; onReply: (i: Item, body: string, by?: string) => Promise<string | null>
   onResolve?: (i: Item, resolved: boolean, note?: string) => Promise<string | null>
 }) {
   const [replying, setReplying] = useState(false)
@@ -669,7 +677,7 @@ function Thread({ item, replies, canReply, awaiting = false, onJump, canResolve 
         ? <p data-comment-waiting className="m-0 mt-2 text-xs opacity-70">Waiting for a reply.</p> : null}
       {canReply ? (
         replying
-          ? <InlineForm label="Reply" accent={accent} onCancel={() => setReplying(false)} onSubmit={async (b) => { const e = await onReply(item, b); if (!e) setReplying(false); return e }} />
+          ? <InlineForm label="Reply" accent={accent} askName={askName} onCancel={() => setReplying(false)} onSubmit={async (b, by) => { const e = await onReply(item, b, by); if (!e) setReplying(false); return e }} />
           : <button type="button" data-comment-reply onClick={() => setReplying(true)} className="mt-2 text-xs underline">Reply</button>
       ) : null}
       {canResolve && onResolve && !replying ? (
@@ -720,19 +728,34 @@ function Entry({ item, accent, audioDb, onRemove, onEdit, onJump }: { item: Item
   )
 }
 
-function InlineForm({ label, initial = '', accent = 'currentColor', optional = false, placeholder, maxLength, onSubmit, onCancel }: {
+function InlineForm({ label, initial = '', accent = 'currentColor', optional = false, askName = false, placeholder, maxLength, onSubmit, onCancel }: {
   label: string; initial?: string; accent?: string
   /** The text may be left empty (a resolve note), so the button is never disabled. */
   optional?: boolean; placeholder?: string; maxLength?: number
-  onSubmit: (body: string) => Promise<string | null>; onCancel: () => void
+  /** A first name is needed with the words (`comment_name: required`): prefilled from the one remembered. */
+  askName?: boolean
+  onSubmit: (body: string, by?: string) => Promise<string | null>; onCancel: () => void
 }) {
   const [text, setText] = useState(initial)
   const [error, setError] = useState<string | null>(null)
+  const [name, setName] = useState(askName ? recallName : '')
   return (
-    <form className="mt-2" onSubmit={async (e) => { e.preventDefault(); if (optional || text.trim()) setError(await onSubmit(text.trim())) }}>
+    <form className="mt-2" onSubmit={async (e) => {
+      e.preventDefault()
+      if (!optional && !text.trim()) return
+      if (askName && !name.trim()) { setError('Add your first name first.'); return }
+      setError(await onSubmit(text.trim(), askName ? name.trim() : undefined))
+    }}>
       <textarea value={text} autoFocus rows={2} onChange={(e) => setText(optional ? e.target.value.replace(/[\r\n]+/g, ' ') : e.target.value)} aria-label={optional && placeholder ? placeholder : label}
         placeholder={placeholder} maxLength={maxLength}
         className="w-full rounded-lg border border-[color:var(--a-line)] bg-transparent p-2" style={NO_ZOOM_FONT} />
+      {askName ? (
+        <label data-comment-name className="mt-1 block text-xs">
+          <span className="block opacity-80">Your first name</span>
+          <input value={name} onChange={(e) => setName(e.target.value)} maxLength={MAX_COMMENT_NAME_CHARS} autoComplete="name" placeholder="Your name" style={NO_ZOOM_FONT}
+            className="mt-1 w-full rounded-lg border border-[color:var(--a-line)] bg-transparent px-2 py-1" />
+        </label>
+      ) : null}
       {error ? <p role="alert" className="text-xs text-amber-500">{error}</p> : null}
       <div className="mt-1 flex gap-3 text-xs">
         <button type="submit" disabled={!optional && !text.trim()} className="rounded-full px-3 py-0.5 font-medium disabled:opacity-40" style={{ background: accent, color: 'var(--a-on-accent, #111)' }}>{label}</button>

@@ -122,4 +122,17 @@ describe('CommentCard', () => {
     expect(document.querySelector('[role="alert"]')!.textContent).toBe('Add your first name, so your note has a name on it.')
     expect(document.querySelector('textarea')!.value).toBe('Cut the second paragraph.')
   })
+  it('requireName shows the name field even to a signed-in reader, and asks before sending', async () => {
+    const saved: unknown[][] = []
+    await mount(<CommentCard ownerName="Robin Vale" mode="anyone" canShare signedIn requireName onSave={async (...a) => { saved.push(a); return null }} onCancel={() => {}} />)
+    expect(document.querySelector('[data-comment-name]')).not.toBeNull()
+    await type(document.querySelector('textarea')!, 'Tighten the opening.')
+    await save()
+    expect(saved).toEqual([])
+    expect(document.querySelector('[role="alert"]')!.textContent).toBe('Add your first name first.')
+  })
+  it('without requireName a signed-in reader is still never asked for a name', async () => {
+    await mount(<CommentCard ownerName="Robin Vale" mode="anyone" canShare signedIn onSave={noop} onCancel={() => {}} />)
+    expect(document.querySelector('[data-comment-name]')).toBeNull()
+  })
 })

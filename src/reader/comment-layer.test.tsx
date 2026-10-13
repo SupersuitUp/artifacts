@@ -227,10 +227,27 @@ describe('CommentLayer', () => {
   })
   it('a window that passes while the page is open stops the offer without a reload', async () => {
     stubFetch({ mine: [] })
-    await mount({ comments: 'anyone', canShare: true, closesAt: new Date(Date.now() + 150).toISOString() })
+    await mount({ comments: 'anyone', canShare: true, closesAt: new Date(Date.now() + 500).toISOString() })
     expect(document.querySelector('[data-comment-layer]')!.getAttribute('data-comment-can-share')).toBe('yes')
-    await act(async () => { await new Promise((r) => setTimeout(r, 300)) })
+    await act(async () => { await new Promise((r) => setTimeout(r, 800)) })
     expect(document.querySelector('[data-comment-layer]')!.getAttribute('data-comment-can-share')).toBe('no')
+  })
+  it('a window further out than the timer cap does not close early', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
+    try {
+      stubFetch({ mine: [] })
+      document.body.innerHTML = PAGE
+      root = createRoot(document.getElementById('m')!)
+      const closesAt = new Date(Date.now() + 3_000_000_000).toISOString()
+      await act(async () => {
+        root!.render(<CommentLayer artifactId="abc23456" rootId="root" ownerName="Robin Vale" comments="anyone" canShare signedIn={false} isOwner={false} version={3} accent="#f80" ground="#000" closesAt={closesAt} />)
+      })
+      const can = () => document.querySelector('[data-comment-layer]')!.getAttribute('data-comment-can-share')
+      await act(async () => { await vi.advanceTimersByTimeAsync(2_200_000_000) })
+      expect(can()).toBe('yes')
+      await act(async () => { await vi.advanceTimersByTimeAsync(900_000_000) })
+      expect(can()).toBe('no')
+    } finally { vi.useRealTimers() }
   })
   it('a time that cannot be read is closed', async () => {
     stubFetch({ mine: [] })
@@ -277,6 +294,44 @@ describe('CommentLayer', () => {
     await act(async () => { document.querySelector<HTMLButtonElement>('[data-comment-save]')!.click() })
     expect(document.querySelector('[data-comment-card] [role="alert"]')!.textContent).toBe('Add your first name first.')
     expect(calls.filter((c) => c.method === 'POST')).toEqual([])
+  })
+
+  const SOMEONES = [{ id: 's1', name: 'Sam', value: value(text('river', 'The ', ' runs north'), 'Which river?'), at: '2026-09-28T00:00:00Z' }]
+  const replyWith = async (name?: string) => {
+    if (name) localStorage.setItem('artifacts:comment-name', name)
+    stubFetch({ shared: SOMEONES })
+    await mount({ comments: 'anyone', canShare: true, requireName: true })
+    await open('s1')
+    await act(async () => { document.querySelector<HTMLButtonElement>('[data-comment-reply]')!.click() })
+  }
+  it('under requireName a reply carries the remembered first name', async () => {
+    await replyWith('Kit')
+    expect(document.querySelector<HTMLInputElement>('[data-comment-thread] [data-comment-name] input')!.value).toBe('Kit')
+    await typeInto(document.querySelector('[data-comment-thread] textarea')!, 'The north one.')
+    await act(async () => { document.querySelector<HTMLButtonElement>('[data-comment-thread] form button[type="submit"]')!.click() })
+    const sent = calls.find((c) => c.method === 'POST')!
+    expect(sent.body).toMatchObject({ op: 'append', value: { body: 'The north one.', parent: 's1', by: 'Kit' } })
+  })
+  it('under requireName a reply with no remembered name asks for it and does not post without it', async () => {
+    localStorage.removeItem?.('artifacts:comment-name')
+    await replyWith()
+    await typeInto(document.querySelector('[data-comment-thread] textarea')!, 'The north one.')
+    await act(async () => { document.querySelector<HTMLButtonElement>('[data-comment-thread] form button[type="submit"]')!.click() })
+    expect(calls.filter((c) => c.method === 'POST')).toEqual([])
+    expect(document.querySelector('[data-comment-thread] [role="alert"]')!.textContent).toBe('Add your first name first.')
+    await typeInto(document.querySelector('[data-comment-thread] [data-comment-name] input')!, 'Kit')
+    await act(async () => { document.querySelector<HTMLButtonElement>('[data-comment-thread] form button[type="submit"]')!.click() })
+    expect(calls.find((c) => c.method === 'POST')!.body).toMatchObject({ value: { parent: 's1', by: 'Kit' } })
+  })
+  it('without requireName a reply has no name field and no by', async () => {
+    stubFetch({ shared: SOMEONES })
+    await mount({ comments: 'anyone', canShare: true })
+    await open('s1')
+    await act(async () => { document.querySelector<HTMLButtonElement>('[data-comment-reply]')!.click() })
+    expect(document.querySelector('[data-comment-thread] [data-comment-name]')).toBeNull()
+    await typeInto(document.querySelector('[data-comment-thread] textarea')!, 'The north one.')
+    await act(async () => { document.querySelector<HTMLButtonElement>('[data-comment-thread] form button[type="submit"]')!.click() })
+    expect((calls.find((c) => c.method === 'POST')!.body as { value: object }).value).not.toHaveProperty('by')
   })
 })
 

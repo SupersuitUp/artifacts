@@ -28,8 +28,8 @@ export function warningLine(ownerName: string, mode: CommentsMode, closed = fals
 export const DEVICE_LINE = 'Saved on this device. Sign in to keep it everywhere.'
 /** Where a reader's declared name is remembered, so their next comment is already signed. */
 export const NAME_KEY = 'artifacts:comment-name'
-const recall = () => { try { return localStorage.getItem(NAME_KEY) ?? '' } catch { return '' } }
-const remember = (name: string) => { try { localStorage.setItem(NAME_KEY, name) } catch { /* a browser that keeps nothing still comments */ } }
+export const recallName = () => { try { return localStorage.getItem(NAME_KEY) ?? '' } catch { return '' } }
+export const rememberName = (name: string) => { try { localStorage.setItem(NAME_KEY, name) } catch { /* a browser that keeps nothing still comments */ } }
 
 export function CommentCard({
   ownerName, mode, canShare, signedIn, closed = false, requireName = false, knownName = null, quote, initial = '', accent = 'currentColor', signIn, voice = null, onSave, onCancel,
@@ -62,7 +62,7 @@ export function CommentCard({
   const [memo, setMemo] = useState<VoiceMemo | null>(null)
   const [transcript, setTranscript] = useState<CommentValue['transcript']>(undefined)
   const [status, setStatus] = useState<string | null>(null)
-  const [name, setName] = useState(recall)
+  const [name, setName] = useState(recallName)
   // Refs, because the host's transcript arrives after an await and must see the box as it is then.
   const base = useRef('')
   const edited = useRef(false)
@@ -70,7 +70,7 @@ export function CommentCard({
   const personal = !canShare || !share
   // A reader with no account is asked for a name, so the owner can credit the feedback. Optional:
   // a comment without one still goes through, signed "a reader".
-  const askName = !personal && !signedIn && !knownName
+  const askName = !personal && !knownName && (requireName || !signedIn)
   // Where a memo goes: a shared comment, the reader's account, or (neither) this device only.
   const scope = (): VoiceScope | null => (canShare && share ? 'comment' : signedIn ? 'personal' : null)
 
@@ -99,7 +99,7 @@ export function CommentCard({
     if (requireName && askName && !name.trim()) { setError('Add your first name first.'); return }
     setBusy(true)
     const by = askName && name.trim() ? name.trim() : undefined
-    if (by) remember(by)
+    if (by) rememberName(by)
     const saved = memo ? { memo, uploaded: uploaded.current, ...(body && transcript ? { transcript } : {}) } : undefined
     const err = saved || by ? await onSave(body, canShare && share, saved, by) : await onSave(body, canShare && share)
     setBusy(false)
