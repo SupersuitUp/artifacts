@@ -19,22 +19,49 @@ page asks for one, a reply the commenter can see.** Nothing changes for a page t
 - `comment_name: required` (front matter, per-reader pages only): a group reader's shared comment
   needs a typed first name (`400 { needsName: true }` without one); a reader on a named link is
   never asked, in the card or the reply form, and a typed name is dropped.
+- Under `comment_name: required`, and only there, **each browser on a group link is its own
+  reader**. Until now a group link was one reader (`r:<rid>`): everyone holding it saw every note
+  left through it as their own, could edit and delete them, and saw the publisher's reply to any of
+  them. With the line, a browser's notes are stored under `r:<rid>.<24 hex>`, which the server
+  derives (an HMAC keyed by the recipient secret) from the page, the link's verified rid and the
+  anonymous-reader cookie (`artifact_anon`) it sets with that browser's first note. A client cannot
+  name a key or work out another browser's, and the stored key is not the cookie. A browser that
+  clears its cookies is a new reader. A named link is unchanged, and so is a group link on a page
+  without the line (one shared reader, as in 0.39.0). The window, the feed's `reader.rid` and the
+  `/views` comments stay per link.
 - `POST /api/artifacts/<id>/reply` (publish key): the publisher's one reply in a thread, optionally
-  pinned to the passage that changed. On a per-reader page only the thread's own writer is shown it.
-  It never reopens a resolved thread under `open=1`.
+  pinned to the passage that changed. On a per-reader page only the thread's own writer is shown it
+  (under `comment_name: required`, only the browser that wrote it). It never reopens a resolved
+  thread under `open=1`.
+- A `template: broadcast` page with comments on hands its comment layer the window and the name
+  rule, as a document does: a group reader is asked for a first name, and a closed window stops
+  offering Share. A broadcast draws no banner.
+- An owner added with `closes` gets no window (the owner never has one).
 - Feed rows gain `reader: { rid, label } | null`, `by` and `publisher`. No field is removed.
 
-DETECTOR: `curl -s -H "Authorization: Bearer $KEY" "$HOST/api/artifacts/<id>/recipients" | grep -c closesAt`
-answers 0 on a host older than this.
+DETECTOR: on a page with at least one reader,
+`curl -s -H "Authorization: Bearer $KEY" "$HOST/api/artifacts/<id>/recipients" | grep -c closesAt`
+answers 0 on a host older than this (a page with no readers answers 0 on any version). For the
+group link: a host is affected if it has sent one group link to people who should not read each
+other's notes. `GET /api/artifacts/<id>/responses` shows it: rows in the `comments` slot whose
+`reader` is the bare `r:<rid>` of a link `GET /recipients` lists with `group: true` were written as
+the one shared reader.
 
 REMEDY: take 0.40.0 and add the reply route file (README, "Replying as the publisher"). A host with
 its own `RecipientsStore` adds `setCloses` to use feedback windows. A publisher that strips unknown
-front matter keys lets `comment_name` through.
+front matter keys lets `comment_name` through. To give the people on a group link their own notes,
+republish the page with `comment_name: required`; the host needs nothing else (the cookie is the
+one anonymous readers already get). Notes left through that link before the republish stay with
+the publisher and are shown to no browser afterwards. Anything that matched a reader key to a link
+with `key === 'r:' + rid` now reads the rid with `ridOfReaderKey(key)` instead, or it misses the
+notes of a browser on a group link.
 
-Tests: `recipients-store.test.ts`, `recipients-api.test.tsx`, `front-matter.test.ts`,
-`store.test.ts`, `comments.test.tsx` (closed window, names, reply visibility),
-`comments-feed.test.tsx`, `feedback-window.test.tsx`, `comment-card.test.tsx`,
-`comment-layer.test.tsx`, `per-reader.test.tsx`; `unchanged-default.test.tsx` unedited.
+Tests: `recipients-store.test.ts`, `recipients-api.test.tsx`, `recipients.test.ts`,
+`front-matter.test.ts`, `store.test.ts`, `comments.test.tsx` (closed window, names, reply
+visibility, two browsers on one group link with and without the line), `comments-feed.test.tsx`,
+`feedback-window.test.tsx`, `comment-card.test.tsx`, `comment-layer.test.tsx`,
+`per-reader.test.tsx`, `broadcast-feedback.test.tsx`; `unchanged-default.test.tsx` and
+`broadcast.test.tsx` unedited.
 
 ## 0.39.0
 

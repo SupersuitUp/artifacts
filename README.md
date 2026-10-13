@@ -253,7 +253,7 @@ summary: Three bets, what each costs, and what we stop doing to afford them.
 | `definitions` | Terms defined inline (below). A republish without it removes them |
 | `links` | `per-reader`: the page opens only through a link made for one reader (see Per-reader links). Sticky: a republish whose file leaves the line out changes nothing |
 | `media` | `private`: the page's body media is kept private and served through short-lived signed URLs. Needs `links: per-reader`. Sticky like `links` |
-| `comment_name` | `required`: on a per-reader page, a comment through a group link needs a typed first name (see Per-reader links). Needs `links: per-reader` |
+| `comment_name` | `required`: on a per-reader page, a comment through a group link needs a typed first name, and each browser on a group link is its own reader (see Per-reader links). Needs `links: per-reader` |
 | `change` | One line saying what this version changed (see Version history) |
 | `template` | `document` (the default, the read-along reader) or `broadcast` (one message card sent to several people; see Broadcasts) |
 
@@ -953,7 +953,8 @@ each other's notes. With the line, each browser on a group link is its own reade
 and deletes only the notes written from that browser, and is shown only the publisher's replies to
 those. The browser is known by the anonymous-reader cookie (`artifact_anon`, HttpOnly, a year), set
 with its first note, and its notes are stored under a key the server derives from the link and that
-cookie (`r:<rid>.<24 hex>`), never under the cookie itself. A browser that clears its cookies, or a
+cookie (`r:<rid>.<24 hex>`), never under the cookie itself; `ridOfReaderKey(key)` reads the
+link's rid out of either shape. A browser that clears its cookies, or a
 second device, is a new reader: the notes it left stay with the publisher and are no longer shown
 to it. So does a reader who signs in on another page of the same host, since signing in clears the
 anonymous cookie. Notes left through a group link before the page gained the line were written as
