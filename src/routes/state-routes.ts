@@ -22,7 +22,7 @@ import { ridCookieName, usableSecret } from '../artifacts/recipients.js'
 import type { RecipientsStore } from '../artifacts/recipients-store.js'
 import { perReaderGate } from './per-reader.js'
 import { ANON_WRITES_PER_MINUTE, MAX_ENTRIES_PER_SLOT, checkValue, effectiveWriters, slotVisibility } from '../artifacts/state.js'
-import { COMMENTS_SLOT, MAX_COMMENT_NAME_CHARS, cleanResolveNote, resolutionOf, validateComment, type CommentResolution, type CommentValue } from '../artifacts/comments.js'
+import { COMMENTS_SLOT, FEEDBACK_CLOSED, MAX_COMMENT_NAME_CHARS, cleanResolveNote, resolutionOf, validateComment, type CommentResolution, type CommentValue } from '../artifacts/comments.js'
 import { isCommentAudioPath } from '../artifacts/audio.js'
 import { readerKeyFor, type StateEntry, type StateStore, type Writer } from '../artifacts/state-store.js'
 import { NOTES_SLOT, checkNoteValue, checklistAnswerIds, hasNotesWidget } from '../artifacts/widgets.js'
@@ -122,12 +122,12 @@ export function createStateRoutes(ctx: StateRoutesContext) {
     }
     // A per-reader page is answered through the link it was sent with: the rid cookie names the
     // reader, and what they write is theirs under that key. A revoked or expired rid is shut.
-    let recipient: { rid: string; label: string } | null = null
+    let recipient: { rid: string; label: string; group: boolean; closesAt: string | null } | null = null
     // The owner and the page's admins open it without a link: their comment layer is signed-in, never a reader's.
     if (a.links === 'per-reader' && !isOwner(reader)) {
       const g = await perReaderGate({ id, param: undefined, cookie: req.cookies.get(ridCookieName(id))?.value, secret: usableSecret(ctx.recipientSecret?.()), recipients: ctx.recipients })
       if (g.state === 'shut') return { error: json({ error: 'this page is locked' }, 403) }
-      recipient = { rid: g.rid, label: g.label }
+      recipient = { rid: g.rid, label: g.label, group: g.group, closesAt: g.closesAt }
     }
     const rawAnon = req.cookies.get(ANON_COOKIE)?.value
     const anonId = rawAnon && ANON_ID.test(rawAnon) ? rawAnon : null
@@ -140,6 +140,8 @@ export function createStateRoutes(ctx: StateRoutesContext) {
   const isOwner = (r: Reader | null) => !!r && ((!!ownerEmail && r.email.trim().toLowerCase() === ownerEmail) || admins.has(r.email.trim().toLowerCase()))
   const declared = (v: unknown) => { const by = (v as { by?: unknown } | null)?.by; return typeof by === 'string' && by.trim() ? by.trim() : null }
   /** Comments are on for this page: the slot exists because `comments:` put it there. */
+  /** A window that has passed, or that cannot be read as a time, is closed: never open forever. */
+  const windowClosed = (r: { closesAt: string | null } | null) => !!r?.closesAt && !(Date.parse(r.closesAt) > Date.now())
   const commentsOn = (a: ArtifactRecord) => !!a.comments && a.comments !== 'off' && Object.hasOwn(a.state!.slots, COMMENTS_SLOT)
 
   const writerFor = (r: Reader): Writer => ({ key: readerKeyFor.signedIn(r.uid), uid: r.uid, email: r.email, name: r.name, anonymous: false })
@@ -208,7 +210,8 @@ export function createStateRoutes(ctx: StateRoutesContext) {
       clearAnon = true
     }
     const key = recipient ? readerKeyFor.recipient(recipient.rid) : reader ? readerKeyFor.signedIn(reader.uid) : anonId ? readerKeyFor.anonymous(anonId) : null
-    const res = json({ ...(await viewBody(a, reader, key, !!recipient)), ...(reader || recipient ? {} : { signIn }) })
+    const feedback = recipient?.closesAt ? { feedback: { closesAt: recipient.closesAt, closed: windowClosed(recipient) } } : {}
+    const res = json({ ...(await viewBody(a, reader, key, !!recipient)), ...feedback, ...(reader || recipient ? {} : { signIn }) })
     if (clearAnon) res.headers.append('set-cookie', anonCookie('', 0))
     return res
   }
@@ -252,6 +255,9 @@ export function createStateRoutes(ctx: StateRoutesContext) {
     if (op === 'replace' && !entryId) return json({ error: 'replace names the entry it edits' }, 400)
     if (op === 'replace' && !ctx.state!.replace) return json({ error: 'this host cannot edit an answer' }, 501)
     const isComments = slot === COMMENTS_SLOT && commentsOn(a)
+    // A reader whose feedback window has closed can still read and still delete their own; a new
+    // comment or an edit is refused in words, so what they typed is not lost silently.
+    if (isComments && recipient && op !== 'remove' && windowClosed(recipient)) return json({ error: FEEDBACK_CLOSED, closed: true }, 403)
     let setCookie: string | null = null
     let writer: Writer
     if (recipient) writer = { key: readerKeyFor.recipient(recipient.rid), name: recipient.label, anonymous: true }

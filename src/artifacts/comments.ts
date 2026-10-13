@@ -31,6 +31,10 @@ export function mergeCommentsState(
 
 export const MAX_COMMENT_CHARS = 4000
 export const MAX_COMMENT_NAME_CHARS = 80
+
+/** What a reader is told when their feedback window has closed (0.40.0). The card shows it under the
+ *  words they typed, which stay in the box. */
+export const FEEDBACK_CLOSED = 'Feedback on this draft is closed. Your note was not sent.'
 export const COMMENT_TRANSCRIPTS = ['browser', 'host', 'typed'] as const
 /** One shared comment or personal note. `parent` makes it a reply to a top-level comment (one
  *  level only). `audio` and `transcript` are filled by voice memos; a memo may have an empty body. */

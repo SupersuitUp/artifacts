@@ -13,7 +13,7 @@ import { createMemoryStateStore } from '../artifacts/state-store.js'
 import { GRANT_COOKIE, mintGrant, type Reader } from '../artifacts/reader.js'
 import { memoryRecipientsStore } from '../artifacts/recipients-store.js'
 import { ridSig } from '../artifacts/recipients.js'
-import { mergeCommentsState, type CommentsMode, type CommentsVisible } from '../artifacts/comments.js'
+import { FEEDBACK_CLOSED, mergeCommentsState, type CommentsMode, type CommentsVisible } from '../artifacts/comments.js'
 
 const SECRET = 'sekrit'
 const t = '2026-09-28T00:00:00Z'
@@ -299,6 +299,38 @@ describe('comments through a per-reader link', () => {
     expect(JSON.stringify(other.slots.comments.mine ?? [])).not.toContain('Mine.')
     const id = mine.slots.comments.mine[0].id
     expect((await routes.STATE_POST(post('prr23456', { slot: 'comments', op: 'remove', entry: id }, cookie(bea)), params('prr23456'))).status).toBe(404)
+    expect((await routes.STATE_POST(post('prr23456', { slot: 'comments', op: 'remove', entry: id }, cookie(ada)), params('prr23456'))).status).toBe(200)
+  })
+  it('after a reader\'s feedback window closes, a new comment is refused in words and the earlier one is still theirs to read', async () => {
+    const { recipients, routes, ada, bea, cookie } = await setup()
+    expect((await routes.STATE_POST(post('prr23456', comment('Before the close.'), cookie(ada)), params('prr23456'))).status).toBe(200)
+    await recipients.setCloses!('prr23456', [ada.rid], new Date(Date.now() - 60_000).toISOString())
+    const late = await routes.STATE_POST(post('prr23456', comment('Too late.'), cookie(ada)), params('prr23456'))
+    expect(late.status).toBe(403)
+    expect(await late.json()).toEqual({ error: FEEDBACK_CLOSED, closed: true })
+    const view = await (await routes.STATE_GET(get('prr23456', cookie(ada)), params('prr23456'))).json()
+    expect(JSON.stringify(view.slots.comments.mine)).toContain('Before the close.')
+    expect(view.feedback.closed).toBe(true)
+    // Another reader's window is their own.
+    expect((await routes.STATE_POST(post('prr23456', comment('Still open.'), cookie(bea)), params('prr23456'))).status).toBe(200)
+  })
+  it('an open window says when it closes, and a window that cannot be read as a time is closed', async () => {
+    const { recipients, routes, ada, cookie } = await setup()
+    const at = new Date(Date.now() + 86_400_000).toISOString()
+    await recipients.setCloses!('prr23456', [ada.rid], at)
+    const open = await (await routes.STATE_GET(get('prr23456', cookie(ada)), params('prr23456'))).json()
+    expect(open.feedback).toEqual({ closesAt: at, closed: false })
+    await recipients.setCloses!('prr23456', [ada.rid], 'not-a-time')
+    expect((await routes.STATE_POST(post('prr23456', comment('Any.'), cookie(ada)), params('prr23456'))).status).toBe(403)
+    const bad = await (await routes.STATE_GET(get('prr23456', cookie(ada)), params('prr23456'))).json()
+    expect(bad.feedback).toEqual({ closesAt: 'not-a-time', closed: true })
+  })
+  it('a closed window still lets the reader remove their own earlier comment', async () => {
+    const { recipients, routes, ada, cookie } = await setup()
+    await routes.STATE_POST(post('prr23456', comment('Mine.'), cookie(ada)), params('prr23456'))
+    await recipients.setCloses!('prr23456', [ada.rid], new Date(Date.now() - 60_000).toISOString())
+    const mine = await (await routes.STATE_GET(get('prr23456', cookie(ada)), params('prr23456'))).json()
+    const id = mine.slots.comments.mine[0].id
     expect((await routes.STATE_POST(post('prr23456', { slot: 'comments', op: 'remove', entry: id }, cookie(ada)), params('prr23456'))).status).toBe(200)
   })
   it('the signed-in owner and an admin reach the page\'s answers with no link, and their comments are theirs', async () => {
