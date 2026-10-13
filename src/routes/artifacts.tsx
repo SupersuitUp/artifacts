@@ -766,6 +766,9 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
             accent={brand.accent}
             ground={brand.ground}
             signIn={null}
+            closesAt={perReader && !perReader.owner ? perReader.closesAt : null}
+            requireName={a.commentName === 'required' && perReader?.group === true}
+            knownName={a.commentName === 'required' && perReader && !perReader.group && !perReader.owner ? perReader.label : null}
           />
         ) : null}
         {perReader && !perReader.owner ? <QuietView id={a.id} rid={perReader.rid} sig={perReader.sig} token={perReader.token} /> : null}
