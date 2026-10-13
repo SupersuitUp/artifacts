@@ -25,6 +25,6 @@ export { AUDIO_TYPES, audioExtFor, audioTypeFor, baseMime, MAX_AUDIO_BYTES, MAX_
 export { settleOnPublish, applySettingsPatch, withComments, declaredOf, passwordDigest, newPageKey, type DeclaredSettings, type LiveSettings, type SettingsPatch } from './settings.js'
 export type { PageSettings, SettingsFact, AccessLevel } from '../reader/settings-sheet.js'
 // Per-reader links: the host-facing surface only. The signing and token primitives stay internal.
-export { ridLink, parseRidParam, verifyRid, isUnfurlAgent, usableSecret, RECIPIENT_SECRET_MIN } from './recipients.js'
+export { ridLink, parseRidParam, verifyRid, isUnfurlAgent, usableSecret, RECIPIENT_SECRET_MIN, ridOfReaderKey } from './recipients.js'
 export { createRecipientsStore, memoryRecipientsStore, summarizeViews, type RecipientsStore, type Recipient, type RecipientsRecord, type ViewDoc, type RecipientSummary } from './recipients-store.js'
 export { migrateMemosToPrivate, MEMO_KEY, type MemoMigration } from './migrate-memos.js'

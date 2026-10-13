@@ -56,6 +56,11 @@ export const readerKeyFor = {
   signedIn: (uid: string) => `u:${uid}`,
   anonymous: (id: string) => `a:${id}`,
   recipient: (rid: string) => `r:${rid}`,
+  /** One browser on a group link, on a page with `comment_name: required`: the link and the id
+   *  `browserIdFor` derives. `ridOfReaderKey` reads the link back out of either `r:` shape. */
+  groupBrowser: (rid: string, browser: string) => `r:${rid}.${browser}`,
+  /** The publisher's one reply in a thread, keyed by the thread's top comment. */
+  publisher: (entryId: string) => `p:${entryId}`,
 }
 
 const writerOf = (w: Writer): Omit<Writer, 'key'> => ({

@@ -12,17 +12,22 @@
 // Who is writing: the grant a gated page already uses, or on a page with `writers: anyone`, an
 // anonymous id in an HttpOnly cookie. When both are present the anonymous answers move to the
 // signed-in reader, once, and the cookie is cleared.
+//
+// A `links: per-reader` page is written through the link: one link is one reader (`r:<rid>`). The
+// exception is a GROUP link on a page with `comment_name: required` (0.40.0), where each browser is
+// its own reader: the same anonymous cookie, and a key this server derives from the link and it.
 import { createHmac, randomBytes } from 'node:crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { isPublisherAuthed } from '../artifacts/auth.js'
 import { ARTIFACT_ID_RE } from './ids.js'
 import { GRANT_COOKIE, decide, firstName, signInUrl, verifyGrant, type Reader } from '../artifacts/reader.js'
 import { isUnlocked, unlockCookieName } from '../artifacts/unlock.js'
-import { ridCookieName, usableSecret } from '../artifacts/recipients.js'
+import { browserIdFor, ridCookieName, ridOfReaderKey, usableSecret } from '../artifacts/recipients.js'
 import type { RecipientsStore } from '../artifacts/recipients-store.js'
 import { perReaderGate } from './per-reader.js'
 import { ANON_WRITES_PER_MINUTE, MAX_ENTRIES_PER_SLOT, checkValue, effectiveWriters, slotVisibility } from '../artifacts/state.js'
-import { COMMENTS_SLOT, MAX_COMMENT_NAME_CHARS, cleanResolveNote, resolutionOf, validateComment, type CommentResolution, type CommentValue } from '../artifacts/comments.js'
+import { COMMENTS_SLOT, FEEDBACK_CLOSED, MAX_COMMENT_CHARS, MAX_COMMENT_NAME_CHARS, NAME_NEEDED, cleanResolveNote, resolutionOf, validateComment, type CommentResolution, type CommentValue } from '../artifacts/comments.js'
+import { MAX_QUOTE_CHARS } from '../artifacts/anchor.js'
 import { isCommentAudioPath } from '../artifacts/audio.js'
 import { readerKeyFor, type StateEntry, type StateStore, type Writer } from '../artifacts/state-store.js'
 import { NOTES_SLOT, checkNoteValue, checklistAnswerIds, hasNotesWidget } from '../artifacts/widgets.js'
@@ -94,6 +99,9 @@ export type StateRoutesContext = {
   onResolve?: (event: ResolveEvent) => void | Promise<void>
 }
 type Params = { params: Promise<{ id: string }> }
+/** Whoever came through a per-reader link. `perBrowser`: a group link on a page with
+ *  `comment_name: required`, where each browser is its own reader. */
+type Recipient = { rid: string; label: string; group: boolean; closesAt: string | null; perBrowser: boolean; secret: string }
 
 export function createStateRoutes(ctx: StateRoutesContext) {
   const anonCookie = (v: string, maxAge: number) => `${ANON_COOKIE}=${v}; Path=/; Max-Age=${maxAge}; HttpOnly; Secure; SameSite=Lax`
@@ -122,23 +130,35 @@ export function createStateRoutes(ctx: StateRoutesContext) {
     }
     // A per-reader page is answered through the link it was sent with: the rid cookie names the
     // reader, and what they write is theirs under that key. A revoked or expired rid is shut.
-    let recipient: { rid: string; label: string } | null = null
+    let recipient: Recipient | null = null
     // The owner and the page's admins open it without a link: their comment layer is signed-in, never a reader's.
     if (a.links === 'per-reader' && !isOwner(reader)) {
-      const g = await perReaderGate({ id, param: undefined, cookie: req.cookies.get(ridCookieName(id))?.value, secret: usableSecret(ctx.recipientSecret?.()), recipients: ctx.recipients })
+      const secret = usableSecret(ctx.recipientSecret?.())
+      const g = await perReaderGate({ id, param: undefined, cookie: req.cookies.get(ridCookieName(id))?.value, secret, recipients: ctx.recipients })
       if (g.state === 'shut') return { error: json({ error: 'this page is locked' }, 403) }
-      recipient = { rid: g.rid, label: g.label }
+      // The gate opened, so the secret is usable: it is what the browser id below is derived with.
+      recipient = { rid: g.rid, label: g.label, group: g.group, closesAt: g.closesAt, perBrowser: g.group && a.commentName === 'required', secret: secret! }
     }
     const rawAnon = req.cookies.get(ANON_COOKIE)?.value
     const anonId = rawAnon && ANON_ID.test(rawAnon) ? rawAnon : null
     return { a, reader, anonId, signIn, recipient }
   }
 
+  /** The key a reader who came through a link writes and reads under. One link is one reader,
+   *  except a group link on a page with `comment_name: required`, where each browser is its own:
+   *  the link's verified rid and an id derived from the anonymous cookie this server set. Null for
+   *  such a browser before its first write, when it has no cookie and nothing is its own. The
+   *  client never names the key and cannot work out another browser's. */
+  const recipientKey = (id: string, r: Recipient, anonId: string | null): string | null =>
+    !r.perBrowser ? readerKeyFor.recipient(r.rid) : anonId ? readerKeyFor.groupBrowser(r.rid, browserIdFor(r.secret, id, r.rid, anonId)) : null
+
   const ownerEmail = ctx.ownerEmail?.trim().toLowerCase()
   const admins = new Set((ctx.admins ?? []).map((e) => e.trim().toLowerCase()))
   // The owner and the page's admins read every comment, with names.
   const isOwner = (r: Reader | null) => !!r && ((!!ownerEmail && r.email.trim().toLowerCase() === ownerEmail) || admins.has(r.email.trim().toLowerCase()))
   const declared = (v: unknown) => { const by = (v as { by?: unknown } | null)?.by; return typeof by === 'string' && by.trim() ? by.trim() : null }
+  /** A window that has passed, or that cannot be read as a time, is closed: never open forever. */
+  const windowClosed = (r: { closesAt: string | null } | null) => !!r?.closesAt && !(Date.parse(r.closesAt) > Date.now())
   /** Comments are on for this page: the slot exists because `comments:` put it there. */
   const commentsOn = (a: ArtifactRecord) => !!a.comments && a.comments !== 'off' && Object.hasOwn(a.state!.slots, COMMENTS_SLOT)
 
@@ -168,6 +188,16 @@ export function createStateRoutes(ctx: StateRoutesContext) {
       slots[COMMENTS_SLOT].shared = entries.filter((e) => e.slot === COMMENTS_SLOT)
         .sort((x, y) => x.at.localeCompare(y.at) || x.id.localeCompare(y.id))
         .map((e) => ({ id: e.id, name: e.writer.name?.trim() || declared(e.value) || 'a reader', value: e.value, at: e.at, mine: e.readerKey === readerKey }))
+    }
+    // The one thing of someone else's a per-reader reader is shown: the publisher's reply to a
+    // comment that reader wrote. Never a reply to another reader's thread.
+    if (canWriteAs && commentsOn(a) && slots[COMMENTS_SLOT]) {
+      const own = new Set(entries.filter((e) => e.slot === COMMENTS_SLOT && e.readerKey === readerKey).map((e) => e.id))
+      const replies = entries
+        .filter((e) => e.slot === COMMENTS_SLOT && (e.value as CommentValue).publisher === true && own.has((e.value as CommentValue).parent ?? ''))
+        .sort((x, y) => x.at.localeCompare(y.at) || x.id.localeCompare(y.id))
+        .map((e) => ({ id: e.id, name: e.writer.name?.trim() || 'the publisher', value: e.value, at: e.at, mine: false }))
+      if (replies.length) slots[COMMENTS_SLOT].shared = replies
     }
     if (commentsOn(a) && slots[COMMENTS_SLOT]) {
       const v = slots[COMMENTS_SLOT]
@@ -207,8 +237,9 @@ export function createStateRoutes(ctx: StateRoutesContext) {
       await ctx.state!.moveReader(readerKeyFor.anonymous(anonId), writerFor(reader))
       clearAnon = true
     }
-    const key = recipient ? readerKeyFor.recipient(recipient.rid) : reader ? readerKeyFor.signedIn(reader.uid) : anonId ? readerKeyFor.anonymous(anonId) : null
-    const res = json({ ...(await viewBody(a, reader, key, !!recipient)), ...(reader || recipient ? {} : { signIn }) })
+    const key = recipient ? recipientKey(id, recipient, anonId) : reader ? readerKeyFor.signedIn(reader.uid) : anonId ? readerKeyFor.anonymous(anonId) : null
+    const feedback = recipient?.closesAt ? { feedback: { closesAt: recipient.closesAt, closed: windowClosed(recipient) } } : {}
+    const res = json({ ...(await viewBody(a, reader, key, !!recipient)), ...feedback, ...(reader || recipient ? {} : { signIn }) })
     if (clearAnon) res.headers.append('set-cookie', anonCookie('', 0))
     return res
   }
@@ -252,10 +283,24 @@ export function createStateRoutes(ctx: StateRoutesContext) {
     if (op === 'replace' && !entryId) return json({ error: 'replace names the entry it edits' }, 400)
     if (op === 'replace' && !ctx.state!.replace) return json({ error: 'this host cannot edit an answer' }, 501)
     const isComments = slot === COMMENTS_SLOT && commentsOn(a)
+    // A reader whose feedback window has closed can still read and still delete their own; a new
+    // comment or an edit is refused in words, so what they typed is not lost silently.
+    if (isComments && recipient && op !== 'remove' && windowClosed(recipient)) return json({ error: FEEDBACK_CLOSED, closed: true }, 403)
     let setCookie: string | null = null
     let writer: Writer
-    if (recipient) writer = { key: readerKeyFor.recipient(recipient.rid), name: recipient.label, anonymous: true }
-    else if (reader) writer = writerFor(reader)
+    if (recipient) {
+      let key = recipientKey(id, recipient, anonId)
+      if (!key) {
+        // A browser on a group link that has written nothing: there is nothing of its own to delete
+        // or edit, and a first note is when it is handed its id.
+        if (op === 'remove') return isComments && entryId ? json({ error: 'no comment of yours with that id' }, 404) : json(await viewBody(a, reader, null, true))
+        if (op === 'replace') return json({ error: 'no answer of yours with that id' }, 404)
+        anonId = newAnonId()
+        setCookie = anonCookie(anonId, 31536000)
+        key = recipientKey(id, recipient, anonId)!
+      }
+      writer = { key, name: recipient.label, anonymous: true }
+    } else if (reader) writer = writerFor(reader)
     else {
       if (effectiveWriters(a.state!, a.access, slot) !== 'anyone') return json({ error: 'sign in to answer', signIn }, 401)
       // A remove adds nothing, so it is never counted and never mints a cookie: with no cookie
@@ -289,6 +334,13 @@ export function createStateRoutes(ctx: StateRoutesContext) {
         const seen = await visibleComments(a, writer.key, reader, !!recipient)
         const c = validateComment(b.value, (cid) => seen.get(cid) ?? null)
         if (!c.ok) return json({ error: c.error }, 400)
+        // `comment_name: required`: an open link is shared by several people, so each comment carries
+        // the name its writer typed; a named link already says who, so a typed name is dropped rather
+        // than trusted over the label. A page without the line is untouched.
+        if (a.commentName === 'required' && recipient) {
+          if (recipient.group && !c.value.by) return json({ error: NAME_NEEDED, needsName: true }, 400)
+          if (!recipient.group) delete c.value.by
+        }
         // A shared comment's recording is one uploaded as a comment, never a path elsewhere under the
         // page: naming a personal recording here would get it signed for the publisher.
         if (c.value.audio !== undefined && !isCommentAudioPath(c.value.audio)) return json({ error: 'a comment\'s audio is the path its upload returned' }, 400)
@@ -351,7 +403,8 @@ export function createStateRoutes(ctx: StateRoutesContext) {
    *
    *  Each row carries `resolved`: its THREAD's resolution (a reply carries its parent's), or null.
    *  `&open=1` leaves out every row of a resolved thread, except a reply written after the thread
-   *  was resolved, which is news about it. `cursor` is the `at` of the last comment READ, filtered
+   *  was resolved, which is news about it. A reply the publisher wrote (`publisher: true`) is the
+   *  exception: it answers a thread and never reopens one. `cursor` is the `at` of the last comment READ, filtered
    *  or not, and `more` says a full page was read; a caller paging with `open=1` follows `cursor`,
    *  since the last row it was given can sit well before it. */
   async function COMMENTS_FEED(req: NextRequest) {
@@ -381,11 +434,15 @@ export function createStateRoutes(ctx: StateRoutesContext) {
       if (!a) continue
       const v = e.value as CommentValue
       const resolved = resolutionOf(v.parent ? (await commentsOf(e.artifactId)).get(v.parent)?.value : v)
-      if (openOnly && resolved && !(v.parent && e.at > resolved.at)) continue
+      // A publisher's reply is the answer to a thread, never news about it: it does not reopen one.
+      if (openOnly && resolved && !(v.parent && v.publisher !== true && e.at > resolved.at)) continue
       const audio = isCommentAudioPath(v.audio) && ctx.audioUrl ? await ctx.audioUrl(e.artifactId, v.audio) : null
       comments.push({
         artifactId: e.artifactId, title: a.title, entryId: e.id, parent: v.parent ?? null,
         name: e.writer.anonymous ? null : e.writer.name?.trim() || 'a signed-in reader',
+        // Which per-reader link it came through (0.40.0): the rid and the label the publisher gave it.
+        reader: ridOfReaderKey(e.readerKey) ? { rid: ridOfReaderKey(e.readerKey)!, label: e.writer.name ?? null } : null,
+        by: declared(v), publisher: v.publisher === true,
         quote: v.anchor?.kind === 'text' ? v.anchor.quote : null, region: v.anchor?.kind === 'region',
         body: v.body, transcript: v.transcript ?? null, audioUrl: audio, at: e.at, resolved,
         link: `${ctx.pageUrl(e.artifactId)}#comment-${e.id}`,
@@ -470,5 +527,56 @@ export function createStateRoutes(ctx: StateRoutesContext) {
     return json({ id, entry: root.id, resolved: resolution })
   }
 
-  return { STATE_GET, STATE_POST, RESPONSES, COMMENTS_FEED, RESOLVE }
+  /** POST /api/artifacts/<id>/reply: the publisher's one reply in a comment thread (0.40.0).
+   *  Body { entry, body, by?, quote? }. Publish key or publisher pass only. `entry` may name a reply:
+   *  the thread it belongs to is answered. A thread already answered is left as it is and the first
+   *  reply is named back (`existing: true`). That is one reply per thread when calls do not overlap:
+   *  the check is a read and then an append, not one atomic step, so an overlapping
+   *  retry can post a second. */
+  async function REPLY(req: NextRequest, { params }: Params) {
+    if (!isPublisherAuthed(req, ctx)) return json({ error: 'Unauthorized' }, 401)
+    const raw = await req.text()
+    if (Buffer.byteLength(raw, 'utf8') > MAX_BODY) return json({ error: 'request over 16 KB' }, 413)
+    let b: Record<string, unknown>
+    try {
+      const parsed: unknown = JSON.parse(raw)
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return json({ error: 'body must be a JSON object' }, 400)
+      b = parsed as Record<string, unknown>
+    } catch {
+      return json({ error: 'body must be JSON' }, 400)
+    }
+    const unknownKeys = Object.keys(b).filter((k) => !['entry', 'body', 'by', 'quote'].includes(k))
+    if (unknownKeys.length) return json({ error: `unknown field: ${unknownKeys.join(', ')}; the body is { entry, body, by?, quote? }` }, 400)
+    if (typeof b.entry !== 'string' || !ENTRY_ID.test(b.entry)) return json({ error: 'entry is the id of the comment to reply to' }, 400)
+    const body = typeof b.body === 'string' ? b.body.trim() : ''
+    if (!body || body.length > MAX_COMMENT_CHARS) return json({ error: `body is 1 to ${MAX_COMMENT_CHARS} characters of text` }, 400)
+    let by = 'the publisher'
+    if (b.by !== undefined) {
+      if (typeof b.by !== 'string' || /[\r\n]/.test(b.by) || !b.by.trim() || b.by.trim().length > MAX_COMMENT_NAME_CHARS)
+        return json({ error: `by is one line of at most ${MAX_COMMENT_NAME_CHARS} characters` }, 400)
+      by = b.by.trim()
+    }
+    if (b.quote !== undefined && (typeof b.quote !== 'string' || !b.quote.trim() || b.quote.length > MAX_QUOTE_CHARS))
+      return json({ error: `quote is 1 to ${MAX_QUOTE_CHARS} characters of the page's text` }, 400)
+    if (!ctx.state) return json({ error: 'this host keeps no answers' }, 501)
+    const { id } = await params
+    const a = ARTIFACT_ID_RE.test(id) ? await ctx.store.get(id) : null
+    if (!a) return json({ error: `no artifact with id ${id}` }, 404)
+    const all = new Map((await ctx.state.entries(id)).filter((e) => e.slot === COMMENTS_SLOT).map((e) => [e.id, e]))
+    const asked = all.get(b.entry)
+    if (!asked) return json({ error: 'no comment with that id on this page' }, 404)
+    const parent = (asked.value as CommentValue).parent
+    const root = parent ? all.get(parent) : asked
+    if (!root) return json({ error: 'the comment this reply answers is gone' }, 404)
+    const key = readerKeyFor.publisher(root.id)
+    const had = [...all.values()].find((e) => e.readerKey === key)
+    if (had) return json({ id, entry: had.id, parent: root.id, existing: true })
+    const anchor = typeof b.quote === 'string' ? { kind: 'text' as const, quote: b.quote, prefix: '', suffix: '' } : (root.value as CommentValue).anchor
+    const value: CommentValue = { anchor, body, version: (a as { version?: number }).version ?? 1, parent: root.id, by, publisher: true }
+    const r = await ctx.state.append({ artifactId: id, slot: COMMENTS_SLOT, writer: { key, name: by, anonymous: false }, value })
+    if ('full' in r) return json({ error: 'this thread takes no more replies' }, 409)
+    return json({ id, entry: r.id, parent: root.id, existing: false })
+  }
+
+  return { STATE_GET, STATE_POST, RESPONSES, COMMENTS_FEED, RESOLVE, REPLY }
 }

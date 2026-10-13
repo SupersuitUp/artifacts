@@ -1,7 +1,7 @@
 // src/artifacts/recipients.test.ts
 import { createHmac } from 'node:crypto'
 import { describe, it, expect } from 'vitest'
-import { RID_RE, newRid, ridSig, ridLink, parseRidParam, verifyRid, mintRenderToken, verifyRenderToken, beatKey, isUnfurlAgent, usableSecret } from './recipients.js'
+import { RID_RE, newRid, ridSig, ridLink, parseRidParam, verifyRid, mintRenderToken, verifyRenderToken, beatKey, isUnfurlAgent, usableSecret, browserIdFor, ridOfReaderKey } from './recipients.js'
 
 const S = 'k'.repeat(40)
 
@@ -82,5 +82,30 @@ describe('unfurl agents', () => {
   it('a phone browser is not', () => {
     expect(isUnfurlAgent('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1')).toBe(false)
     expect(isUnfurlAgent(null)).toBe(true)
+  })
+})
+
+describe('a browser on a group link', () => {
+  const anon = 'a'.repeat(24)
+  it('gets an id only the server can derive: stable for one cookie, different per cookie, link, page and secret', () => {
+    const id = browserIdFor(S, 'abcd2345', 'aaaaaaaaaaaa', anon)
+    expect(id).toMatch(/^[0-9a-f]{24}$/)
+    expect(browserIdFor(S, 'abcd2345', 'aaaaaaaaaaaa', anon)).toBe(id)
+    expect(id).not.toContain(anon)
+    for (const other of [
+      browserIdFor(S, 'abcd2345', 'aaaaaaaaaaaa', 'b'.repeat(24)),
+      browserIdFor(S, 'abcd2345', 'bbbbbbbbbbbb', anon),
+      browserIdFor(S, 'wxyz2345', 'aaaaaaaaaaaa', anon),
+      browserIdFor('j'.repeat(40), 'abcd2345', 'aaaaaaaaaaaa', anon),
+    ]) expect(other).not.toBe(id)
+  })
+  it('never signs with an empty secret', () => {
+    expect(() => browserIdFor('', 'abcd2345', 'aaaaaaaaaaaa', anon)).toThrow()
+  })
+  it('a reader key names its link: the bare key and a browser\'s key both, and nothing else', () => {
+    expect(ridOfReaderKey('r:aaaaaaaaaaaa')).toBe('aaaaaaaaaaaa')
+    expect(ridOfReaderKey(`r:aaaaaaaaaaaa.${'0'.repeat(24)}`)).toBe('aaaaaaaaaaaa')
+    for (const k of ['u:abc', `a:${anon}`, 'p:aaaaaaaaaaaa', 'r:', 'r:aaaaaaaaaaaax', 'r:aaaaaaaaaaaa.', 'r:aaaaaaaaaaaa.xyz', `r:aaaaaaaaaaaa.${'0'.repeat(24)}.1`, 'r:AAAAAAAAAAAA'])
+      expect(ridOfReaderKey(k)).toBeNull()
   })
 })

@@ -61,6 +61,33 @@ for (const [name, make] of [['memory', () => memoryRecipientsStore()], ['firesto
       expect(await s.useToken('k1', Date.now() + 1000)).toBe(true)
       expect(await s.useToken('k1', Date.now() + 1000)).toBe(false)
     })
+    it('a reader carries a feedback window that can be moved or cleared; the owner never gets one', async () => {
+      s = make()
+      const [a, o] = await s.add('abcd2345', [{ label: 'Reader A', closesAt: '2026-10-16T12:00:00.000Z' }, { label: 'Me', owner: true }])
+      expect((await s.get('abcd2345'))!.recipients[a.rid].closesAt).toBe('2026-10-16T12:00:00.000Z')
+      expect(await s.setCloses!('abcd2345', '*', '2026-10-20T12:00:00.000Z')).toEqual([a.rid])
+      const rec = (await s.get('abcd2345'))!
+      expect(rec.recipients[a.rid].closesAt).toBe('2026-10-20T12:00:00.000Z')
+      expect(rec.recipients[o.rid].closesAt ?? null).toBeNull()
+      expect(await s.setCloses!('abcd2345', [a.rid], null)).toEqual([a.rid])
+      expect((await s.get('abcd2345'))!.recipients[a.rid].closesAt ?? null).toBeNull()
+      expect(await s.setCloses!('zzzz9999', '*', null)).toEqual([])
+    })
+    it('the owner is never given a window: one named when they are added is dropped', async () => {
+      s = make()
+      const [o, a] = await s.add('abcd2345', [{ label: 'Me', owner: true, closesAt: '2020-01-01T00:00:00.000Z' }, { label: 'Reader A', closesAt: '2020-01-01T00:00:00.000Z' }])
+      expect(o.closesAt ?? null).toBeNull()
+      const rec = (await s.get('abcd2345'))!
+      expect('closesAt' in rec.recipients[o.rid]).toBe(false)
+      expect(rec.recipients[a.rid].closesAt).toBe('2020-01-01T00:00:00.000Z')
+    })
+    it('the views summary carries each reader\'s window', async () => {
+      s = make()
+      const [a] = await s.add('abcd2345', [{ label: 'Reader A', closesAt: '2026-10-16T12:00:00.000Z' }, { label: 'Reader B' }])
+      const sum = summarizeViews((await s.get('abcd2345'))!, [], [])
+      expect(sum.find((x) => x.rid === a.rid)!.closesAt).toBe('2026-10-16T12:00:00.000Z')
+      expect(sum.find((x) => x.label === 'Reader B')!.closesAt).toBeNull()
+    })
     it('views accumulate per session, plays per media, and expiry lists the pages due', async () => {
       s = make()
       await s.add('abcd2345', [{ label: 'A' }])
@@ -126,6 +153,17 @@ describe('summarizeViews', () => {
     expect(out.map((r) => r.label)).toEqual(['Reader A', 'Example Group'])
     expect(out[0]).toMatchObject({ opened: true, cameBack: true, plays: 2, devices: 2, activeSeconds: 35, firstOpenAt: '2026-10-11T10:00:00.000Z', comments: [{ text: 'Wow' }] })
     expect(out[1]).toMatchObject({ group: true, devices: 2, cameBack: false })
+  })
+  it('a group link lists every browser\'s comment under the link, and never a key that only starts like its rid', () => {
+    const out = summarizeViews(rec, [], [
+      { readerKey: 'r:bbbbbbbbbbbb', at: '2026-10-11T10:01:00.000Z', text: 'Before the line' },
+      { readerKey: `r:bbbbbbbbbbbb.${'0'.repeat(24)}`, at: '2026-10-11T10:02:00.000Z', text: 'From Kit' },
+      { readerKey: `r:bbbbbbbbbbbb.${'f'.repeat(24)}`, at: '2026-10-11T10:03:00.000Z', text: 'From Robin' },
+      { readerKey: 'r:bbbbbbbbbbbbx', at: '2026-10-11T10:04:00.000Z', text: 'Not this link' },
+      { readerKey: 'p:bbbbbbbbbbbb', at: '2026-10-11T10:05:00.000Z', text: 'A publisher reply' },
+    ])
+    expect(out[1].comments.map((c) => c.text)).toEqual(['Before the line', 'From Kit', 'From Robin'])
+    expect(out[0].comments).toEqual([])
   })
   it('marks a revoked reader as revoked', () => {
     const out = summarizeViews({ ...rec, recipients: { ...rec.recipients, aaaaaaaaaaaa: { ...rec.recipients.aaaaaaaaaaaa, revokedAt: 'y' } } }, [], [])

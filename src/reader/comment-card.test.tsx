@@ -87,4 +87,52 @@ describe('CommentCard', () => {
     await act(async () => { document.querySelector<HTMLInputElement>('[data-comment-share="mine"]')!.click() })
     expect(document.querySelector('[data-comment-name]')).toBeNull()
   })
+
+  const type = async (el: HTMLInputElement | HTMLTextAreaElement, v: string) => {
+    const set = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value')!.set!
+    await act(async () => { set.call(el, v); el.dispatchEvent(new Event('input', { bubbles: true })) })
+  }
+  const save = async () => { await act(async () => { document.querySelector<HTMLButtonElement>('[data-comment-save]')!.click() }) }
+
+  it('with requireName a comment is not sent until a first name is typed', async () => {
+    const saved: unknown[][] = []
+    await mount(<CommentCard ownerName="Robin Vale" mode="anyone" canShare signedIn={false} requireName onSave={async (...a) => { saved.push(a); return null }} onCancel={() => {}} />)
+    await type(document.querySelector('textarea')!, 'Tighten the opening.')
+    await save()
+    expect(saved).toEqual([])
+    expect(document.querySelector('[role="alert"]')!.textContent).toBe('Add your first name first.')
+    expect(document.querySelector('textarea')!.value).toBe('Tighten the opening.')
+    await type(document.querySelector<HTMLInputElement>('[data-comment-name] input')!, 'Kit')
+    await save()
+    expect(saved).toHaveLength(1)
+    expect(saved[0][3]).toBe('Kit')
+  })
+  it('with knownName the card never asks for a name', async () => {
+    await mount(<CommentCard ownerName="Robin Vale" mode="anyone" canShare signedIn={false} knownName="Reader A" onSave={noop} onCancel={() => {}} />)
+    expect(document.querySelector('[data-comment-name]')).toBeNull()
+  })
+  it('once feedback is closed the card says a note stays with the reader', async () => {
+    await mount(<CommentCard ownerName="Robin Vale" mode="anyone" canShare={false} closed signedIn={false} onSave={noop} onCancel={() => {}} />)
+    expect(document.querySelector('[data-comment-warning]')!.textContent).toBe('Only you will see this. Feedback on this draft is closed, so this is a personal note. Robin Vale won\'t see it.')
+  })
+  it('a refusal from the server leaves the typed words in the box', async () => {
+    await mount(<CommentCard ownerName="Robin Vale" mode="anyone" canShare signedIn={false} onSave={async () => 'Add your first name, so your note has a name on it.'} onCancel={() => {}} />)
+    await type(document.querySelector('textarea')!, 'Cut the second paragraph.')
+    await save()
+    expect(document.querySelector('[role="alert"]')!.textContent).toBe('Add your first name, so your note has a name on it.')
+    expect(document.querySelector('textarea')!.value).toBe('Cut the second paragraph.')
+  })
+  it('requireName shows the name field even to a signed-in reader, and asks before sending', async () => {
+    const saved: unknown[][] = []
+    await mount(<CommentCard ownerName="Robin Vale" mode="anyone" canShare signedIn requireName onSave={async (...a) => { saved.push(a); return null }} onCancel={() => {}} />)
+    expect(document.querySelector('[data-comment-name]')).not.toBeNull()
+    await type(document.querySelector('textarea')!, 'Tighten the opening.')
+    await save()
+    expect(saved).toEqual([])
+    expect(document.querySelector('[role="alert"]')!.textContent).toBe('Add your first name first.')
+  })
+  it('without requireName a signed-in reader is still never asked for a name', async () => {
+    await mount(<CommentCard ownerName="Robin Vale" mode="anyone" canShare signedIn onSave={noop} onCancel={() => {}} />)
+    expect(document.querySelector('[data-comment-name]')).toBeNull()
+  })
 })

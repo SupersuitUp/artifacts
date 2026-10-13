@@ -13,7 +13,7 @@ import { createMemoryStateStore } from '../artifacts/state-store.js'
 import { GRANT_COOKIE, mintGrant, type Reader } from '../artifacts/reader.js'
 import { memoryRecipientsStore } from '../artifacts/recipients-store.js'
 import { ridSig } from '../artifacts/recipients.js'
-import { mergeCommentsState, type CommentsMode, type CommentsVisible } from '../artifacts/comments.js'
+import { FEEDBACK_CLOSED, NAME_NEEDED, mergeCommentsState, type CommentsMode, type CommentsVisible } from '../artifacts/comments.js'
 
 const SECRET = 'sekrit'
 const t = '2026-09-28T00:00:00Z'
@@ -36,6 +36,8 @@ const RECORDS: Record<string, ArtifactRecord> = {
   cmg23456: page('cmg23456', 'anyone', 'readers', { access: 'invite' }),
   // Comments from anyone beside votes from signed-in readers only.
   prr23456: page('prr23456', 'anyone', 'owner', { links: 'per-reader' }),
+  // Per-reader, and every note carries a name: `comment_name: required`.
+  prn23456: page('prn23456', 'anyone', 'owner', { links: 'per-reader', commentName: 'required' }),
   cmv23456: page('cmv23456', 'anyone', 'owner', { state: { writers: 'signed-in', visibility: 'private', slots: { vote: { shape: 'one' } } } }),
 }
 
@@ -301,6 +303,86 @@ describe('comments through a per-reader link', () => {
     expect((await routes.STATE_POST(post('prr23456', { slot: 'comments', op: 'remove', entry: id }, cookie(bea)), params('prr23456'))).status).toBe(404)
     expect((await routes.STATE_POST(post('prr23456', { slot: 'comments', op: 'remove', entry: id }, cookie(ada)), params('prr23456'))).status).toBe(200)
   })
+  const reply = (id: string, body: unknown, key = 'k') => new NextRequest(`https://artifacts.example.com/api/artifacts/${id}/reply`, {
+    method: 'POST', headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' }, body: JSON.stringify(body),
+  })
+  it('the publisher replies once to a reader\'s comment; that reader sees it and no other reader ever does', async () => {
+    const { routes, state, ada, bea, cookie } = await setup()
+    await routes.STATE_POST(post('prr23456', comment('Which river?'), cookie(ada)), params('prr23456'))
+    await routes.STATE_POST(post('prr23456', comment('Reader B asks too.'), cookie(bea)), params('prr23456'))
+    const [mine] = (await state.entries('prr23456')).filter((x) => x.readerKey === `r:${ada.rid}`)
+    const first = await routes.REPLY(reply('prr23456', { entry: mine.id, body: 'Named the river in the second paragraph.', by: 'Robin', quote: 'river' }), params('prr23456'))
+    expect(first.status).toBe(200)
+    const made = await first.json()
+    expect(made).toMatchObject({ id: 'prr23456', parent: mine.id, existing: false })
+    const again = await (await routes.REPLY(reply('prr23456', { entry: mine.id, body: 'A different answer.' }), params('prr23456'))).json()
+    expect(again).toEqual({ id: 'prr23456', entry: made.entry, parent: mine.id, existing: true })
+    const adaView = await (await routes.STATE_GET(get('prr23456', cookie(ada)), params('prr23456'))).json()
+    expect(adaView.slots.comments.shared).toHaveLength(1)
+    expect(adaView.slots.comments.shared[0]).toMatchObject({ id: made.entry, name: 'Robin', mine: false, value: { body: 'Named the river in the second paragraph.', parent: mine.id, publisher: true, anchor: { kind: 'text', quote: 'river' } } })
+    const beaView = await (await routes.STATE_GET(get('prr23456', cookie(bea)), params('prr23456'))).json()
+    expect(beaView.slots.comments.shared).toBeUndefined()
+    expect(JSON.stringify(beaView)).not.toContain('Named the river')
+  })
+  it('a reply is not held to a reader\'s feedback window: it lands after that reader\'s window closed, with no name needed', async () => {
+    const { recipients, routes, state, ada, bea, cookie } = await setup()
+    await routes.STATE_POST(post('prr23456', comment('Which river?'), cookie(ada)), params('prr23456'))
+    const [mine] = (await state.entries('prr23456')).filter((x) => x.readerKey === `r:${ada.rid}`)
+    await recipients.setCloses!('prr23456', [ada.rid], new Date(Date.now() - 60_000).toISOString())
+    const r = await routes.REPLY(reply('prr23456', { entry: mine.id, body: 'Fixed.' }), params('prr23456'))
+    expect(r.status).toBe(200)
+    const view = await (await routes.STATE_GET(get('prr23456', cookie(ada)), params('prr23456'))).json()
+    expect(view.slots.comments.shared).toHaveLength(1)
+    expect(view.slots.comments.shared[0].name).toBe('the publisher')
+    // A reply to a reply answers the thread, and a reader of another thread still sees nothing.
+    const again = await (await routes.REPLY(reply('prr23456', { entry: (await r.json()).entry, body: 'More.' }), params('prr23456'))).json()
+    expect(again).toMatchObject({ parent: mine.id, existing: true })
+    const beaView = await (await routes.STATE_GET(get('prr23456', cookie(bea)), params('prr23456'))).json()
+    expect(beaView.slots.comments.shared).toBeUndefined()
+  })
+  it('a reply needs the publish key, a real comment and some words; a reader cannot mark a comment as the publisher\'s', async () => {
+    const { routes, state, ada, cookie } = await setup()
+    await routes.STATE_POST(post('prr23456', comment('Which river?'), cookie(ada)), params('prr23456'))
+    const [mine] = (await state.entries('prr23456')).filter((x) => x.slot === 'comments')
+    expect((await routes.REPLY(reply('prr23456', { entry: mine.id, body: 'x' }, 'wrong'), params('prr23456'))).status).toBe(401)
+    expect((await routes.REPLY(reply('prr23456', { entry: 'nope', body: 'x' }), params('prr23456'))).status).toBe(404)
+    expect((await routes.REPLY(reply('prr23456', { entry: mine.id, body: '   ' }), params('prr23456'))).status).toBe(400)
+    expect((await routes.REPLY(reply('prr23456', { entry: mine.id, body: 'x', extra: 1 }), params('prr23456'))).status).toBe(400)
+    const c = comment('Pretending.') as { value: Record<string, unknown> }
+    expect((await routes.STATE_POST(post('prr23456', { ...c, value: { ...c.value, publisher: true } }, cookie(ada)), params('prr23456'))).status).toBe(400)
+  })
+  it('after a reader\'s feedback window closes, a new comment is refused in words and the earlier one is still theirs to read', async () => {
+    const { recipients, routes, ada, bea, cookie } = await setup()
+    expect((await routes.STATE_POST(post('prr23456', comment('Before the close.'), cookie(ada)), params('prr23456'))).status).toBe(200)
+    await recipients.setCloses!('prr23456', [ada.rid], new Date(Date.now() - 60_000).toISOString())
+    const late = await routes.STATE_POST(post('prr23456', comment('Too late.'), cookie(ada)), params('prr23456'))
+    expect(late.status).toBe(403)
+    expect(await late.json()).toEqual({ error: FEEDBACK_CLOSED, closed: true })
+    const view = await (await routes.STATE_GET(get('prr23456', cookie(ada)), params('prr23456'))).json()
+    expect(JSON.stringify(view.slots.comments.mine)).toContain('Before the close.')
+    expect(view.feedback.closed).toBe(true)
+    // Another reader's window is their own.
+    expect((await routes.STATE_POST(post('prr23456', comment('Still open.'), cookie(bea)), params('prr23456'))).status).toBe(200)
+  })
+  it('an open window says when it closes, and a window that cannot be read as a time is closed', async () => {
+    const { recipients, routes, ada, cookie } = await setup()
+    const at = new Date(Date.now() + 86_400_000).toISOString()
+    await recipients.setCloses!('prr23456', [ada.rid], at)
+    const open = await (await routes.STATE_GET(get('prr23456', cookie(ada)), params('prr23456'))).json()
+    expect(open.feedback).toEqual({ closesAt: at, closed: false })
+    await recipients.setCloses!('prr23456', [ada.rid], 'not-a-time')
+    expect((await routes.STATE_POST(post('prr23456', comment('Any.'), cookie(ada)), params('prr23456'))).status).toBe(403)
+    const bad = await (await routes.STATE_GET(get('prr23456', cookie(ada)), params('prr23456'))).json()
+    expect(bad.feedback).toEqual({ closesAt: 'not-a-time', closed: true })
+  })
+  it('a closed window still lets the reader remove their own earlier comment', async () => {
+    const { recipients, routes, ada, cookie } = await setup()
+    await routes.STATE_POST(post('prr23456', comment('Mine.'), cookie(ada)), params('prr23456'))
+    await recipients.setCloses!('prr23456', [ada.rid], new Date(Date.now() - 60_000).toISOString())
+    const mine = await (await routes.STATE_GET(get('prr23456', cookie(ada)), params('prr23456'))).json()
+    const id = mine.slots.comments.mine[0].id
+    expect((await routes.STATE_POST(post('prr23456', { slot: 'comments', op: 'remove', entry: id }, cookie(ada)), params('prr23456'))).status).toBe(200)
+  })
   it('the signed-in owner and an admin reach the page\'s answers with no link, and their comments are theirs', async () => {
     const { routes, state } = await setup()
     for (const who of [owner, admin]) {
@@ -330,5 +412,160 @@ describe('comments through a per-reader link', () => {
       expect(JSON.stringify(view)).not.toContain('Reader B private note.')
       expect((await state.entries('prr23456')).filter((x) => x.slot === 'comments')).toHaveLength(1)
     } finally { RECORDS.prr23456 = page('prr23456', 'anyone', 'owner', { links: 'per-reader' }) }
+  })
+})
+
+describe('comment_name: required', () => {
+  const RS = 'r'.repeat(40)
+  async function named() {
+    const recipients = memoryRecipientsStore()
+    const [ada] = await recipients.add('prn23456', [{ label: 'Reader A' }])
+    const [anyone] = await recipients.add('prn23456', [{ label: 'Anyone with the link', group: true }])
+    const [plainGroup] = await recipients.add('prr23456', [{ label: 'A group', group: true }])
+    const { routes, state } = build(null, true, { recipients, recipientSecret: () => RS })
+    const cookie = (id: string, r: { rid: string }) => `artifact_r_${id}=${r.rid}.${ridSig(RS, id, r.rid)}`
+    return { routes, state, ada, anyone, plainGroup, cookie }
+  }
+  const withBy = (text: string, by: string) => { const c = comment(text) as { value: Record<string, unknown> }; return { ...c, value: { ...c.value, by } } }
+
+  it('an open link takes no comment without a first name, and keeps the name its writer typed', async () => {
+    const { routes, state, anyone, cookie } = await named()
+    const bare = await routes.STATE_POST(post('prn23456', comment('No name.'), cookie('prn23456', anyone)), params('prn23456'))
+    expect(bare.status).toBe(400)
+    expect(await bare.json()).toEqual({ error: NAME_NEEDED, needsName: true })
+    expect((await routes.STATE_POST(post('prn23456', withBy('From Kit.', 'Kit'), cookie('prn23456', anyone)), params('prn23456'))).status).toBe(200)
+    const [e] = (await state.entries('prn23456')).filter((x) => x.slot === 'comments')
+    expect((e.value as { by?: string }).by).toBe('Kit')
+  })
+  it('a named link never stores a typed name: the label is who they are', async () => {
+    const { routes, state, ada, cookie } = await named()
+    expect((await routes.STATE_POST(post('prn23456', withBy('Signed as someone else.', 'Somebody Else'), cookie('prn23456', ada)), params('prn23456'))).status).toBe(200)
+    const [e] = (await state.entries('prn23456')).filter((x) => x.slot === 'comments')
+    expect((e.value as { by?: string }).by).toBeUndefined()
+    expect(e.writer.name).toBe('Reader A')
+  })
+  it('a page without the line is unchanged: a group link comments with no name', async () => {
+    const { routes, plainGroup, cookie } = await named()
+    expect((await routes.STATE_POST(post('prr23456', comment('No name, as before.'), cookie('prr23456', plainGroup)), params('prr23456'))).status).toBe(200)
+  })
+})
+
+describe('a group link under comment_name: required: each browser is its own reader', () => {
+  const RS = 'r'.repeat(40)
+  const withBy = (text: string, by: string) => { const c = comment(text) as { value: Record<string, unknown> }; return { ...c, value: { ...c.value, by } } }
+  const reply = (id: string, body: unknown) => new NextRequest(`https://artifacts.example.com/api/artifacts/${id}/reply`, {
+    method: 'POST', headers: { authorization: 'Bearer k', 'content-type': 'application/json' }, body: JSON.stringify(body),
+  })
+  const feed = () => new NextRequest('https://artifacts.example.com/api/comments?since=2020-01-01T00:00:00Z', { headers: { authorization: 'Bearer k' } })
+  /** Two people open one group link in two browsers and each leaves a note. `page` is the page id. */
+  async function twoBrowsers(page: string) {
+    const recipients = memoryRecipientsStore()
+    const [link] = await recipients.add(page, [{ label: 'Anyone with the link', group: true }])
+    const { routes, state } = build(null, true, { recipients, recipientSecret: () => RS })
+    const rid = `artifact_r_${page}=${link.rid}.${ridSig(RS, page, link.rid)}`
+    const first = await routes.STATE_POST(post(page, withBy('From Kit.', 'Kit'), rid), params(page))
+    const second = await routes.STATE_POST(post(page, withBy('From Robin.', 'Robin'), rid), params(page))
+    expect([first.status, second.status]).toEqual([200, 200])
+    const kit = [rid, anonCookieOf(first)].filter(Boolean).join('; ')
+    const robin = [rid, anonCookieOf(second)].filter(Boolean).join('; ')
+    const view = async (cookie: string) => (await (await routes.STATE_GET(get(page, cookie), params(page))).json()) as Body
+    return { routes, state, link, rid, first, second, kit, robin, view }
+  }
+
+  it('each browser is handed its own id, and sees only its own note', async () => {
+    const { first, second, kit, robin, view } = await twoBrowsers('prn23456')
+    expect(anonCookieOf(first)).toMatch(/^artifact_anon=[A-Za-z0-9]{24}$/)
+    expect(anonCookieOf(second)).toMatch(/^artifact_anon=[A-Za-z0-9]{24}$/)
+    expect(anonCookieOf(first)).not.toBe(anonCookieOf(second))
+    expect(first.headers.get('set-cookie')).toContain('HttpOnly')
+    expect(((await first.json()) as Body).slots.comments.mine.map((m) => m.value.body)).toEqual(['From Kit.'])
+    expect(((await second.json()) as Body).slots.comments.mine.map((m) => m.value.body)).toEqual(['From Robin.'])
+    expect((await view(kit)).slots.comments.mine.map((m) => m.value.body)).toEqual(['From Kit.'])
+    const r = await view(robin)
+    expect(r.slots.comments.mine.map((m) => m.value.body)).toEqual(['From Robin.'])
+    expect(JSON.stringify(r)).not.toContain('From Kit.')
+  })
+  it('a browser with the link and no id yet is shown nobody\'s notes', async () => {
+    const { rid, view } = await twoBrowsers('prn23456')
+    const fresh = await view(rid)
+    expect(fresh.slots.comments.mine).toEqual([])
+    expect(JSON.stringify(fresh)).not.toMatch(/From Kit|From Robin/)
+  })
+  it('neither can edit or delete the other\'s note, with their own id, a made-up id or none', async () => {
+    const { routes, state, rid, kit, robin, view } = await twoBrowsers('prn23456')
+    const kitNote = (await view(kit)).slots.comments.mine[0].id
+    const edit = { slot: 'comments', op: 'replace', entry: kitNote, value: { anchor, body: 'Rewritten by someone else.', version: 2, by: 'Robin' } }
+    const remove = { slot: 'comments', op: 'remove', entry: kitNote }
+    for (const cookie of [robin, `${rid}; artifact_anon=${'x'.repeat(24)}`, rid]) {
+      expect((await routes.STATE_POST(post('prn23456', edit, cookie), params('prn23456'))).status).toBe(404)
+      expect((await routes.STATE_POST(post('prn23456', remove, cookie), params('prn23456'))).status).toBe(404)
+    }
+    expect((await state.entries('prn23456')).map((e) => (e.value as { body: string }).body).sort()).toEqual(['From Kit.', 'From Robin.'])
+    // Their own still edits and deletes.
+    expect((await routes.STATE_POST(post('prn23456', { ...edit, value: { ...edit.value, body: 'Kit, again.', by: 'Kit' } }, kit), params('prn23456'))).status).toBe(200)
+    expect((await routes.STATE_POST(post('prn23456', remove, kit), params('prn23456'))).status).toBe(200)
+  })
+  it('one cannot reply in the other\'s thread: a comment they were never shown', async () => {
+    const { routes, kit, robin, view } = await twoBrowsers('prn23456')
+    const kitNote = (await view(kit)).slots.comments.mine[0].id
+    const res = await routes.STATE_POST(post('prn23456', comment('Butting in.', { by: 'Robin', parent: kitNote }), robin), params('prn23456'))
+    expect(res.status).toBe(400)
+  })
+  it('a publisher reply to one is in that browser\'s view and never in the other\'s', async () => {
+    const { routes, kit, robin, rid, view } = await twoBrowsers('prn23456')
+    const kitNote = (await view(kit)).slots.comments.mine[0].id
+    expect((await routes.REPLY(reply('prn23456', { entry: kitNote, body: 'Fixed for Kit.' }), params('prn23456'))).status).toBe(200)
+    expect((await view(kit)).slots.comments.shared?.map((s) => s.value.body)).toEqual(['Fixed for Kit.'])
+    expect(JSON.stringify(await view(robin))).not.toContain('Fixed for Kit.')
+    expect(JSON.stringify(await view(rid))).not.toContain('Fixed for Kit.')
+  })
+  it('the stored key is the link\'s rid and an id derived on the server, never the cookie itself', async () => {
+    const { state, link, kit } = await twoBrowsers('prn23456')
+    const keys = (await state.entries('prn23456')).map((e) => e.readerKey)
+    expect(new Set(keys).size).toBe(2)
+    const anon = /artifact_anon=([A-Za-z0-9]{24})/.exec(kit)![1]
+    for (const k of keys) {
+      expect(k).toMatch(new RegExp(`^r:${link.rid}\\.[0-9a-f]{24}$`))
+      expect(k).not.toContain(anon)
+    }
+  })
+  it('the feed row names the link\'s rid and label for both, with the name each typed', async () => {
+    const { routes, link } = await twoBrowsers('prn23456')
+    const { comments } = (await (await routes.COMMENTS_FEED(feed())).json()) as { comments: { reader: unknown; by: string | null }[] }
+    expect(comments.map((c) => c.reader)).toEqual([{ rid: link.rid, label: 'Anyone with the link' }, { rid: link.rid, label: 'Anyone with the link' }])
+    expect(comments.map((c) => c.by).sort()).toEqual(['Kit', 'Robin'])
+  })
+  it('the window is still the link\'s: closed for one browser is closed for every browser on it', async () => {
+    const recipients = memoryRecipientsStore()
+    const [link] = await recipients.add('prn23456', [{ label: 'Anyone with the link', group: true, closesAt: '2020-01-01T00:00:00.000Z' }])
+    const { routes } = build(null, true, { recipients, recipientSecret: () => RS })
+    const cookie = `artifact_r_prn23456=${link.rid}.${ridSig(RS, 'prn23456', link.rid)}`
+    for (const c of [cookie, `${cookie}; artifact_anon=${'k'.repeat(24)}`]) {
+      const res = await routes.STATE_POST(post('prn23456', withBy('Too late.', 'Kit'), c), params('prn23456'))
+      expect(res.status).toBe(403)
+      expect(await res.json()).toEqual({ error: FEEDBACK_CLOSED, closed: true })
+      expect(res.headers.get('set-cookie')).toBeNull()
+    }
+  })
+  it('a named link on the same page is still one reader, keyed by its rid, and is handed no id', async () => {
+    const recipients = memoryRecipientsStore()
+    const [ada] = await recipients.add('prn23456', [{ label: 'Reader A' }])
+    const { routes, state } = build(null, true, { recipients, recipientSecret: () => RS })
+    const cookie = `artifact_r_prn23456=${ada.rid}.${ridSig(RS, 'prn23456', ada.rid)}`
+    const res = await routes.STATE_POST(post('prn23456', comment('Mine.'), cookie), params('prn23456'))
+    expect(res.status).toBe(200)
+    expect(res.headers.get('set-cookie')).toBeNull()
+    expect((await state.entries('prn23456')).map((e) => e.readerKey)).toEqual([`r:${ada.rid}`])
+    const again = (await (await routes.STATE_GET(get('prn23456', `${cookie}; artifact_anon=${'z'.repeat(24)}`), params('prn23456'))).json()) as Body
+    expect(again.slots.comments.mine.map((m) => m.value.body)).toEqual(['Mine.'])
+  })
+  it('without the line a group link is one shared reader, as in 0.39: no id, one key, each sees and can remove the other\'s', async () => {
+    const { routes, state, link, first, second, rid, view } = await twoBrowsers('prr23456')
+    expect(first.headers.get('set-cookie')).toBeNull()
+    expect(second.headers.get('set-cookie')).toBeNull()
+    expect((await state.entries('prr23456')).map((e) => e.readerKey)).toEqual([`r:${link.rid}`, `r:${link.rid}`])
+    const shared = await view(`${rid}; artifact_anon=${'q'.repeat(24)}`)
+    expect(shared.slots.comments.mine.map((m) => m.value.body).sort()).toEqual(['From Kit.', 'From Robin.'])
+    expect((await routes.STATE_POST(post('prr23456', { slot: 'comments', op: 'remove', entry: shared.slots.comments.mine[0].id }, rid), params('prr23456'))).status).toBe(200)
   })
 })

@@ -31,6 +31,13 @@ export function mergeCommentsState(
 
 export const MAX_COMMENT_CHARS = 4000
 export const MAX_COMMENT_NAME_CHARS = 80
+
+/** What a reader is told when their feedback window has closed (0.40.0). The card shows it under the
+ *  words they typed, which stay in the box. */
+export const FEEDBACK_CLOSED = 'Feedback on this draft is closed. Your note was not sent.'
+/** What a reader on an open (group) link is told when a comment arrives with no name, on a page
+ *  that says `comment_name: required` (0.40.0). */
+export const NAME_NEEDED = 'Add your first name, so your note has a name on it.'
 export const COMMENT_TRANSCRIPTS = ['browser', 'host', 'typed'] as const
 /** One shared comment or personal note. `parent` makes it a reply to a top-level comment (one
  *  level only). `audio` and `transcript` are filled by voice memos; a memo may have an empty body. */
@@ -43,6 +50,9 @@ export type CommentValue = {
   transcript?: (typeof COMMENT_TRANSCRIPTS)[number]
   /** The name a reader typed so the owner can credit them. A signed-in reader's account name wins. */
   by?: string
+  /** On a reply only: the publisher wrote it, through the reply route with the publish key (0.40.0).
+   *  Never set by a reader: `validateComment` refuses the key. */
+  publisher?: true
   /** On a thread's top-level comment only: the owner, an admin or the publisher marked the thread
    *  done (0.33.0). Written by the resolve route, never by a reader: `validateComment` refuses the
    *  key, and an edit keeps whatever the comment already carried. */

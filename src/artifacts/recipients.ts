@@ -81,6 +81,23 @@ export function beatKey(secret: string, id: string, rid: string, session: string
   return mac(secret, `beat\n${id}\n${rid}\n${session}`)
 }
 
+/** One browser on a group link, as the 24 hex characters its reader key ends in (0.40.0). Derived
+ *  here from the page, the link's verified rid and the anonymous id this server handed that browser,
+ *  keyed by the recipient secret: a client cannot compute another browser's, and the stored key is
+ *  not the cookie, so reading a key (the publisher's exports carry it) never lets anyone write as
+ *  that reader. */
+export function browserIdFor(secret: string, id: string, rid: string, anon: string): string {
+  if (!secret) throw new Error('a signing secret is required')
+  return createHmac('sha256', secret).update(`browser\n${id}\n${rid}\n${anon}`).digest('hex').slice(0, 24)
+}
+
+const RECIPIENT_KEY = /^r:([a-z0-9]{12})(\.[0-9a-f]{24})?$/
+/** The link a reader key was written through: `r:<rid>` (one link, one reader) or
+ *  `r:<rid>.<browser>` (one browser on a group link). Null for any other key. */
+export function ridOfReaderKey(key: string): string | null {
+  return RECIPIENT_KEY.exec(key)?.[1] ?? null
+}
+
 /** Messaging apps' and search engines' preview fetchers. Apple's LinkPresentation presents as
  *  `facebookexternalhit/1.1 Facebot Twitterbot/1.0`. A request with no user agent is treated as one. */
 export const UNFURL_AGENTS = /facebookexternalhit|facebot|twitterbot|slackbot|whatsapp|linkedinbot|discordbot|telegrambot|skypeuripreview|redditbot|applebot|googlebot|bingbot|embedly|iframely|pinterest|bitlybot|vkshare|mastodon|preview/i

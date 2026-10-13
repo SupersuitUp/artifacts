@@ -30,9 +30,9 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, 
 import { createPortal } from 'react-dom'
 import { PINS_SET, announcePins, signInBack } from './page-bridge.js'
 import { MAX_QUOTE_CHARS, textAnchorFrom, type Anchor } from '../artifacts/anchor.js'
-import { COMMENTS_SLOT, MAX_RESOLVE_NOTE_CHARS, resolutionOf, type CommentResolution, type CommentValue, type CommentsMode } from '../artifacts/comments.js'
+import { COMMENTS_SLOT, MAX_COMMENT_NAME_CHARS, MAX_RESOLVE_NOTE_CHARS, resolutionOf, type CommentResolution, type CommentValue, type CommentsMode } from '../artifacts/comments.js'
 import type { PersonalNote } from '../artifacts/personal-store.js'
-import { CommentCard, type SavedMemo } from './comment-card.js'
+import { CommentCard, recallName, rememberName, type SavedMemo } from './comment-card.js'
 import { AudioPlay, hostVoice, newMemoId, type VoiceHost } from './voice-recorder.js'
 import { deviceAudio as defaultDeviceAudio, isDeviceAudio, type DeviceAudio } from './device-audio.js'
 import { audioExtFor } from '../artifacts/audio.js'
@@ -93,7 +93,7 @@ export function onTouch(): boolean {
 }
 
 export function CommentLayer({
-  artifactId, rootId, ownerName, comments, canShare, signedIn, isOwner, version, accent, ground, signIn, voice, audioStore,
+  artifactId, rootId, ownerName, comments, canShare, signedIn, isOwner, version, accent, ground, signIn, voice, audioStore, closesAt = null, requireName = false, knownName = null,
 }: {
   artifactId: string
   /** The element holding the page's prose, the same root the read-aloud lights. */
@@ -113,6 +113,12 @@ export function CommentLayer({
   voice?: VoiceHost
   /** Where an anonymous reader's recordings live; defaults to this browser's IndexedDB. */
   audioStore?: DeviceAudio
+  /** When this reader's feedback window closes (an ISO time), or null. Past it, a note is personal. */
+  closesAt?: string | null
+  /** A shared comment needs a first name (`comment_name: required`, on an open link). */
+  requireName?: boolean
+  /** Who the reader is, on a named link of a `comment_name: required` page: the card does not ask. */
+  knownName?: string | null
 }) {
   const host = useMemo(() => voice ?? hostVoice(artifactId), [voice, artifactId])
   const audioDb = useMemo(() => audioStore ?? defaultDeviceAudio, [audioStore])
@@ -142,6 +148,34 @@ export function CommentLayer({
   const [scrollTo, setScrollTo] = useState<string | null>(null)
   /** A resolved thread the address named, opened expanded rather than collapsed. */
   const [expanded, setExpanded] = useState<string | null>(null)
+  // The window is checked on mount and again the moment it passes, so a page left open stops
+  // offering to share without a reload. A time that cannot be read is closed.
+  const [closed, setClosed] = useState(false)
+  useEffect(() => {
+    if (!closesAt) { setClosed(false); return }
+    const ms = Date.parse(closesAt) - Date.now()
+    if (!(ms > 0)) { setClosed(true); return }
+    setClosed(false)
+    // setTimeout cannot wait longer than about 24 days: past that, wake early and look at the clock again.
+    let t: ReturnType<typeof setTimeout>
+    const arm = () => {
+      const left = Date.parse(closesAt) - Date.now()
+      if (!(left > 0)) { setClosed(true); return }
+      t = setTimeout(arm, Math.min(left, 2_147_000_000))
+    }
+    t = setTimeout(arm, Math.min(ms, 2_147_000_000))
+    return () => clearTimeout(t)
+  }, [closesAt])
+  const share = canShare && !closed
+  /** Scroll to where a publisher reply is pinned (the passage that changed) and select it. */
+  const jump = (i: Item) => {
+    const root = document.getElementById(rootId)
+    if (!root) return
+    const at = placeAnchor(root, indexText(root), i.value.anchor)
+    if (!at) return
+    window.scrollTo({ top: Math.max(0, boxOf(at).top - 120), behavior: 'smooth' })
+    if (at.kind === 'text') { const sel = document.getSelection(); sel?.removeAllRanges(); sel?.addRange(at.range) }
+  }
 
   const call = useCallback(async (url: string, init?: RequestInit) => {
     try {
@@ -451,8 +485,9 @@ export function CommentLayer({
     return null
   }
 
-  const reply = async (parent: Item, body: string): Promise<string | null> => {
-    const value: CommentValue = { anchor: parent.value.anchor, body, version, parent: parent.id }
+  const reply = async (parent: Item, body: string, by?: string): Promise<string | null> => {
+    const value: CommentValue = { anchor: parent.value.anchor, body, version, parent: parent.id, ...(requireName && !knownName && by ? { by } : {}) }
+    if (requireName && !knownName && by) rememberName(by)
     const r = await call(stateUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ slot: COMMENTS_SLOT, op: 'append', value }) })
     if (r.status !== 200) return typeof r.body.error === 'string' ? r.body.error : 'that did not save; try again'
     setShared(sharedFrom(r.body))
@@ -508,13 +543,13 @@ export function CommentLayer({
       ) : null}
       {draft ? (
         <Floating x={draft.x} y={draft.y}>
-          <CommentCard ownerName={ownerName} mode={comments} canShare={canShare} signedIn={signedIn && onServer} quote={draft.quote} accent={accent} signIn={signIn}
+          <CommentCard ownerName={ownerName} mode={comments} canShare={share} closed={closed} requireName={requireName} knownName={knownName} signedIn={signedIn && onServer} quote={draft.quote} accent={accent} signIn={signIn}
             voice={host} onSave={(body, share, memo, by) => saveNew(body, share, draft, memo, by)} onCancel={() => setDraft(null)} />
         </Floating>
       ) : null}
       {openItem && open ? (
         <Floating x={open.left + 28} y={open.top}>
-          <Thread key={openItem.id} item={openItem} replies={items.filter((i) => i.value.parent === openItem.id)} canReply={openItem.kind === 'shared' && canShare}
+          <Thread key={openItem.id} item={openItem} replies={items.filter((i) => i.value.parent === openItem.id)} canReply={openItem.kind === 'shared' && share} awaiting={closesAt != null} askName={requireName && !knownName} onJump={jump}
             canResolve={openItem.kind === 'shared' && isOwner} startExpanded={expanded === openItem.id}
             accent={accent} audioDb={audioDb} onClose={() => { setThread(null); setExpanded(null) }} onRemove={remove} onEdit={edit} onReply={reply} onResolve={resolveThread} />
         </Floating>
@@ -545,7 +580,7 @@ export function CommentLayer({
   return (
     <>
       {/* What the server decided, drawn identically on both sides so the markup hydrates. */}
-      <span hidden data-comment-layer={comments} data-comment-can-share={canShare ? 'yes' : 'no'} />
+      <span hidden data-comment-layer={comments} data-comment-can-share={share ? 'yes' : 'no'} />
       {mounted && layout.earlier.length ? (
         <section data-comments-earlier data-comment-ui data-nospeak className="mx-auto max-w-2xl px-6 pb-16 text-sm">
           <p className="text-[11px] uppercase tracking-[0.2em]" style={{ color: accent }}>Comments on earlier versions</p>
@@ -592,9 +627,9 @@ function Floating({ x, y, children }: { x: number; y: number; children: ReactNod
   return <div className="absolute z-50" style={{ left, top: y }}>{children}</div>
 }
 
-function Thread({ item, replies, canReply, canResolve = false, startExpanded = false, accent, audioDb, onClose, onRemove, onEdit, onReply, onResolve }: {
-  item: Item; replies: Item[]; canReply: boolean; canResolve?: boolean; startExpanded?: boolean; accent: string; audioDb: DeviceAudio
-  onClose: () => void; onRemove: (i: Item) => Promise<void>; onEdit: (i: Item, body: string) => Promise<string | null>; onReply: (i: Item, body: string) => Promise<string | null>
+function Thread({ item, replies, canReply, awaiting = false, askName = false, onJump, canResolve = false, startExpanded = false, accent, audioDb, onClose, onRemove, onEdit, onReply, onResolve }: {
+  item: Item; replies: Item[]; canReply: boolean; awaiting?: boolean; askName?: boolean; onJump?: (i: Item) => void; canResolve?: boolean; startExpanded?: boolean; accent: string; audioDb: DeviceAudio
+  onClose: () => void; onRemove: (i: Item) => Promise<void>; onEdit: (i: Item, body: string) => Promise<string | null>; onReply: (i: Item, body: string, by?: string) => Promise<string | null>
   onResolve?: (i: Item, resolved: boolean, note?: string) => Promise<string | null>
 }) {
   const [replying, setReplying] = useState(false)
@@ -633,10 +668,16 @@ function Thread({ item, replies, canReply, canResolve = false, startExpanded = f
       {resolved ? <p data-comment-resolved-line className="m-0 mb-2 text-[13px]" style={{ color: accent }}>✓ {resolvedLine(resolved)}{resolved.by ? <span className="opacity-70">{` · ${resolved.by}`}</span> : null}</p> : null}
       {item.value.anchor.kind === 'text' ? <p className="mb-2 line-clamp-2 border-l-2 pl-2 text-[13px] italic opacity-70" style={{ borderColor: accent }}>{item.value.anchor.quote}</p> : null}
       <Entry item={item} accent={accent} audioDb={audioDb} onRemove={onRemove} onEdit={onEdit} />
-      {replies.length ? <ul className="m-0 mt-2 grid list-none gap-2 border-l pl-3 p-0">{replies.map((r) => <li key={r.id} className="m-0"><Entry item={r} accent={accent} audioDb={audioDb} onRemove={onRemove} onEdit={onEdit} /></li>)}</ul> : null}
+      {replies.length ? <ul className="m-0 mt-2 grid list-none gap-2 border-l pl-3 p-0">{replies.map((r) => {
+        // A publisher reply pinned somewhere other than its thread points at the passage that changed.
+        const moved = r.value.publisher === true && r.value.anchor.kind === 'text' && (item.value.anchor.kind !== 'text' || r.value.anchor.quote !== item.value.anchor.quote)
+        return <li key={r.id} className="m-0"><Entry item={r} accent={accent} audioDb={audioDb} onRemove={onRemove} onEdit={onEdit} onJump={moved ? onJump : undefined} /></li>
+      })}</ul> : null}
+      {awaiting && item.mine && item.kind === 'shared' && !resolved && !replies.some((r) => r.value.publisher === true)
+        ? <p data-comment-waiting className="m-0 mt-2 text-xs opacity-70">Waiting for a reply.</p> : null}
       {canReply ? (
         replying
-          ? <InlineForm label="Reply" accent={accent} onCancel={() => setReplying(false)} onSubmit={async (b) => { const e = await onReply(item, b); if (!e) setReplying(false); return e }} />
+          ? <InlineForm label="Reply" accent={accent} askName={askName} onCancel={() => setReplying(false)} onSubmit={async (b, by) => { const e = await onReply(item, b, by); if (!e) setReplying(false); return e }} />
           : <button type="button" data-comment-reply onClick={() => setReplying(true)} className="mt-2 text-xs underline">Reply</button>
       ) : null}
       {canResolve && onResolve && !replying ? (
@@ -665,7 +706,7 @@ function useAudioSrc(item: Item, audioDb: DeviceAudio): string | null {
   return item.audioUrl ?? local
 }
 
-function Entry({ item, accent, audioDb, onRemove, onEdit }: { item: Item; accent: string; audioDb: DeviceAudio; onRemove: (i: Item) => Promise<void>; onEdit: (i: Item, body: string) => Promise<string | null> }) {
+function Entry({ item, accent, audioDb, onRemove, onEdit, onJump }: { item: Item; onJump?: (i: Item) => void; accent: string; audioDb: DeviceAudio; onRemove: (i: Item) => Promise<void>; onEdit: (i: Item, body: string) => Promise<string | null> }) {
   const [editing, setEditing] = useState(false)
   const src = useAudioSrc(item, audioDb)
   if (editing) return <InlineForm label="Save" initial={item.value.body} onCancel={() => setEditing(false)} onSubmit={async (b) => { const e = await onEdit(item, b); if (!e) setEditing(false); return e }} />
@@ -682,23 +723,39 @@ function Entry({ item, accent, audioDb, onRemove, onEdit }: { item: Item; accent
           </>
         ) : null}
       </p>
+      {onJump ? <button type="button" data-comment-jump onClick={() => onJump(item)} className="mt-1 text-xs underline">Show what changed</button> : null}
     </div>
   )
 }
 
-function InlineForm({ label, initial = '', accent = 'currentColor', optional = false, placeholder, maxLength, onSubmit, onCancel }: {
+function InlineForm({ label, initial = '', accent = 'currentColor', optional = false, askName = false, placeholder, maxLength, onSubmit, onCancel }: {
   label: string; initial?: string; accent?: string
   /** The text may be left empty (a resolve note), so the button is never disabled. */
   optional?: boolean; placeholder?: string; maxLength?: number
-  onSubmit: (body: string) => Promise<string | null>; onCancel: () => void
+  /** A first name is needed with the words (`comment_name: required`): prefilled from the one remembered. */
+  askName?: boolean
+  onSubmit: (body: string, by?: string) => Promise<string | null>; onCancel: () => void
 }) {
   const [text, setText] = useState(initial)
   const [error, setError] = useState<string | null>(null)
+  const [name, setName] = useState(askName ? recallName : '')
   return (
-    <form className="mt-2" onSubmit={async (e) => { e.preventDefault(); if (optional || text.trim()) setError(await onSubmit(text.trim())) }}>
+    <form className="mt-2" onSubmit={async (e) => {
+      e.preventDefault()
+      if (!optional && !text.trim()) return
+      if (askName && !name.trim()) { setError('Add your first name first.'); return }
+      setError(await onSubmit(text.trim(), askName ? name.trim() : undefined))
+    }}>
       <textarea value={text} autoFocus rows={2} onChange={(e) => setText(optional ? e.target.value.replace(/[\r\n]+/g, ' ') : e.target.value)} aria-label={optional && placeholder ? placeholder : label}
         placeholder={placeholder} maxLength={maxLength}
         className="w-full rounded-lg border border-[color:var(--a-line)] bg-transparent p-2" style={NO_ZOOM_FONT} />
+      {askName ? (
+        <label data-comment-name className="mt-1 block text-xs">
+          <span className="block opacity-80">Your first name</span>
+          <input value={name} onChange={(e) => setName(e.target.value)} maxLength={MAX_COMMENT_NAME_CHARS} autoComplete="name" placeholder="Your name" style={NO_ZOOM_FONT}
+            className="mt-1 w-full rounded-lg border border-[color:var(--a-line)] bg-transparent px-2 py-1" />
+        </label>
+      ) : null}
       {error ? <p role="alert" className="text-xs text-amber-500">{error}</p> : null}
       <div className="mt-1 flex gap-3 text-xs">
         <button type="submit" disabled={!optional && !text.trim()} className="rounded-full px-3 py-0.5 font-medium disabled:opacity-40" style={{ background: accent, color: 'var(--a-on-accent, #111)' }}>{label}</button>

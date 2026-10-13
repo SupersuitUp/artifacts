@@ -80,6 +80,16 @@ describe('the page', () => {
     store: memoryArtifactStore([page]), recipients: recipients as never, recipientSecret: () => S,
     assets: { put: async () => '', privateUrl: async (_i: string, s: string) => `https://signed.example.com/${s}` } as never, ...over,
   }))
+  it('a reader with a feedback window sees whose draft it is, the context line and the time left', async () => {
+    const { recipients, link } = await seeded()
+    const [cy] = await recipients.add('abcd2345', [{ label: 'Reader C', note: 'Is the ending earned?', closesAt: new Date(Date.now() + 3 * 86_400_000 + 60_000).toISOString() }])
+    const html = renderToStaticMarkup(await routes(recipients, { owner: 'Robin Vale' }).Page(props(link(cy.rid))))
+    expect(html).toContain('data-feedback-window')
+    expect(html).toContain('A draft from Robin Vale, for Reader C')
+    expect(html).toContain('Is the ending earned?')
+    expect(html).toContain('Feedback is open: 3 days left.')
+    expect(html).not.toContain('For Reader C:')
+  })
   it('a revoked reader sees only that it is no longer available, and no media', async () => {
     const { recipients, ada, link } = await seeded()
     await recipients.revoke('abcd2345', [ada.rid])

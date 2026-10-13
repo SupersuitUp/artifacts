@@ -43,6 +43,7 @@ export type ArtifactRecord = {
   /** The brand pack the page asked for by name; see ArtifactMeta.pack. */
   pack?: string
   toc?: boolean
+  commentName?: 'required'
   definitions?: Definition[]
   /** Who may leave shared comments; absent is off. Personal notes need nothing. */
   comments?: CommentsMode
@@ -257,6 +258,7 @@ async function saveArtifact(col: Col, input: SaveInput): Promise<SaveResult> {
     ...(input.meta.theme ? { theme: input.meta.theme } : {}),
     ...(input.meta.pack ? { pack: input.meta.pack } : {}),
     ...(input.meta.toc !== undefined ? { toc: input.meta.toc } : {}),
+    ...(input.meta.commentName ? { commentName: input.meta.commentName } : {}),
     ...(input.meta.definitions?.length ? { definitions: input.meta.definitions } : {}),
   }
   if (input.id) {
@@ -307,6 +309,7 @@ async function saveArtifact(col: Col, input: SaveInput): Promise<SaveResult> {
       ...(input.meta.theme ? {} : { theme: FieldValue.delete() }),
       ...(input.meta.pack ? {} : { pack: FieldValue.delete() }),
       ...(input.meta.toc !== undefined ? {} : { toc: FieldValue.delete() }),
+      ...(input.meta.commentName ? {} : { commentName: FieldValue.delete() }),
       ...(input.meta.definitions?.length ? {} : { definitions: FieldValue.delete() }),
     }
     // `voice: none` is the page declaring it has no audio. An update merges, so the recording it

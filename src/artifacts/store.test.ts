@@ -156,6 +156,15 @@ describe('artifact store', () => {
     expect(after?.theme).toBeUndefined()
     expect(after?.toc).toBeUndefined()
   })
+  it('comment_name rides through, and a re-publish without it clears it', async () => {
+    const r = await saveArtifact({ meta: { ...meta, links: 'per-reader', commentName: 'required' }, markdown: 'b' })
+    if ('notFound' in r) throw new Error('unexpected')
+    const got = await getArtifact(r.id)
+    expect(got?.commentName).toBe('required')
+    await saveArtifact({ id: r.id, meta: { ...meta, links: 'per-reader' }, markdown: 'b2' })
+    const after = await getArtifact(r.id)
+    expect(after?.commentName).toBeUndefined()
+  })
   it('a pack name rides through, and a re-publish without it goes back to the default', async () => {
     const r = await saveArtifact({ meta: { ...meta, pack: 'other-look' }, markdown: 'b' })
     if ('notFound' in r) throw new Error('unexpected')

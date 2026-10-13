@@ -27,6 +27,7 @@ import { ArtifactReader, type WordTiming } from '../reader/artifact-reader.js'
 import { CommentLayer } from '../reader/comment-layer.js'
 import { ReaderWatch } from '../reader/reader-watch.js'
 import { UpdatedTime } from '../reader/updated-time.js'
+import { FeedbackWindow } from '../reader/feedback-window.js'
 import { perReaderGate, withPrivateUrls, NO_LINK, UNAVAILABLE } from './per-reader.js'
 import { ridCookieName, mintRenderToken, usableSecret, isUnfurlAgent, RID_COOKIE_MAX_AGE } from '../artifacts/recipients.js'
 import type { RecipientsStore } from '../artifacts/recipients-store.js'
@@ -475,7 +476,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
       const remember = g.fromLink && !bot
         ? [pagePath(id), `/api/artifacts/${id}`].map((p) => `document.cookie=${JSON.stringify(`${ridCookieName(id)}=${g.rid}.${g.sig}; Path=${p}; Max-Age=${RID_COOKIE_MAX_AGE}; SameSite=Lax; Secure`)}`).join(';')
         : null
-      const perReader = bot ? undefined : { rid: g.rid, sig: g.sig, label: g.label, note: g.note, owner: g.owner, token: mintRenderToken(secret!, id, g.rid) }
+      const perReader = bot ? undefined : { rid: g.rid, sig: g.sig, label: g.label, note: g.note, owner: g.owner, group: g.group, closesAt: g.closesAt, token: mintRenderToken(secret!, id, g.rid) }
       const markdown = await media(a.markdown)
       const body = broadcast
         ? await BroadcastCard({ ...a, markdown }, { reader: null, perReader, bot })
@@ -712,7 +713,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
    *  them, then this reader's own note. None of the document's furniture: no table of contents, no
    *  version line, no read-along (a voice note is its own audio), and no page menu for a reader.
    *  Comments only when the file turned them on; the quiet view beacon always, for a reader. */
-  async function BroadcastCard(a: Rec, { reader, perReader, bot }: { reader: Reader | null; bot: boolean; perReader?: { rid: string; sig: string; label: string; note: string | null; owner: boolean; token: string } }) {
+  async function BroadcastCard(a: Rec, { reader, perReader, bot }: { reader: Reader | null; bot: boolean; perReader?: { rid: string; sig: string; label: string; note: string | null; owner: boolean; group: boolean; closesAt: string | null; token: string } }) {
     const { brand } = lookOf(a)
     const mode: CommentsMode = !bot && config.state && a.state && a.comments && a.comments !== 'off' && a.state.slots[COMMENTS_SLOT] ? a.comments : 'off'
     const admin = isAdmin(reader)
@@ -765,6 +766,9 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
             accent={brand.accent}
             ground={brand.ground}
             signIn={null}
+            closesAt={perReader && !perReader.owner ? perReader.closesAt : null}
+            requireName={a.commentName === 'required' && perReader?.group === true}
+            knownName={a.commentName === 'required' && perReader && !perReader.group && !perReader.owner ? perReader.label : null}
           />
         ) : null}
         {perReader && !perReader.owner ? <QuietView id={a.id} rid={perReader.rid} sig={perReader.sig} token={perReader.token} /> : null}
@@ -773,7 +777,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
   }
 
   /** The page itself, shared by open and gated pages. */
-  async function Body(a: Rec, { top, reader, perReader }: { top: boolean; reader: Reader | null; perReader?: { rid: string; sig: string; label: string; note: string | null; owner: boolean; token: string } }) {
+  async function Body(a: Rec, { top, reader, perReader }: { top: boolean; reader: Reader | null; perReader?: { rid: string; sig: string; label: string; note: string | null; owner: boolean; group: boolean; closesAt: string | null; token: string } }) {
     const { pack, brand } = lookOf(a)
     let words: WordTiming[] = []
     if (a.narration && a.timings) {
@@ -839,7 +843,9 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
                 toc={toc.length ? <TocInline items={toc} /> : null}
                 cover={
                   <>
-                    {perReader?.note ? (
+                    {perReader?.closesAt && !perReader.owner ? (
+                      <FeedbackWindow owner={owner} label={perReader.label} note={perReader.note} group={perReader.group} closesAt={perReader.closesAt} />
+                    ) : perReader?.note ? (
                       <p data-for-reader className="mx-auto mt-6 mb-0 max-w-2xl px-6 text-lg">{`For ${perReader.label}: ${perReader.note}`}</p>
                     ) : null}
                     {header}
@@ -878,6 +884,9 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
           accent={brand.accent}
           ground={brand.ground}
           signIn={signInOrigin ? signInUrl(signInOrigin, pageUrl(a.id)) : null}
+          closesAt={perReader && !perReader.owner ? perReader.closesAt : null}
+          requireName={a.commentName === 'required' && perReader?.group === true}
+          knownName={a.commentName === 'required' && perReader && !perReader.group && !perReader.owner ? perReader.label : null}
         />
         {/* A reader's own link reports that it was looked at; the owner's opens never do. */}
         {perReader && !perReader.owner ? <QuietView id={a.id} rid={perReader.rid} sig={perReader.sig} token={perReader.token} /> : null}
