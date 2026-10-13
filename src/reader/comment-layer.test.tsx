@@ -24,13 +24,14 @@ const PAGE = `
 
 type Row = { id: string; name?: string; value: unknown; at: string; mine?: boolean }
 let calls: { url: string; method: string; body?: unknown }[]
-function stubFetch(opts: { shared?: Row[]; mine?: Row[]; personal?: 'device' | Row[]; stateStatus?: number } = {}) {
+function stubFetch(opts: { shared?: Row[]; mine?: Row[]; personal?: 'device' | Row[]; stateStatus?: number; refuseAppend?: string } = {}) {
   calls = []
   const personal = opts.personal ?? 'device'
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
     const method = init?.method ?? 'GET'
     const body = init?.body ? JSON.parse(String(init.body)) : undefined
     calls.push({ url, method, body })
+    if (url.endsWith('/state') && method === 'POST' && opts.refuseAppend) return new Response(JSON.stringify({ error: opts.refuseAppend }), { status: 403 })
     if (url.endsWith('/state')) {
       return new Response(JSON.stringify({ slots: { comments: { shape: 'many', visibility: 'shared', mine: opts.mine ?? [], shared: opts.shared } } }), { status: opts.stateStatus ?? 200 })
     }
@@ -207,6 +208,75 @@ describe('CommentLayer', () => {
     expect(calls.find((c) => c.method === 'POST' && c.url.endsWith('/personal'))?.body).toEqual({ value: value(text('north'), 'From before') })
     expect(localStorage.getItem(deviceNotesKey('abc23456'))).toBeNull()
     expect(document.querySelector('[data-comment-pin]')?.getAttribute('data-comment-pin')).toBe('personal')
+  })
+
+  const open = async (id: string) => { await act(async () => { document.querySelector<HTMLElement>(`[data-comment-pin][data-comment-id="${id}"]`)!.click() }) }
+  const typeInto = async (el: HTMLTextAreaElement | HTMLInputElement, v: string) => {
+    await act(async () => { Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value')!.set!.call(el, v); el.dispatchEvent(new Event('input', { bubbles: true })) })
+  }
+  const startComment = async () => {
+    selectWord('floods')
+    await act(async () => { document.getElementById('root')!.dispatchEvent(new MouseEvent('mouseup', { bubbles: true })) })
+    await act(async () => { document.querySelector<HTMLButtonElement>('[data-comment-chip]')!.click() })
+  }
+
+  it('a passed feedback window stops the layer offering to share', async () => {
+    stubFetch({ mine: [] })
+    await mount({ comments: 'anyone', canShare: true, closesAt: new Date(Date.now() - 1000).toISOString() })
+    expect(document.querySelector('[data-comment-layer]')!.getAttribute('data-comment-can-share')).toBe('no')
+  })
+  it('a window that passes while the page is open stops the offer without a reload', async () => {
+    stubFetch({ mine: [] })
+    await mount({ comments: 'anyone', canShare: true, closesAt: new Date(Date.now() + 150).toISOString() })
+    expect(document.querySelector('[data-comment-layer]')!.getAttribute('data-comment-can-share')).toBe('yes')
+    await act(async () => { await new Promise((r) => setTimeout(r, 300)) })
+    expect(document.querySelector('[data-comment-layer]')!.getAttribute('data-comment-can-share')).toBe('no')
+  })
+  it('a time that cannot be read is closed', async () => {
+    stubFetch({ mine: [] })
+    await mount({ comments: 'anyone', canShare: true, closesAt: 'soon-ish' })
+    expect(document.querySelector('[data-comment-layer]')!.getAttribute('data-comment-can-share')).toBe('no')
+  })
+  it('a reader\'s own unanswered comment says it is waiting; a publisher reply replaces that and points at what changed', async () => {
+    const mine = [{ id: 'm1', value: value(text('river', 'The ', ' runs north'), 'Which river?'), at: '2026-09-28T00:00:00Z' }]
+    stubFetch({ mine })
+    await mount({ comments: 'anyone', canShare: true, closesAt: new Date(Date.now() + 86_400_000).toISOString() })
+    await open('m1')
+    expect(document.querySelector('[data-comment-waiting]')!.textContent).toBe('Waiting for a reply.')
+    await act(async () => root?.unmount()); root = null
+    stubFetch({ mine, shared: [{ id: 'p1', name: 'Robin', value: value(text('floods'), 'Said where it floods.', { parent: 'm1', by: 'Robin', publisher: true }), at: '2026-09-28T01:00:00Z' }] })
+    await mount({ comments: 'anyone', canShare: true, closesAt: new Date(Date.now() + 86_400_000).toISOString() })
+    await open('m1')
+    expect(document.querySelector('[data-comment-waiting]')).toBeNull()
+    expect(document.querySelector('[data-comment-thread]')!.textContent).toContain('Said where it floods.')
+    expect(document.querySelector('[data-comment-jump]')!.textContent).toBe('Show what changed')
+  })
+  it('a page with no feedback window never says waiting', async () => {
+    stubFetch({ mine: [{ id: 'm1', value: value(text('river', 'The ', ' runs north'), 'Which river?'), at: '2026-09-28T00:00:00Z' }] })
+    await mount({ comments: 'anyone', canShare: true })
+    await open('m1')
+    expect(document.querySelector('[data-comment-waiting]')).toBeNull()
+  })
+  it('a refusal for a closed window or a missing name leaves the typed words in the box', async () => {
+    for (const refusal of ['Feedback on this draft is closed. Your note was not sent.', 'Add your first name, so your note has a name on it.']) {
+      stubFetch({ shared: [], refuseAppend: refusal })
+      await mount({ comments: 'anyone', canShare: true })
+      await startComment()
+      await typeInto(document.querySelector('textarea')!, 'Every year?')
+      await act(async () => { document.querySelector<HTMLButtonElement>('[data-comment-save]')!.click() })
+      expect(document.querySelector('[data-comment-card] [role="alert"]')!.textContent).toBe(refusal)
+      expect(document.querySelector('textarea')!.value).toBe('Every year?')
+      await act(async () => root?.unmount()); root = null
+    }
+  })
+  it('requireName makes the card ask for a first name before sending', async () => {
+    stubFetch({ shared: [] })
+    await mount({ comments: 'anyone', canShare: true, requireName: true })
+    await startComment()
+    await typeInto(document.querySelector('textarea')!, 'Every year?')
+    await act(async () => { document.querySelector<HTMLButtonElement>('[data-comment-save]')!.click() })
+    expect(document.querySelector('[data-comment-card] [role="alert"]')!.textContent).toBe('Add your first name first.')
+    expect(calls.filter((c) => c.method === 'POST')).toEqual([])
   })
 })
 

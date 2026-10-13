@@ -1,5 +1,6 @@
 import { act } from 'react'
-import { createRoot, type Root } from 'react-dom/client'
+import { createRoot, hydrateRoot, type Root } from 'react-dom/client'
+import { renderToString } from 'react-dom/server'
 import { FeedbackWindow, FEEDBACK_CLOSED_LINE, timeLeft } from './feedback-window.js'
 
 const at = Date.parse('2026-10-13T12:00:00Z')
@@ -40,5 +41,28 @@ describe('FeedbackWindow', () => {
   it('a closing time that cannot be read is treated as closed, never as open', async () => {
     await mount(<FeedbackWindow owner="Robin Vale" label="Reader A" note={null} group={false} closesAt="soon-ish" now={at} />)
     expect(document.querySelector('[data-feedback-left]')!.textContent).toBe(FEEDBACK_CLOSED_LINE)
+  })
+  it('after hydration the countdown is read from the real clock at once, not at the first tick', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] })
+    try {
+      const el = <FeedbackWindow owner="Robin Vale" label="Reader A" note={null} group={false} closesAt="2026-10-16T12:00:00Z" />
+      // The server rendered this three days ago on the page's clock...
+      vi.setSystemTime(at)
+      const html = renderToString(el)
+      expect(html).toContain('Feedback is open: 3 days left.')
+      // ...and the browser holds it until a render that was kept for a while is finally shown.
+      vi.setSystemTime(Date.parse('2026-10-15T12:00:00Z'))
+      document.body.innerHTML = `<div id="m">${html}</div>`
+      await act(async () => { root = hydrateRoot(document.getElementById('m')!, el) })
+      expect(document.querySelector('[data-feedback-left]')!.textContent).toBe('Feedback is open: 24 hours left.')
+      // An open window that closed while the markup waited flips to the closed line, still before any tick.
+      await act(async () => root?.unmount()); root = null
+      vi.setSystemTime(at)
+      const html2 = renderToString(el)
+      vi.setSystemTime(Date.parse('2026-10-17T00:00:00Z'))
+      document.body.innerHTML = `<div id="m">${html2}</div>`
+      await act(async () => { root = hydrateRoot(document.getElementById('m')!, el) })
+      expect(document.querySelector('[data-feedback-left]')!.textContent).toBe(FEEDBACK_CLOSED_LINE)
+    } finally { vi.useRealTimers() }
   })
 })

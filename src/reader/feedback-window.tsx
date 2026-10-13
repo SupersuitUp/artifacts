@@ -25,8 +25,15 @@ export function FeedbackWindow({ owner, label, note, group, closesAt, now }: {
   now?: number
 }) {
   const [at, setAt] = useState(() => now ?? Date.now())
+  // Markup the server rendered (or a render held for a while) keeps its text through hydration,
+  // because the line suppresses the mismatch. So on mount the clock is read again and the line is
+  // drawn afresh (a new key), before the first tick: a stale count, or an open window that has
+  // already closed, never waits 30 seconds to be corrected.
+  const [live, setLive] = useState(false)
   useEffect(() => {
     if (now !== undefined) return
+    setAt(Date.now())
+    setLive(true)
     const t = setInterval(() => setAt(Date.now()), 30_000)
     return () => clearInterval(t)
   }, [now])
@@ -37,7 +44,7 @@ export function FeedbackWindow({ owner, label, note, group, closesAt, now }: {
         <p className="m-0 font-medium">{`A draft from ${owner}${group ? '' : `, for ${label}`}`}</p>
         {note ? <p data-feedback-note className="m-0 mt-1">{note}</p> : null}
         {/* The server and the browser read the clock a moment apart, so the text may differ by a minute. */}
-        <p data-feedback-left aria-live="polite" suppressHydrationWarning className="m-0 mt-1 opacity-80">{left ? `Feedback is open: ${left}.` : FEEDBACK_CLOSED_LINE}</p>
+        <p key={live ? 'live' : 'first'} data-feedback-left aria-live="polite" suppressHydrationWarning className="m-0 mt-1 opacity-80">{left ? `Feedback is open: ${left}.` : FEEDBACK_CLOSED_LINE}</p>
       </div>
     </aside>
   )

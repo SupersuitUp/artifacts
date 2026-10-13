@@ -18,7 +18,8 @@ import { VoiceRecorder, type VoiceHost, type VoiceMemo, type VoiceScope } from '
 export type SavedMemo = { memo: VoiceMemo; uploaded: { scope: VoiceScope; path: string } | null; transcript?: CommentValue['transcript'] }
 
 /** The warning, word for word. `They` is fixed copy: the card never guesses a pronoun. */
-export function warningLine(ownerName: string, mode: CommentsMode): string {
+export function warningLine(ownerName: string, mode: CommentsMode, closed = false): string {
+  if (closed) return `Only you will see this. Feedback on this draft is closed, so this is a personal note. ${ownerName} won't see it.`
   const why = mode === 'off'
     ? `${ownerName} has not opened this page to comments`
     : `${ownerName} takes comments on this page from signed-in readers`
@@ -31,12 +32,18 @@ const recall = () => { try { return localStorage.getItem(NAME_KEY) ?? '' } catch
 const remember = (name: string) => { try { localStorage.setItem(NAME_KEY, name) } catch { /* a browser that keeps nothing still comments */ } }
 
 export function CommentCard({
-  ownerName, mode, canShare, signedIn, quote, initial = '', accent = 'currentColor', signIn, voice = null, onSave, onCancel,
+  ownerName, mode, canShare, signedIn, closed = false, requireName = false, knownName = null, quote, initial = '', accent = 'currentColor', signIn, voice = null, onSave, onCancel,
 }: {
   ownerName: string
   mode: CommentsMode
   canShare: boolean
   signedIn: boolean
+  /** The reader's feedback window has closed: the warning says so. */
+  closed?: boolean
+  /** A shared comment is not sent without a first name (`comment_name: required`, on an open link). */
+  requireName?: boolean
+  /** A named link on a `comment_name: required` page already says who this is: no name field. */
+  knownName?: string | null
   /** The quoted text the comment is pinned to, shown above the box. */
   quote?: string
   initial?: string
@@ -63,7 +70,7 @@ export function CommentCard({
   const personal = !canShare || !share
   // A reader with no account is asked for a name, so the owner can credit the feedback. Optional:
   // a comment without one still goes through, signed "a reader".
-  const askName = !personal && !signedIn
+  const askName = !personal && !signedIn && !knownName
   // Where a memo goes: a shared comment, the reader's account, or (neither) this device only.
   const scope = (): VoiceScope | null => (canShare && share ? 'comment' : signedIn ? 'personal' : null)
 
@@ -89,6 +96,7 @@ export function CommentCard({
     e?.preventDefault()
     const body = text.trim()
     if ((!body && !memo) || busy) return
+    if (requireName && askName && !name.trim()) { setError('Add your first name first.'); return }
     setBusy(true)
     const by = askName && name.trim() ? name.trim() : undefined
     if (by) remember(by)
@@ -102,7 +110,7 @@ export function CommentCard({
       className="w-[min(22rem,calc(100vw-2rem))] rounded-xl border border-[color:var(--a-line-strong)] bg-[color:var(--a-surface)] p-3 text-left font-sans text-sm text-[color:var(--a-strong)] shadow-xl">
       {!canShare ? (
         <p data-comment-warning role="note" className="mb-2 rounded-lg border px-3 py-2 text-[13px] leading-snug" style={{ borderColor: accent }}>
-          {warningLine(ownerName, mode)}
+          {warningLine(ownerName, mode, closed)}
         </p>
       ) : null}
       {quote ? <p className="mb-2 line-clamp-3 border-l-2 pl-2 text-[13px] italic opacity-75" style={{ borderColor: accent }}>{quote}</p> : null}
@@ -131,7 +139,7 @@ export function CommentCard({
       ) : null}
       {askName ? (
         <label data-comment-name className="mt-2 block text-[13px]">
-          <span className="block opacity-80">{`Your name, so ${ownerName} can credit your feedback`}</span>
+          <span className="block opacity-80">{requireName ? `Your first name, so ${ownerName} knows who this is from` : `Your name, so ${ownerName} can credit your feedback`}</span>
           <input value={name} onChange={(e) => setName(e.target.value)} maxLength={MAX_COMMENT_NAME_CHARS} autoComplete="name" placeholder="Your name" style={NO_ZOOM_FONT}
             className="mt-1 w-full rounded-lg border border-[color:var(--a-line)] bg-[color:var(--a-ground,transparent)] px-2 py-1 text-[15px]" />
         </label>

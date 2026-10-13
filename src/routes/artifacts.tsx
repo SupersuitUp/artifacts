@@ -881,6 +881,9 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
           accent={brand.accent}
           ground={brand.ground}
           signIn={signInOrigin ? signInUrl(signInOrigin, pageUrl(a.id)) : null}
+          closesAt={perReader && !perReader.owner ? perReader.closesAt : null}
+          requireName={a.commentName === 'required' && perReader?.group === true}
+          knownName={a.commentName === 'required' && perReader && !perReader.group && !perReader.owner ? perReader.label : null}
         />
         {/* A reader's own link reports that it was looked at; the owner's opens never do. */}
         {perReader && !perReader.owner ? <QuietView id={a.id} rid={perReader.rid} sig={perReader.sig} token={perReader.token} /> : null}

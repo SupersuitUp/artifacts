@@ -93,7 +93,7 @@ export function onTouch(): boolean {
 }
 
 export function CommentLayer({
-  artifactId, rootId, ownerName, comments, canShare, signedIn, isOwner, version, accent, ground, signIn, voice, audioStore,
+  artifactId, rootId, ownerName, comments, canShare, signedIn, isOwner, version, accent, ground, signIn, voice, audioStore, closesAt = null, requireName = false, knownName = null,
 }: {
   artifactId: string
   /** The element holding the page's prose, the same root the read-aloud lights. */
@@ -113,6 +113,12 @@ export function CommentLayer({
   voice?: VoiceHost
   /** Where an anonymous reader's recordings live; defaults to this browser's IndexedDB. */
   audioStore?: DeviceAudio
+  /** When this reader's feedback window closes (an ISO time), or null. Past it, a note is personal. */
+  closesAt?: string | null
+  /** A shared comment needs a first name (`comment_name: required`, on an open link). */
+  requireName?: boolean
+  /** Who the reader is, on a named link of a `comment_name: required` page: the card does not ask. */
+  knownName?: string | null
 }) {
   const host = useMemo(() => voice ?? hostVoice(artifactId), [voice, artifactId])
   const audioDb = useMemo(() => audioStore ?? defaultDeviceAudio, [audioStore])
@@ -142,6 +148,27 @@ export function CommentLayer({
   const [scrollTo, setScrollTo] = useState<string | null>(null)
   /** A resolved thread the address named, opened expanded rather than collapsed. */
   const [expanded, setExpanded] = useState<string | null>(null)
+  // The window is checked on mount and again the moment it passes, so a page left open stops
+  // offering to share without a reload. A time that cannot be read is closed.
+  const [closed, setClosed] = useState(false)
+  useEffect(() => {
+    if (!closesAt) { setClosed(false); return }
+    const ms = Date.parse(closesAt) - Date.now()
+    if (!(ms > 0)) { setClosed(true); return }
+    setClosed(false)
+    const t = setTimeout(() => setClosed(true), Math.min(ms, 2_147_000_000))
+    return () => clearTimeout(t)
+  }, [closesAt])
+  const share = canShare && !closed
+  /** Scroll to where a publisher reply is pinned (the passage that changed) and select it. */
+  const jump = (i: Item) => {
+    const root = document.getElementById(rootId)
+    if (!root) return
+    const at = placeAnchor(root, indexText(root), i.value.anchor)
+    if (!at) return
+    window.scrollTo({ top: Math.max(0, boxOf(at).top - 120), behavior: 'smooth' })
+    if (at.kind === 'text') { const sel = document.getSelection(); sel?.removeAllRanges(); sel?.addRange(at.range) }
+  }
 
   const call = useCallback(async (url: string, init?: RequestInit) => {
     try {
@@ -508,13 +535,13 @@ export function CommentLayer({
       ) : null}
       {draft ? (
         <Floating x={draft.x} y={draft.y}>
-          <CommentCard ownerName={ownerName} mode={comments} canShare={canShare} signedIn={signedIn && onServer} quote={draft.quote} accent={accent} signIn={signIn}
+          <CommentCard ownerName={ownerName} mode={comments} canShare={share} closed={closed} requireName={requireName} knownName={knownName} signedIn={signedIn && onServer} quote={draft.quote} accent={accent} signIn={signIn}
             voice={host} onSave={(body, share, memo, by) => saveNew(body, share, draft, memo, by)} onCancel={() => setDraft(null)} />
         </Floating>
       ) : null}
       {openItem && open ? (
         <Floating x={open.left + 28} y={open.top}>
-          <Thread key={openItem.id} item={openItem} replies={items.filter((i) => i.value.parent === openItem.id)} canReply={openItem.kind === 'shared' && canShare}
+          <Thread key={openItem.id} item={openItem} replies={items.filter((i) => i.value.parent === openItem.id)} canReply={openItem.kind === 'shared' && share} awaiting={closesAt != null} onJump={jump}
             canResolve={openItem.kind === 'shared' && isOwner} startExpanded={expanded === openItem.id}
             accent={accent} audioDb={audioDb} onClose={() => { setThread(null); setExpanded(null) }} onRemove={remove} onEdit={edit} onReply={reply} onResolve={resolveThread} />
         </Floating>
@@ -545,7 +572,7 @@ export function CommentLayer({
   return (
     <>
       {/* What the server decided, drawn identically on both sides so the markup hydrates. */}
-      <span hidden data-comment-layer={comments} data-comment-can-share={canShare ? 'yes' : 'no'} />
+      <span hidden data-comment-layer={comments} data-comment-can-share={share ? 'yes' : 'no'} />
       {mounted && layout.earlier.length ? (
         <section data-comments-earlier data-comment-ui data-nospeak className="mx-auto max-w-2xl px-6 pb-16 text-sm">
           <p className="text-[11px] uppercase tracking-[0.2em]" style={{ color: accent }}>Comments on earlier versions</p>
@@ -592,8 +619,8 @@ function Floating({ x, y, children }: { x: number; y: number; children: ReactNod
   return <div className="absolute z-50" style={{ left, top: y }}>{children}</div>
 }
 
-function Thread({ item, replies, canReply, canResolve = false, startExpanded = false, accent, audioDb, onClose, onRemove, onEdit, onReply, onResolve }: {
-  item: Item; replies: Item[]; canReply: boolean; canResolve?: boolean; startExpanded?: boolean; accent: string; audioDb: DeviceAudio
+function Thread({ item, replies, canReply, awaiting = false, onJump, canResolve = false, startExpanded = false, accent, audioDb, onClose, onRemove, onEdit, onReply, onResolve }: {
+  item: Item; replies: Item[]; canReply: boolean; awaiting?: boolean; onJump?: (i: Item) => void; canResolve?: boolean; startExpanded?: boolean; accent: string; audioDb: DeviceAudio
   onClose: () => void; onRemove: (i: Item) => Promise<void>; onEdit: (i: Item, body: string) => Promise<string | null>; onReply: (i: Item, body: string) => Promise<string | null>
   onResolve?: (i: Item, resolved: boolean, note?: string) => Promise<string | null>
 }) {
@@ -633,7 +660,13 @@ function Thread({ item, replies, canReply, canResolve = false, startExpanded = f
       {resolved ? <p data-comment-resolved-line className="m-0 mb-2 text-[13px]" style={{ color: accent }}>✓ {resolvedLine(resolved)}{resolved.by ? <span className="opacity-70">{` · ${resolved.by}`}</span> : null}</p> : null}
       {item.value.anchor.kind === 'text' ? <p className="mb-2 line-clamp-2 border-l-2 pl-2 text-[13px] italic opacity-70" style={{ borderColor: accent }}>{item.value.anchor.quote}</p> : null}
       <Entry item={item} accent={accent} audioDb={audioDb} onRemove={onRemove} onEdit={onEdit} />
-      {replies.length ? <ul className="m-0 mt-2 grid list-none gap-2 border-l pl-3 p-0">{replies.map((r) => <li key={r.id} className="m-0"><Entry item={r} accent={accent} audioDb={audioDb} onRemove={onRemove} onEdit={onEdit} /></li>)}</ul> : null}
+      {replies.length ? <ul className="m-0 mt-2 grid list-none gap-2 border-l pl-3 p-0">{replies.map((r) => {
+        // A publisher reply pinned somewhere other than its thread points at the passage that changed.
+        const moved = r.value.publisher === true && r.value.anchor.kind === 'text' && (item.value.anchor.kind !== 'text' || r.value.anchor.quote !== item.value.anchor.quote)
+        return <li key={r.id} className="m-0"><Entry item={r} accent={accent} audioDb={audioDb} onRemove={onRemove} onEdit={onEdit} onJump={moved ? onJump : undefined} /></li>
+      })}</ul> : null}
+      {awaiting && item.mine && item.kind === 'shared' && !resolved && !replies.some((r) => r.value.publisher === true)
+        ? <p data-comment-waiting className="m-0 mt-2 text-xs opacity-70">Waiting for a reply.</p> : null}
       {canReply ? (
         replying
           ? <InlineForm label="Reply" accent={accent} onCancel={() => setReplying(false)} onSubmit={async (b) => { const e = await onReply(item, b); if (!e) setReplying(false); return e }} />
@@ -665,7 +698,7 @@ function useAudioSrc(item: Item, audioDb: DeviceAudio): string | null {
   return item.audioUrl ?? local
 }
 
-function Entry({ item, accent, audioDb, onRemove, onEdit }: { item: Item; accent: string; audioDb: DeviceAudio; onRemove: (i: Item) => Promise<void>; onEdit: (i: Item, body: string) => Promise<string | null> }) {
+function Entry({ item, accent, audioDb, onRemove, onEdit, onJump }: { item: Item; onJump?: (i: Item) => void; accent: string; audioDb: DeviceAudio; onRemove: (i: Item) => Promise<void>; onEdit: (i: Item, body: string) => Promise<string | null> }) {
   const [editing, setEditing] = useState(false)
   const src = useAudioSrc(item, audioDb)
   if (editing) return <InlineForm label="Save" initial={item.value.body} onCancel={() => setEditing(false)} onSubmit={async (b) => { const e = await onEdit(item, b); if (!e) setEditing(false); return e }} />
@@ -682,6 +715,7 @@ function Entry({ item, accent, audioDb, onRemove, onEdit }: { item: Item; accent
           </>
         ) : null}
       </p>
+      {onJump ? <button type="button" data-comment-jump onClick={() => onJump(item)} className="mt-1 text-xs underline">Show what changed</button> : null}
     </div>
   )
 }
