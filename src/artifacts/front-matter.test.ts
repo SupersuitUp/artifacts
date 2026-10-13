@@ -191,3 +191,17 @@ describe('links and media', () => {
     expect(parseArtifactSource('---\ntitle: T\nsummary: S\nlinks: per-reader\ncomments: anyone\ncomments_visible: owner\n---\nbody').ok).toBe(true)
   })
 })
+
+describe('comment_name', () => {
+  const page = (extra: string) => `---\ntitle: T\nsummary: S\n${extra}---\nx`
+  it('required is kept on a per-reader page, and absent stays absent', () => {
+    const r = parseArtifactSource(page('links: per-reader\ncomments: anyone\ncomment_name: required\n'))
+    expect(r.ok && r.meta.commentName).toBe('required')
+    const d = parseArtifactSource(page('links: per-reader\n'))
+    expect(d.ok && d.meta.commentName).toBeUndefined()
+  })
+  it('refuses any other value, and refuses it on a page that is not per-reader', () => {
+    expect(parseArtifactSource(page('links: per-reader\ncomment_name: optional\n'))).toEqual({ ok: false, error: 'comment_name must be required' })
+    expect(parseArtifactSource(page('comment_name: required\n'))).toEqual({ ok: false, error: 'comment_name: required needs links: per-reader' })
+  })
+})

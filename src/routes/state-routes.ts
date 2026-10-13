@@ -22,7 +22,7 @@ import { ridCookieName, usableSecret } from '../artifacts/recipients.js'
 import type { RecipientsStore } from '../artifacts/recipients-store.js'
 import { perReaderGate } from './per-reader.js'
 import { ANON_WRITES_PER_MINUTE, MAX_ENTRIES_PER_SLOT, checkValue, effectiveWriters, slotVisibility } from '../artifacts/state.js'
-import { COMMENTS_SLOT, FEEDBACK_CLOSED, MAX_COMMENT_NAME_CHARS, cleanResolveNote, resolutionOf, validateComment, type CommentResolution, type CommentValue } from '../artifacts/comments.js'
+import { COMMENTS_SLOT, FEEDBACK_CLOSED, MAX_COMMENT_NAME_CHARS, NAME_NEEDED, cleanResolveNote, resolutionOf, validateComment, type CommentResolution, type CommentValue } from '../artifacts/comments.js'
 import { isCommentAudioPath } from '../artifacts/audio.js'
 import { readerKeyFor, type StateEntry, type StateStore, type Writer } from '../artifacts/state-store.js'
 import { NOTES_SLOT, checkNoteValue, checklistAnswerIds, hasNotesWidget } from '../artifacts/widgets.js'
@@ -139,9 +139,9 @@ export function createStateRoutes(ctx: StateRoutesContext) {
   // The owner and the page's admins read every comment, with names.
   const isOwner = (r: Reader | null) => !!r && ((!!ownerEmail && r.email.trim().toLowerCase() === ownerEmail) || admins.has(r.email.trim().toLowerCase()))
   const declared = (v: unknown) => { const by = (v as { by?: unknown } | null)?.by; return typeof by === 'string' && by.trim() ? by.trim() : null }
-  /** Comments are on for this page: the slot exists because `comments:` put it there. */
   /** A window that has passed, or that cannot be read as a time, is closed: never open forever. */
   const windowClosed = (r: { closesAt: string | null } | null) => !!r?.closesAt && !(Date.parse(r.closesAt) > Date.now())
+  /** Comments are on for this page: the slot exists because `comments:` put it there. */
   const commentsOn = (a: ArtifactRecord) => !!a.comments && a.comments !== 'off' && Object.hasOwn(a.state!.slots, COMMENTS_SLOT)
 
   const writerFor = (r: Reader): Writer => ({ key: readerKeyFor.signedIn(r.uid), uid: r.uid, email: r.email, name: r.name, anonymous: false })
@@ -295,6 +295,13 @@ export function createStateRoutes(ctx: StateRoutesContext) {
         const seen = await visibleComments(a, writer.key, reader, !!recipient)
         const c = validateComment(b.value, (cid) => seen.get(cid) ?? null)
         if (!c.ok) return json({ error: c.error }, 400)
+        // `comment_name: required`: an open link is shared by several people, so each comment carries
+        // the name its writer typed; a named link already says who, so a typed name is dropped rather
+        // than trusted over the label. A page without the line is untouched.
+        if (a.commentName === 'required' && recipient) {
+          if (recipient.group && !c.value.by) return json({ error: NAME_NEEDED, needsName: true }, 400)
+          if (!recipient.group) delete c.value.by
+        }
         // A shared comment's recording is one uploaded as a comment, never a path elsewhere under the
         // page: naming a personal recording here would get it signed for the publisher.
         if (c.value.audio !== undefined && !isCommentAudioPath(c.value.audio)) return json({ error: 'a comment\'s audio is the path its upload returned' }, 400)

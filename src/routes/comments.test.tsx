@@ -13,7 +13,7 @@ import { createMemoryStateStore } from '../artifacts/state-store.js'
 import { GRANT_COOKIE, mintGrant, type Reader } from '../artifacts/reader.js'
 import { memoryRecipientsStore } from '../artifacts/recipients-store.js'
 import { ridSig } from '../artifacts/recipients.js'
-import { FEEDBACK_CLOSED, mergeCommentsState, type CommentsMode, type CommentsVisible } from '../artifacts/comments.js'
+import { FEEDBACK_CLOSED, NAME_NEEDED, mergeCommentsState, type CommentsMode, type CommentsVisible } from '../artifacts/comments.js'
 
 const SECRET = 'sekrit'
 const t = '2026-09-28T00:00:00Z'
@@ -36,6 +36,8 @@ const RECORDS: Record<string, ArtifactRecord> = {
   cmg23456: page('cmg23456', 'anyone', 'readers', { access: 'invite' }),
   // Comments from anyone beside votes from signed-in readers only.
   prr23456: page('prr23456', 'anyone', 'owner', { links: 'per-reader' }),
+  // Per-reader, and every note carries a name: `comment_name: required`.
+  prn23456: page('prn23456', 'anyone', 'owner', { links: 'per-reader', commentName: 'required' }),
   cmv23456: page('cmv23456', 'anyone', 'owner', { state: { writers: 'signed-in', visibility: 'private', slots: { vote: { shape: 'one' } } } }),
 }
 
@@ -362,5 +364,40 @@ describe('comments through a per-reader link', () => {
       expect(JSON.stringify(view)).not.toContain('Reader B private note.')
       expect((await state.entries('prr23456')).filter((x) => x.slot === 'comments')).toHaveLength(1)
     } finally { RECORDS.prr23456 = page('prr23456', 'anyone', 'owner', { links: 'per-reader' }) }
+  })
+})
+
+describe('comment_name: required', () => {
+  const RS = 'r'.repeat(40)
+  async function named() {
+    const recipients = memoryRecipientsStore()
+    const [ada] = await recipients.add('prn23456', [{ label: 'Reader A' }])
+    const [anyone] = await recipients.add('prn23456', [{ label: 'Anyone with the link', group: true }])
+    const [plainGroup] = await recipients.add('prr23456', [{ label: 'A group', group: true }])
+    const { routes, state } = build(null, true, { recipients, recipientSecret: () => RS })
+    const cookie = (id: string, r: { rid: string }) => `artifact_r_${id}=${r.rid}.${ridSig(RS, id, r.rid)}`
+    return { routes, state, ada, anyone, plainGroup, cookie }
+  }
+  const withBy = (text: string, by: string) => { const c = comment(text) as { value: Record<string, unknown> }; return { ...c, value: { ...c.value, by } } }
+
+  it('an open link takes no comment without a first name, and keeps the name its writer typed', async () => {
+    const { routes, state, anyone, cookie } = await named()
+    const bare = await routes.STATE_POST(post('prn23456', comment('No name.'), cookie('prn23456', anyone)), params('prn23456'))
+    expect(bare.status).toBe(400)
+    expect(await bare.json()).toEqual({ error: NAME_NEEDED, needsName: true })
+    expect((await routes.STATE_POST(post('prn23456', withBy('From Kit.', 'Kit'), cookie('prn23456', anyone)), params('prn23456'))).status).toBe(200)
+    const [e] = (await state.entries('prn23456')).filter((x) => x.slot === 'comments')
+    expect((e.value as { by?: string }).by).toBe('Kit')
+  })
+  it('a named link never stores a typed name: the label is who they are', async () => {
+    const { routes, state, ada, cookie } = await named()
+    expect((await routes.STATE_POST(post('prn23456', withBy('Signed as someone else.', 'Somebody Else'), cookie('prn23456', ada)), params('prn23456'))).status).toBe(200)
+    const [e] = (await state.entries('prn23456')).filter((x) => x.slot === 'comments')
+    expect((e.value as { by?: string }).by).toBeUndefined()
+    expect(e.writer.name).toBe('Reader A')
+  })
+  it('a page without the line is unchanged: a group link comments with no name', async () => {
+    const { routes, plainGroup, cookie } = await named()
+    expect((await routes.STATE_POST(post('prr23456', comment('No name, as before.'), cookie('prr23456', plainGroup)), params('prr23456'))).status).toBe(200)
   })
 })

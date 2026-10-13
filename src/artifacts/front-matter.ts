@@ -65,6 +65,9 @@ export type ArtifactMeta = {
   comments?: CommentsMode
   /** Who sees shared comments: `owner` (the default) or every reader (`readers`). */
   commentsVisible?: CommentsVisible
+  /** `comment_name: required` (0.40.0): on a per-reader page, a comment through a group link must
+   *  carry a typed first name, and a named link is never asked for one. Opt-in; content, like `toc:`. */
+  commentName?: 'required'
 }
 
 /** What a page is. A broadcast is its own kind, not a document with extra flags: it renders as a
@@ -87,7 +90,7 @@ export const PACK_NAME = /^[a-z0-9][a-z0-9-]{0,39}$/
 /** The longest `to:` a page may carry: a name or two, never a sentence. */
 export const MAX_TO_CHARS = 60
 
-const KNOWN = new Set(['title', 'summary', 'subtitle', 'to', 'template', 'audience', 'cover', 'id', 'voice', 'narration', 'timings', 'narrationHash', 'password', 'access', 'state', 'theme', 'pack', 'toc', 'definitions', 'change', 'comments', 'comments_visible', 'links', 'media'])
+const KNOWN = new Set(['title', 'summary', 'subtitle', 'to', 'template', 'audience', 'cover', 'id', 'voice', 'narration', 'timings', 'narrationHash', 'password', 'access', 'state', 'theme', 'pack', 'toc', 'definitions', 'change', 'comments', 'comments_visible', 'links', 'media', 'comment_name'])
 
 export function parseArtifactSource(
   text: string,
@@ -145,6 +148,10 @@ export function parseArtifactSource(
     if (d.media !== 'private') return { ok: false, error: 'media must be private' }
     meta.privateMedia = true
   }
+  if (d.comment_name !== undefined && d.comment_name !== null) {
+    if (d.comment_name !== 'required') return { ok: false, error: 'comment_name must be required' }
+    meta.commentName = 'required'
+  }
   if (d.theme !== undefined) {
     if (!THEME_MODES.includes(d.theme as ThemeMode)) return { ok: false, error: `theme must be one of: ${THEME_MODES.join(', ')}` }
     meta.theme = d.theme as ThemeMode
@@ -193,6 +200,7 @@ export function parseArtifactSource(
   // People on one broadcast never see each other's comments, so a per-reader page cannot share them.
   if (meta.links === 'per-reader' && meta.commentsVisible === 'readers')
     return { ok: false, error: 'a per-reader page keeps each reader\'s comments to the owner: drop comments_visible: readers' }
+  if (meta.commentName && meta.links !== 'per-reader') return { ok: false, error: 'comment_name: required needs links: per-reader' }
   // Widgets declare their own slots, so a notes block (and a checklist with send) is merged into state: here, before the
   // page is stored, and the state API and the republish shape checks see it like any slot.
   // Errors name the line in the FILE: the body's lines are counted after the front matter's.
