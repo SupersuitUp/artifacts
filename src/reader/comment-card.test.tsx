@@ -9,6 +9,17 @@ async function mount(el: React.ReactNode) {
   await act(async () => { root!.render(el) })
 }
 afterEach(async () => { await act(async () => root?.unmount()); root = null })
+// Every test starts with nothing remembered. Without this the name one test saves is still there
+// for the next wherever the test runtime has a working localStorage (Node 24 in the publish
+// workflow), and absent where it does not (Node 25 locally), so a test asserting "asks before
+// sending" passed on one and failed on the other (the 0.40.0 tag, 2026-10-13).
+beforeEach(() => {
+  const mem = new Map<string, string>()
+  vi.stubGlobal('localStorage', {
+    getItem: (k: string) => mem.get(k) ?? null, setItem: (k: string, v: string) => void mem.set(k, String(v)),
+    removeItem: (k: string) => void mem.delete(k), clear: () => mem.clear(),
+  })
+})
 const noop = async () => null
 
 describe('CommentCard', () => {
