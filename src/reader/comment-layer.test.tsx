@@ -323,6 +323,19 @@ describe('CommentLayer', () => {
     await act(async () => { document.querySelector<HTMLButtonElement>('[data-comment-thread] form button[type="submit"]')!.click() })
     expect(calls.find((c) => c.method === 'POST')!.body).toMatchObject({ value: { parent: 's1', by: 'Kit' } })
   })
+  it('on a named link under requireName the reply form shows no name field and the reply posts without by', async () => {
+    localStorage.setItem('artifacts:comment-name', 'Stale')
+    stubFetch({ shared: SOMEONES })
+    await mount({ comments: 'anyone', canShare: true, requireName: true, knownName: 'Reader A' })
+    await open('s1')
+    await act(async () => { document.querySelector<HTMLButtonElement>('[data-comment-reply]')!.click() })
+    expect(document.querySelector('[data-comment-thread] [data-comment-name]')).toBeNull()
+    await typeInto(document.querySelector('[data-comment-thread] textarea')!, 'The north one.')
+    await act(async () => { document.querySelector<HTMLButtonElement>('[data-comment-thread] form button[type="submit"]')!.click() })
+    const sent = calls.find((c) => c.method === 'POST')!
+    expect(sent.body).toMatchObject({ op: 'append', value: { body: 'The north one.', parent: 's1' } })
+    expect((sent.body as { value: object }).value).not.toHaveProperty('by')
+  })
   it('without requireName a reply has no name field and no by', async () => {
     stubFetch({ shared: SOMEONES })
     await mount({ comments: 'anyone', canShare: true })

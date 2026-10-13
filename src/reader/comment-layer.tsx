@@ -486,8 +486,8 @@ export function CommentLayer({
   }
 
   const reply = async (parent: Item, body: string, by?: string): Promise<string | null> => {
-    const value: CommentValue = { anchor: parent.value.anchor, body, version, parent: parent.id, ...(requireName && by ? { by } : {}) }
-    if (requireName && by) rememberName(by)
+    const value: CommentValue = { anchor: parent.value.anchor, body, version, parent: parent.id, ...(requireName && !knownName && by ? { by } : {}) }
+    if (requireName && !knownName && by) rememberName(by)
     const r = await call(stateUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ slot: COMMENTS_SLOT, op: 'append', value }) })
     if (r.status !== 200) return typeof r.body.error === 'string' ? r.body.error : 'that did not save; try again'
     setShared(sharedFrom(r.body))
@@ -549,7 +549,7 @@ export function CommentLayer({
       ) : null}
       {openItem && open ? (
         <Floating x={open.left + 28} y={open.top}>
-          <Thread key={openItem.id} item={openItem} replies={items.filter((i) => i.value.parent === openItem.id)} canReply={openItem.kind === 'shared' && share} awaiting={closesAt != null} askName={requireName} onJump={jump}
+          <Thread key={openItem.id} item={openItem} replies={items.filter((i) => i.value.parent === openItem.id)} canReply={openItem.kind === 'shared' && share} awaiting={closesAt != null} askName={requireName && !knownName} onJump={jump}
             canResolve={openItem.kind === 'shared' && isOwner} startExpanded={expanded === openItem.id}
             accent={accent} audioDb={audioDb} onClose={() => { setThread(null); setExpanded(null) }} onRemove={remove} onEdit={edit} onReply={reply} onResolve={resolveThread} />
         </Floating>
