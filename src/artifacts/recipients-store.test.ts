@@ -146,6 +146,17 @@ describe('summarizeViews', () => {
     expect(out[0]).toMatchObject({ opened: true, cameBack: true, plays: 2, devices: 2, activeSeconds: 35, firstOpenAt: '2026-10-11T10:00:00.000Z', comments: [{ text: 'Wow' }] })
     expect(out[1]).toMatchObject({ group: true, devices: 2, cameBack: false })
   })
+  it('a group link lists every browser\'s comment under the link, and never a key that only starts like its rid', () => {
+    const out = summarizeViews(rec, [], [
+      { readerKey: 'r:bbbbbbbbbbbb', at: '2026-10-11T10:01:00.000Z', text: 'Before the line' },
+      { readerKey: `r:bbbbbbbbbbbb.${'0'.repeat(24)}`, at: '2026-10-11T10:02:00.000Z', text: 'From Kit' },
+      { readerKey: `r:bbbbbbbbbbbb.${'f'.repeat(24)}`, at: '2026-10-11T10:03:00.000Z', text: 'From Robin' },
+      { readerKey: 'r:bbbbbbbbbbbbx', at: '2026-10-11T10:04:00.000Z', text: 'Not this link' },
+      { readerKey: 'p:bbbbbbbbbbbb', at: '2026-10-11T10:05:00.000Z', text: 'A publisher reply' },
+    ])
+    expect(out[1].comments.map((c) => c.text)).toEqual(['Before the line', 'From Kit', 'From Robin'])
+    expect(out[0].comments).toEqual([])
+  })
   it('marks a revoked reader as revoked', () => {
     const out = summarizeViews({ ...rec, recipients: { ...rec.recipients, aaaaaaaaaaaa: { ...rec.recipients.aaaaaaaaaaaa, revokedAt: 'y' } } }, [], [])
     expect(out[0]).toMatchObject({ revoked: true, opened: false })

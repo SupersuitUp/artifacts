@@ -4,7 +4,7 @@
 //   <base>RecipientViews/<artifactId>__<rid>__<session>  ViewDoc
 //   <base>RecipientTokens/<key>                   { expireAt } (a Firestore TTL policy may sweep it)
 import type { Firestore } from 'firebase-admin/firestore'
-import { newRid } from './recipients.js'
+import { newRid, ridOfReaderKey } from './recipients.js'
 
 export type Recipient = { rid: string; label: string; note?: string; owner?: true; group?: true; addedAt: string; revokedAt?: string; closesAt?: string | null }
 export type RecipientsRecord = { recipients: Record<string, Recipient>; expireAt: string | null; keep: boolean; revokedAll?: string }
@@ -188,7 +188,7 @@ export function summarizeViews(rec: RecipientsRecord, views: ViewDoc[], comments
       activeSeconds: mine.reduce((n, v) => n + v.activeSeconds, 0),
       plays: mine.reduce((n, v) => n + Object.values(v.plays).reduce((a, b) => a + b, 0), 0),
       devices: new Set(mine.map((v) => v.device)).size,
-      comments: comments.filter((c) => c.readerKey === `r:${r.rid}`).map((c) => ({ at: c.at, text: c.text })),
+      comments: comments.filter((c) => ridOfReaderKey(c.readerKey) === r.rid).map((c) => ({ at: c.at, text: c.text })),
     }
   })
 }

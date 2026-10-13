@@ -943,6 +943,21 @@ dropped: the label is who they are. The line needs `links: per-reader` (a page w
 refused), and a republish that leaves it out removes it. A page without the line takes names
 exactly as before.
 
+**Who a group link is.** Without `comment_name: required`, a group link is one shared reader:
+everyone who opens it sees every note left through it as their own, can edit or delete any of
+them, and sees the publisher's reply to any of them. Do not send one to people who should not read
+each other's notes. With the line, each browser on a group link is its own reader: it sees, edits
+and deletes only the notes written from that browser, and is shown only the publisher's replies to
+those. The browser is known by the anonymous-reader cookie (`artifact_anon`, HttpOnly, a year), set
+with its first note, and its notes are stored under a key the server derives from the link and that
+cookie (`r:<rid>.<24 hex>`), never under the cookie itself. A browser that clears its cookies, or a
+second device, is a new reader: the notes it left stay with the publisher and are no longer shown
+to it. So does a reader who signs in on another page of the same host, since signing in clears the
+anonymous cookie. Notes left through a group link before the page gained the line were written as
+the one shared reader (`r:<rid>`) and are shown to no browser afterwards. A named link is one
+reader either way. The feedback window, the feed's `reader: { rid, label }` and the `/views` line
+stay per link: every browser on a group link shares them.
+
 ## Broadcasts (`template: broadcast`)
 
 A broadcast is its own page kind, not a document with extra flags. It is one message sent to several people, each through their own link, and it renders as one card: the sender's words at the top, then the media in the order the words put it (a video with sound and controls, photos, a voice note's player, link cards), then that person's own note. None of the document's furniture: no table of contents, no version line, no read-along, and no page menu for a reader.
