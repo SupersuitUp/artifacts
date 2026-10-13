@@ -50,6 +50,9 @@ export type CommentValue = {
   transcript?: (typeof COMMENT_TRANSCRIPTS)[number]
   /** The name a reader typed so the owner can credit them. A signed-in reader's account name wins. */
   by?: string
+  /** On a reply only: the publisher wrote it, through the reply route with the publish key (0.40.0).
+   *  Never set by a reader: `validateComment` refuses the key. */
+  publisher?: true
   /** On a thread's top-level comment only: the owner, an admin or the publisher marked the thread
    *  done (0.33.0). Written by the resolve route, never by a reader: `validateComment` refuses the
    *  key, and an edit keeps whatever the comment already carried. */

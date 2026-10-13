@@ -56,6 +56,8 @@ export const readerKeyFor = {
   signedIn: (uid: string) => `u:${uid}`,
   anonymous: (id: string) => `a:${id}`,
   recipient: (rid: string) => `r:${rid}`,
+  /** The publisher's one reply in a thread, keyed by the thread's top comment. */
+  publisher: (entryId: string) => `p:${entryId}`,
 }
 
 const writerOf = (w: Writer): Omit<Writer, 'key'> => ({

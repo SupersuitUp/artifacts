@@ -22,7 +22,8 @@ import { ridCookieName, usableSecret } from '../artifacts/recipients.js'
 import type { RecipientsStore } from '../artifacts/recipients-store.js'
 import { perReaderGate } from './per-reader.js'
 import { ANON_WRITES_PER_MINUTE, MAX_ENTRIES_PER_SLOT, checkValue, effectiveWriters, slotVisibility } from '../artifacts/state.js'
-import { COMMENTS_SLOT, FEEDBACK_CLOSED, MAX_COMMENT_NAME_CHARS, NAME_NEEDED, cleanResolveNote, resolutionOf, validateComment, type CommentResolution, type CommentValue } from '../artifacts/comments.js'
+import { COMMENTS_SLOT, FEEDBACK_CLOSED, MAX_COMMENT_CHARS, MAX_COMMENT_NAME_CHARS, NAME_NEEDED, cleanResolveNote, resolutionOf, validateComment, type CommentResolution, type CommentValue } from '../artifacts/comments.js'
+import { MAX_QUOTE_CHARS } from '../artifacts/anchor.js'
 import { isCommentAudioPath } from '../artifacts/audio.js'
 import { readerKeyFor, type StateEntry, type StateStore, type Writer } from '../artifacts/state-store.js'
 import { NOTES_SLOT, checkNoteValue, checklistAnswerIds, hasNotesWidget } from '../artifacts/widgets.js'
@@ -170,6 +171,16 @@ export function createStateRoutes(ctx: StateRoutesContext) {
       slots[COMMENTS_SLOT].shared = entries.filter((e) => e.slot === COMMENTS_SLOT)
         .sort((x, y) => x.at.localeCompare(y.at) || x.id.localeCompare(y.id))
         .map((e) => ({ id: e.id, name: e.writer.name?.trim() || declared(e.value) || 'a reader', value: e.value, at: e.at, mine: e.readerKey === readerKey }))
+    }
+    // The one thing of someone else's a per-reader reader is shown: the publisher's reply to a
+    // comment that reader wrote. Never a reply to another reader's thread.
+    if (canWriteAs && commentsOn(a) && slots[COMMENTS_SLOT]) {
+      const own = new Set(entries.filter((e) => e.slot === COMMENTS_SLOT && e.readerKey === readerKey).map((e) => e.id))
+      const replies = entries
+        .filter((e) => e.slot === COMMENTS_SLOT && (e.value as CommentValue).publisher === true && own.has((e.value as CommentValue).parent ?? ''))
+        .sort((x, y) => x.at.localeCompare(y.at) || x.id.localeCompare(y.id))
+        .map((e) => ({ id: e.id, name: e.writer.name?.trim() || 'the publisher', value: e.value, at: e.at, mine: false }))
+      if (replies.length) slots[COMMENTS_SLOT].shared = replies
     }
     if (commentsOn(a) && slots[COMMENTS_SLOT]) {
       const v = slots[COMMENTS_SLOT]
@@ -483,5 +494,54 @@ export function createStateRoutes(ctx: StateRoutesContext) {
     return json({ id, entry: root.id, resolved: resolution })
   }
 
-  return { STATE_GET, STATE_POST, RESPONSES, COMMENTS_FEED, RESOLVE }
+  /** POST /api/artifacts/<id>/reply: the publisher's one reply in a comment thread (0.40.0).
+   *  Body { entry, body, by?, quote? }. Publish key or publisher pass only. `entry` may name a reply:
+   *  the thread it belongs to is answered. A thread already answered is left as it is and the first
+   *  reply is named back (`existing: true`), so a caller that retries never posts twice. */
+  async function REPLY(req: NextRequest, { params }: Params) {
+    if (!isPublisherAuthed(req, ctx)) return json({ error: 'Unauthorized' }, 401)
+    const raw = await req.text()
+    if (Buffer.byteLength(raw, 'utf8') > MAX_BODY) return json({ error: 'request over 16 KB' }, 413)
+    let b: Record<string, unknown>
+    try {
+      const parsed: unknown = JSON.parse(raw)
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return json({ error: 'body must be a JSON object' }, 400)
+      b = parsed as Record<string, unknown>
+    } catch {
+      return json({ error: 'body must be JSON' }, 400)
+    }
+    const unknownKeys = Object.keys(b).filter((k) => !['entry', 'body', 'by', 'quote'].includes(k))
+    if (unknownKeys.length) return json({ error: `unknown field: ${unknownKeys.join(', ')}; the body is { entry, body, by?, quote? }` }, 400)
+    if (typeof b.entry !== 'string' || !ENTRY_ID.test(b.entry)) return json({ error: 'entry is the id of the comment to reply to' }, 400)
+    const body = typeof b.body === 'string' ? b.body.trim() : ''
+    if (!body || body.length > MAX_COMMENT_CHARS) return json({ error: `body is 1 to ${MAX_COMMENT_CHARS} characters of text` }, 400)
+    let by = 'the publisher'
+    if (b.by !== undefined) {
+      if (typeof b.by !== 'string' || /[\r\n]/.test(b.by) || !b.by.trim() || b.by.trim().length > MAX_COMMENT_NAME_CHARS)
+        return json({ error: `by is one line of at most ${MAX_COMMENT_NAME_CHARS} characters` }, 400)
+      by = b.by.trim()
+    }
+    if (b.quote !== undefined && (typeof b.quote !== 'string' || !b.quote.trim() || b.quote.length > MAX_QUOTE_CHARS))
+      return json({ error: `quote is 1 to ${MAX_QUOTE_CHARS} characters of the page's text` }, 400)
+    if (!ctx.state) return json({ error: 'this host keeps no answers' }, 501)
+    const { id } = await params
+    const a = ARTIFACT_ID_RE.test(id) ? await ctx.store.get(id) : null
+    if (!a) return json({ error: `no artifact with id ${id}` }, 404)
+    const all = new Map((await ctx.state.entries(id)).filter((e) => e.slot === COMMENTS_SLOT).map((e) => [e.id, e]))
+    const asked = all.get(b.entry)
+    if (!asked) return json({ error: 'no comment with that id on this page' }, 404)
+    const parent = (asked.value as CommentValue).parent
+    const root = parent ? all.get(parent) : asked
+    if (!root) return json({ error: 'the comment this reply answers is gone' }, 404)
+    const key = readerKeyFor.publisher(root.id)
+    const had = [...all.values()].find((e) => e.readerKey === key)
+    if (had) return json({ id, entry: had.id, parent: root.id, existing: true })
+    const anchor = typeof b.quote === 'string' ? { kind: 'text' as const, quote: b.quote, prefix: '', suffix: '' } : (root.value as CommentValue).anchor
+    const value: CommentValue = { anchor, body, version: (a as { version?: number }).version ?? 1, parent: root.id, by, publisher: true }
+    const r = await ctx.state.append({ artifactId: id, slot: COMMENTS_SLOT, writer: { key, name: by, anonymous: false }, value })
+    if ('full' in r) return json({ error: 'this thread takes no more replies' }, 409)
+    return json({ id, entry: r.id, parent: root.id, existing: false })
+  }
+
+  return { STATE_GET, STATE_POST, RESPONSES, COMMENTS_FEED, RESOLVE, REPLY }
 }
