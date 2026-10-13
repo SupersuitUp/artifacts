@@ -60,7 +60,7 @@ async function build(opts: { state?: StateStore | null; audio?: boolean } = {}) 
 const feed = (since: string | null, auth: string | null = 'Bearer k') =>
   new NextRequest(`https://artifacts.example.com/api/comments${since === null ? '' : `?since=${encodeURIComponent(since)}`}`, { headers: auth ? { authorization: auth } : {} })
 
-type Row = { artifactId: string; title: string; entryId: string; parent: string | null; name: string | null; quote: string | null; region: boolean; body: string; transcript: string | null; audioUrl: string | null; at: string; resolved: unknown; link: string }
+type Row = { artifactId: string; title: string; entryId: string; parent: string | null; name: string | null; quote: string | null; region: boolean; body: string; transcript: string | null; audioUrl: string | null; at: string; resolved: unknown; link: string; reader: { rid: string; label: string | null } | null; by: string | null; publisher: boolean }
 
 describe('COMMENTS_FEED', () => {
   it('refuses without the publish key', async () => {
@@ -90,14 +90,65 @@ describe('COMMENTS_FEED', () => {
       artifactId: 'fda23456', title: 'First page', entryId: ids.first, parent: null, name: 'Sam Rivera', quote: 'river', region: false,
       body: 'Which river?', transcript: 'host', audioUrl: 'https://cdn.example.com/signed/fda23456/comments/memo1memo1memo1memo1.webm',
       at: '2026-09-28T11:00:00.000Z', resolved: null, link: `https://artifacts.example.com/fda23456#comment-${ids.first}`,
+      reader: null, by: null, publisher: false,
     })
     expect(body.comments[1]).toEqual({
       artifactId: 'fdb23456', title: 'Second page', entryId: ids.region, parent: null, name: null, quote: null, region: true,
       body: 'This box', transcript: null, audioUrl: null, at: '2026-09-28T12:00:00.000Z', resolved: null, link: `https://artifacts.example.com/fdb23456#comment-${ids.region}`,
+      reader: null, by: null, publisher: false,
     })
     expect(body.comments[2]).toMatchObject({ entryId: ids.reply, parent: ids.first, name: null, link: `https://artifacts.example.com/fda23456#comment-${ids.reply}` })
     const text = JSON.stringify(body)
     for (const never of ['a notes-slot answer', 'a vote', 'PERSONAL-FEED-MARKER', 'sam@example.com', 'too old']) expect(text).not.toContain(never)
+  })
+
+  it('a row names the per-reader link it came through, the name typed on an open link, and a publisher reply', async () => {
+    const state = createMemoryStateStore()
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-09-28T15:00:00.000Z'))
+    const top = await state.append({ artifactId: 'fda23456', slot: 'comments', writer: { key: 'r:abcdefghijkl', name: 'Anyone with the link', anonymous: true }, value: { anchor: textAnchor, body: 'From an open link.', version: 2, by: 'Kit' } })
+    if ('full' in top) throw new Error('full')
+    vi.setSystemTime(new Date('2026-09-28T15:01:00.000Z'))
+    await state.append({ artifactId: 'fda23456', slot: 'comments', writer: { key: `p:${top.id}`, name: 'Robin', anonymous: false }, value: { anchor: textAnchor, body: 'Thanks.', version: 2, parent: top.id, by: 'Robin', publisher: true } })
+    const { routes } = await build({ state })
+    const body = (await (await routes.COMMENTS_FEED(feed('2026-09-28T14:59:00Z'))).json()) as { comments: Row[] }
+    expect(body.comments[0]).toMatchObject({ body: 'From an open link.', reader: { rid: 'abcdefghijkl', label: 'Anyone with the link' }, by: 'Kit', publisher: false })
+    expect(body.comments[1]).toMatchObject({ body: 'Thanks.', reader: null, by: 'Robin', publisher: true, name: 'Robin' })
+  })
+
+  it('open=1: a publisher reply never reopens a resolved thread, a later reader reply does, and the plain feed still lists the reply', async () => {
+    const state = createMemoryStateStore()
+    vi.useFakeTimers()
+    const rootOf = async (iso: string, body: string) => {
+      vi.setSystemTime(new Date(iso))
+      const r = await state.append({ artifactId: 'fda23456', slot: 'comments', writer: { key: 'r:abcdefghijkl', name: 'Reader A', anonymous: true }, value: { anchor: textAnchor, body, version: 2 } })
+      if ('full' in r) throw new Error('full')
+      return r.id
+    }
+    const reply = async (iso: string, parent: string, body: string, publisher: boolean) => {
+      vi.setSystemTime(new Date(iso))
+      await state.append({ artifactId: 'fda23456', slot: 'comments', writer: publisher ? { key: `p:${parent}`, name: 'Robin', anonymous: false } : { key: 'r:abcdefghijkl', name: 'Reader A', anonymous: true }, value: { anchor: textAnchor, body, version: 2, parent, ...(publisher ? { publisher: true as const } : {}) } })
+    }
+    const resolve = async (iso: string, entryId: string) => {
+      vi.setSystemTime(new Date(iso))
+      await state.setResolved!({ artifactId: 'fda23456', slot: 'comments', entryId, resolved: { at: iso, by: 'Robin' } })
+    }
+    // Thread 1: resolved, then answered by the publisher. Thread 2: answered, then resolved.
+    const t1 = await rootOf('2026-09-28T15:00:00.000Z', 'thread one')
+    await resolve('2026-09-28T15:01:00.000Z', t1)
+    await reply('2026-09-28T15:02:00.000Z', t1, 'publisher after resolve', true)
+    const t2 = await rootOf('2026-09-28T15:03:00.000Z', 'thread two')
+    await reply('2026-09-28T15:04:00.000Z', t2, 'publisher before resolve', true)
+    await resolve('2026-09-28T15:05:00.000Z', t2)
+    // Thread 3: resolved, then the reader writes again.
+    const t3 = await rootOf('2026-09-28T15:06:00.000Z', 'thread three')
+    await resolve('2026-09-28T15:07:00.000Z', t3)
+    await reply('2026-09-28T15:08:00.000Z', t3, 'reader after resolve', false)
+    const { routes } = await build({ state })
+    const open = (await (await routes.COMMENTS_FEED(new NextRequest('https://artifacts.example.com/api/comments?since=2026-09-28T14:59:00Z&open=1', { headers: { authorization: 'Bearer k' } }))).json()) as { comments: Row[] }
+    expect(open.comments.map((c) => c.body)).toEqual(['reader after resolve'])
+    const all = (await (await routes.COMMENTS_FEED(feed('2026-09-28T14:59:00Z'))).json()) as { comments: Row[] }
+    expect(all.comments.filter((c) => c.publisher).map((c) => c.body)).toEqual(['publisher after resolve', 'publisher before resolve'])
   })
 
   it('takes a since with an offset, and answers nothing new past the latest comment', async () => {

@@ -375,7 +375,8 @@ export function createStateRoutes(ctx: StateRoutesContext) {
    *
    *  Each row carries `resolved`: its THREAD's resolution (a reply carries its parent's), or null.
    *  `&open=1` leaves out every row of a resolved thread, except a reply written after the thread
-   *  was resolved, which is news about it. `cursor` is the `at` of the last comment READ, filtered
+   *  was resolved, which is news about it. A reply the publisher wrote (`publisher: true`) is the
+   *  exception: it answers a thread and never reopens one. `cursor` is the `at` of the last comment READ, filtered
    *  or not, and `more` says a full page was read; a caller paging with `open=1` follows `cursor`,
    *  since the last row it was given can sit well before it. */
   async function COMMENTS_FEED(req: NextRequest) {
@@ -405,11 +406,15 @@ export function createStateRoutes(ctx: StateRoutesContext) {
       if (!a) continue
       const v = e.value as CommentValue
       const resolved = resolutionOf(v.parent ? (await commentsOf(e.artifactId)).get(v.parent)?.value : v)
-      if (openOnly && resolved && !(v.parent && e.at > resolved.at)) continue
+      // A publisher's reply is the answer to a thread, never news about it: it does not reopen one.
+      if (openOnly && resolved && !(v.parent && v.publisher !== true && e.at > resolved.at)) continue
       const audio = isCommentAudioPath(v.audio) && ctx.audioUrl ? await ctx.audioUrl(e.artifactId, v.audio) : null
       comments.push({
         artifactId: e.artifactId, title: a.title, entryId: e.id, parent: v.parent ?? null,
         name: e.writer.anonymous ? null : e.writer.name?.trim() || 'a signed-in reader',
+        // Which per-reader link it came through (0.40.0): the rid and the label the publisher gave it.
+        reader: e.readerKey.startsWith('r:') ? { rid: e.readerKey.slice(2), label: e.writer.name ?? null } : null,
+        by: declared(v), publisher: v.publisher === true,
         quote: v.anchor?.kind === 'text' ? v.anchor.quote : null, region: v.anchor?.kind === 'region',
         body: v.body, transcript: v.transcript ?? null, audioUrl: audio, at: e.at, resolved,
         link: `${ctx.pageUrl(e.artifactId)}#comment-${e.id}`,
@@ -497,7 +502,9 @@ export function createStateRoutes(ctx: StateRoutesContext) {
   /** POST /api/artifacts/<id>/reply: the publisher's one reply in a comment thread (0.40.0).
    *  Body { entry, body, by?, quote? }. Publish key or publisher pass only. `entry` may name a reply:
    *  the thread it belongs to is answered. A thread already answered is left as it is and the first
-   *  reply is named back (`existing: true`), so a caller that retries never posts twice. */
+   *  reply is named back (`existing: true`). That is one reply per thread when calls do not overlap:
+   *  the check is a read and then an append, not one atomic step, so an overlapping
+   *  retry can post a second. */
   async function REPLY(req: NextRequest, { params }: Params) {
     if (!isPublisherAuthed(req, ctx)) return json({ error: 'Unauthorized' }, 401)
     const raw = await req.text()
