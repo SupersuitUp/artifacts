@@ -3,6 +3,26 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.40.1
+
+**0.40.0 was tagged and never published: this is the first release carrying it.** The publish
+workflow runs the tests before it publishes, and one test failed there, so nothing reached npm
+under 0.40.0. Everything in the 0.40.0 entry below ships in this version, unchanged.
+
+- The failing test was the comment card's, and the defect was in the tests, not the card: a name
+  one test saved was still remembered by the next wherever the runtime has a working
+  `localStorage` (Node 24, which the workflow uses) and gone where it does not (Node 25), so
+  "asks for a first name before sending" passed on one and failed on the other. Every card test
+  now starts with its own empty storage.
+
+DETECTOR: `npm view @supersuit/artifacts versions --json` lists no `0.40.0`. A host pinned to
+exactly `0.40.0` cannot install.
+
+REMEDY: take `0.40.1`. There is no code difference from what 0.40.0 described.
+
+Tests: `src/reader/comment-card.test.tsx` gives each test a fresh storage; the old file fails three
+tests when storage persists between tests, and the new one passes either way.
+
 ## 0.40.0
 
 **A per-reader page can be a feedback round: a window per reader, a name on every note where the
