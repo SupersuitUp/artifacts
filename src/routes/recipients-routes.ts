@@ -75,7 +75,7 @@ export function createRecipientsRoutes(given: RecipientsRoutesCtx) {
     const rec = (await ctx.recipients!.get(id)) ?? { recipients: {}, expireAt: null, keep: false }
     return {
       id, expireAt: rec.expireAt, keep: rec.keep,
-      recipients: Object.values(rec.recipients).map((r) => ({ rid: r.rid, label: r.label, group: r.group === true, owner: r.owner === true, revoked: !!r.revokedAt, url: ridLink(ctx.pageUrl(id), id, r.rid, secret) })),
+      recipients: Object.values(rec.recipients).map((r) => ({ rid: r.rid, label: r.label, group: r.group === true, owner: r.owner === true, revoked: !!r.revokedAt, closesAt: r.closesAt ?? null, url: ridLink(ctx.pageUrl(id), id, r.rid, secret) })),
     }
   }
   /** GET and POST /api/artifacts/<id>/recipients: who a per-reader page was sent to (publish key). */
@@ -87,7 +87,7 @@ export function createRecipientsRoutes(given: RecipientsRoutesCtx) {
     if (!a) return json({ error: `no artifact with id ${id}` }, 404)
     if (req.method === 'GET') return json(await listing(id))
     if (a.links !== 'per-reader') return json({ error: 'this page is not links: per-reader' }, 409)
-    const b = (await req.json().catch(() => null)) as { add?: unknown; revoke?: unknown; expires?: unknown } | null
+    const b = (await req.json().catch(() => null)) as { add?: unknown; revoke?: unknown; expires?: unknown; closes?: unknown } | null
     if (!b) return json({ error: 'body must be JSON' }, 400)
     const secret = ctx.recipientSecret()!
     let added: { rid: string; label: string; url: string }[] = []
@@ -95,17 +95,31 @@ export function createRecipientsRoutes(given: RecipientsRoutesCtx) {
       return json({ error: 'each reader to add needs a label' }, 400)
     if (typeof b.expires === 'string' && Number.isNaN(Date.parse(b.expires))) return json({ error: 'expires must be an ISO time or null' }, 400)
     if (typeof b.expires === 'string' && Date.parse(b.expires) <= Date.now()) return json({ error: 'expires must be in the future' }, 400)
-    if (Array.isArray(b.add) && b.add.length) {
-      const made = await ctx.recipients.add(id, b.add as { label: string; note?: string; owner?: boolean; group?: boolean }[])
+    const adds = Array.isArray(b.add) ? (b.add as Record<string, unknown>[]) : []
+    if (adds.some((x) => x.closes !== undefined && (typeof x.closes !== 'string' || Number.isNaN(Date.parse(x.closes))))) return json({ error: 'closes must be an ISO time' }, 400)
+    const win = b.closes as { rids?: unknown; at?: unknown } | null | undefined
+    if (win !== undefined) {
+      const ridsOk = !!win && (win.rids === '*' || (Array.isArray(win.rids) && win.rids.every((x) => typeof x === 'string' && RID_RE.test(x))))
+      const atOk = !!win && (win.at === null || (typeof win.at === 'string' && !Number.isNaN(Date.parse(win.at))))
+      if (!ridsOk || !atOk) return json({ error: 'closes is { rids: [rid] or "*", at: an ISO time or null }' }, 400)
+      if (!ctx.recipients.setCloses) return json({ error: 'this host cannot set a feedback window' }, 501)
+    }
+    if (adds.length) {
+      const made = await ctx.recipients.add(id, adds.map((x) => ({
+        label: x.label as string,
+        ...(typeof x.note === 'string' ? { note: x.note } : {}), ...(x.owner === true ? { owner: true } : {}), ...(x.group === true ? { group: true } : {}),
+        ...(typeof x.closes === 'string' ? { closesAt: new Date(x.closes).toISOString() } : {}),
+      })))
       added = made.map((r) => ({ rid: r.rid, label: r.label, url: ridLink(ctx.pageUrl(id), id, r.rid, secret) }))
     }
     const revoked = b.revoke === '*' || Array.isArray(b.revoke)
       ? await ctx.recipients.revoke(id, b.revoke === '*' ? '*' : (b.revoke as unknown[]).filter((x): x is string => typeof x === 'string' && RID_RE.test(x)))
       : []
+    const windowed = win ? await ctx.recipients.setCloses!(id, win.rids as string[] | '*', win.at === null ? null : new Date(win.at as string).toISOString()) : []
     if (b.expires === null || typeof b.expires === 'string') {
       await ctx.recipients.setExpiry(id, b.expires === null ? null : new Date(b.expires as string).toISOString())
     }
-    return json({ ...(await listing(id)), added, revoked })
+    return json({ ...(await listing(id)), added, revoked, windowed })
   }
   /** GET /api/artifacts/<id>/views: one line per reader, with their comments (publish key). */
   async function VIEWS(req: NextRequest, { params }: Params) {
