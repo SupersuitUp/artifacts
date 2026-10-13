@@ -61,6 +61,25 @@ for (const [name, make] of [['memory', () => memoryRecipientsStore()], ['firesto
       expect(await s.useToken('k1', Date.now() + 1000)).toBe(true)
       expect(await s.useToken('k1', Date.now() + 1000)).toBe(false)
     })
+    it('a reader carries a feedback window that can be moved or cleared; the owner never gets one', async () => {
+      s = make()
+      const [a, o] = await s.add('abcd2345', [{ label: 'Reader A', closesAt: '2026-10-16T12:00:00.000Z' }, { label: 'Me', owner: true }])
+      expect((await s.get('abcd2345'))!.recipients[a.rid].closesAt).toBe('2026-10-16T12:00:00.000Z')
+      expect(await s.setCloses!('abcd2345', '*', '2026-10-20T12:00:00.000Z')).toEqual([a.rid])
+      const rec = (await s.get('abcd2345'))!
+      expect(rec.recipients[a.rid].closesAt).toBe('2026-10-20T12:00:00.000Z')
+      expect(rec.recipients[o.rid].closesAt ?? null).toBeNull()
+      expect(await s.setCloses!('abcd2345', [a.rid], null)).toEqual([a.rid])
+      expect((await s.get('abcd2345'))!.recipients[a.rid].closesAt ?? null).toBeNull()
+      expect(await s.setCloses!('zzzz9999', '*', null)).toEqual([])
+    })
+    it('the views summary carries each reader\'s window', async () => {
+      s = make()
+      const [a] = await s.add('abcd2345', [{ label: 'Reader A', closesAt: '2026-10-16T12:00:00.000Z' }, { label: 'Reader B' }])
+      const sum = summarizeViews((await s.get('abcd2345'))!, [], [])
+      expect(sum.find((x) => x.rid === a.rid)!.closesAt).toBe('2026-10-16T12:00:00.000Z')
+      expect(sum.find((x) => x.label === 'Reader B')!.closesAt).toBeNull()
+    })
     it('views accumulate per session, plays per media, and expiry lists the pages due', async () => {
       s = make()
       await s.add('abcd2345', [{ label: 'A' }])

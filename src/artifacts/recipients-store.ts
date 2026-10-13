@@ -6,14 +6,19 @@
 import type { Firestore } from 'firebase-admin/firestore'
 import { newRid } from './recipients.js'
 
-export type Recipient = { rid: string; label: string; note?: string; owner?: true; group?: true; addedAt: string; revokedAt?: string }
+export type Recipient = { rid: string; label: string; note?: string; owner?: true; group?: true; addedAt: string; revokedAt?: string; closesAt?: string | null }
 export type RecipientsRecord = { recipients: Record<string, Recipient>; expireAt: string | null; keep: boolean; revokedAll?: string }
 export type ViewDoc = { artifactId: string; rid: string; session: string; device: string; firstAt: string; lastAt: string; activeSeconds: number; plays: Record<string, number> }
-export type RecipientSummary = { rid: string; label: string; group: boolean; revoked: boolean; opened: boolean; firstOpenAt: string | null; cameBack: boolean; activeSeconds: number; plays: number; devices: number; comments: { at: string; text: string }[] }
+export type RecipientSummary = { rid: string; label: string; group: boolean; revoked: boolean; closesAt: string | null; opened: boolean; firstOpenAt: string | null; cameBack: boolean; activeSeconds: number; plays: number; devices: number; comments: { at: string; text: string }[] }
+type NewRecipient = { label: string; note?: string; owner?: boolean; group?: boolean; closesAt?: string }
 export interface RecipientsStore {
   get(artifactId: string): Promise<RecipientsRecord | null>
-  add(artifactId: string, input: { label: string; note?: string; owner?: boolean; group?: boolean }[]): Promise<Recipient[]>
+  add(artifactId: string, input: NewRecipient[]): Promise<Recipient[]>
   revoke(artifactId: string, rids: string[] | '*'): Promise<string[]>
+  /** Set (an ISO time) or clear (null) the feedback window of the named readers, or of every reader
+   *  with '*'. Never the owner's. Returns the rids changed. Optional so a host's own store keeps
+   *  working; without it the recipients route answers 501 to a `closes` change. */
+  setCloses?(artifactId: string, rids: string[] | '*', closesAt: string | null): Promise<string[]>
   setExpiry(artifactId: string, expireAt: string | null): Promise<void>
   useToken(key: string, expiresAt: number): Promise<boolean>
   recordView(v: { artifactId: string; rid: string; session: string; device: string; at: string; addSeconds: number; play?: string }): Promise<void>
@@ -26,7 +31,7 @@ export const CAME_BACK_MS = 3_600_000
 const LABEL_MAX = 60
 const NOTE_MAX = 2000
 
-function makeRecipients(input: { label: string; note?: string; owner?: boolean; group?: boolean }[], taken: Set<string>): Recipient[] {
+function makeRecipients(input: NewRecipient[], taken: Set<string>): Recipient[] {
   const at = new Date().toISOString()
   return input.map((i) => {
     const label = String(i.label ?? '').trim().slice(0, LABEL_MAX)
@@ -35,7 +40,7 @@ function makeRecipients(input: { label: string; note?: string; owner?: boolean; 
     while (taken.has(rid)) rid = newRid()
     taken.add(rid)
     const note = typeof i.note === 'string' && i.note.trim() ? i.note.trim().slice(0, NOTE_MAX) : undefined
-    return { rid, label, addedAt: at, ...(note ? { note } : {}), ...(i.owner ? { owner: true as const } : {}), ...(i.group ? { group: true as const } : {}) }
+    return { rid, label, addedAt: at, ...(note ? { note } : {}), ...(i.owner ? { owner: true as const } : {}), ...(i.group ? { group: true as const } : {}), ...(typeof i.closesAt === 'string' ? { closesAt: i.closesAt } : {}) }
   })
 }
 
@@ -48,6 +53,16 @@ function revokeIn(rec: RecipientsRecord, rids: string[] | '*'): string[] {
     hit.push(r.rid)
   }
   if (rids === '*') rec.revokedAll = at
+  return hit
+}
+
+function closeIn(rec: RecipientsRecord, rids: string[] | '*', closesAt: string | null): string[] {
+  const hit: string[] = []
+  for (const r of Object.values(rec.recipients)) {
+    if (r.owner || (rids !== '*' && !rids.includes(r.rid))) continue
+    r.closesAt = closesAt
+    hit.push(r.rid)
+  }
   return hit
 }
 
@@ -75,6 +90,7 @@ export function memoryRecipientsStore(): RecipientsStore {
       return structuredClone(out)
     },
     async revoke(id, rids) { const rec = recs.get(id); return rec ? revokeIn(rec, rids) : [] },
+    async setCloses(id, rids, closesAt) { const rec = recs.get(id); return rec ? closeIn(rec, rids, closesAt) : [] },
     async setExpiry(id, expireAt) {
       const rec = recs.get(id) ?? { recipients: {}, expireAt: null, keep: false }
       rec.expireAt = expireAt
@@ -120,6 +136,16 @@ export function createRecipientsStore(db: Firestore, base: string): RecipientsSt
       await recsCol().doc(id).set(patch, { merge: true })
       return hit
     },
+    async setCloses(id, rids, closesAt) {
+      const rec = await read(id)
+      if (!rec) return []
+      const hit = closeIn(rec, rids, closesAt)
+      if (!hit.length) return hit
+      // A merge writes only this field on these readers: a revoke or an expiry that landed after the
+      // read above is left alone. `null` clears the window (read back as no window).
+      await recsCol().doc(id).set({ recipients: Object.fromEntries(hit.map((rid) => [rid, { closesAt }])) }, { merge: true })
+      return hit
+    },
     async setExpiry(id, expireAt) {
       await recsCol().doc(id).set({ expireAt, keep: expireAt === null }, { merge: true })
     },
@@ -155,7 +181,7 @@ export function summarizeViews(rec: RecipientsRecord, views: ViewDoc[], comments
     const mine = views.filter((v) => v.rid === r.rid).sort((a, b) => a.firstAt.localeCompare(b.firstAt))
     const firsts = mine.map((v) => Date.parse(v.firstAt))
     return {
-      rid: r.rid, label: r.label, group: r.group === true, revoked: !!r.revokedAt,
+      rid: r.rid, label: r.label, group: r.group === true, revoked: !!r.revokedAt, closesAt: r.closesAt ?? null,
       opened: mine.length > 0,
       firstOpenAt: mine[0]?.firstAt ?? null,
       cameBack: firsts.length > 1 && firsts[firsts.length - 1] - firsts[0] >= CAME_BACK_MS,
