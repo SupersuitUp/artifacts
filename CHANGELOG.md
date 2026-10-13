@@ -3,6 +3,39 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.40.0
+
+**A per-reader page can be a feedback round: a window per reader, a name on every note where the
+page asks for one, a reply the commenter can see.** Nothing changes for a page that uses none of it.
+
+- A reader carries `closesAt`. The recipients route sets it (`add[].closes`), moves or clears it
+  (`closes: { rids, at }`), and reports it (`closesAt` in the listing and in `/views`). Past it the
+  state route refuses a new shared comment or an edit with `403 { closed: true }`; the page and the
+  reader's own comments stay readable, and deleting their own still works. `RecipientsStore.setCloses`
+  is optional, so a host's own store keeps working (the route answers 501 to a `closes` change
+  without it).
+- The page draws it: whose draft, the publisher's note to that reader, and a live countdown, in
+  place of the `For <label>: <note>` line. A reader with no window sees what they saw before.
+- `comment_name: required` (front matter, per-reader pages only): a group reader's shared comment
+  needs a typed first name (`400 { needsName: true }` without one); a reader on a named link is
+  never asked, in the card or the reply form, and a typed name is dropped.
+- `POST /api/artifacts/<id>/reply` (publish key): the publisher's one reply in a thread, optionally
+  pinned to the passage that changed. On a per-reader page only the thread's own writer is shown it.
+  It never reopens a resolved thread under `open=1`.
+- Feed rows gain `reader: { rid, label } | null`, `by` and `publisher`. No field is removed.
+
+DETECTOR: `curl -s -H "Authorization: Bearer $KEY" "$HOST/api/artifacts/<id>/recipients" | grep -c closesAt`
+answers 0 on a host older than this.
+
+REMEDY: take 0.40.0 and add the reply route file (README, "Replying as the publisher"). A host with
+its own `RecipientsStore` adds `setCloses` to use feedback windows. A publisher that strips unknown
+front matter keys lets `comment_name` through.
+
+Tests: `recipients-store.test.ts`, `recipients-api.test.tsx`, `front-matter.test.ts`,
+`store.test.ts`, `comments.test.tsx` (closed window, names, reply visibility),
+`comments-feed.test.tsx`, `feedback-window.test.tsx`, `comment-card.test.tsx`,
+`comment-layer.test.tsx`, `per-reader.test.tsx`; `unchanged-default.test.tsx` unedited.
+
 ## 0.39.0
 
 **A session demo's frame fits its player, and is wider than the reading column on a wide screen.**

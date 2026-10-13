@@ -253,6 +253,7 @@ summary: Three bets, what each costs, and what we stop doing to afford them.
 | `definitions` | Terms defined inline (below). A republish without it removes them |
 | `links` | `per-reader`: the page opens only through a link made for one reader (see Per-reader links). Sticky: a republish whose file leaves the line out changes nothing |
 | `media` | `private`: the page's body media is kept private and served through short-lived signed URLs. Needs `links: per-reader`. Sticky like `links` |
+| `comment_name` | `required`: on a per-reader page, a comment through a group link needs a typed first name (see Per-reader links). Needs `links: per-reader` |
 | `change` | One line saying what this version changed (see Version history) |
 | `template` | `document` (the default, the read-along reader) or `broadcast` (one message card sent to several people; see Broadcasts) |
 
@@ -748,6 +749,34 @@ type Ctx = { params: Promise<{ id: string }> }
 export function POST(request: NextRequest, ctx: Ctx) { return artifacts.RESOLVE(request, ctx) }
 ```
 
+
+### Replying as the publisher (0.40.0)
+
+    POST /api/artifacts/<id>/reply
+    Authorization: Bearer <publish key or publisher pass>
+    Content-Type: application/json
+
+    { "entry": "<entryId>", "body": "Named the river in the second paragraph.", "by": "Pat", "quote": "the river Ash" }
+
+    200 { id, entry, parent, existing }
+
+One reply per thread when calls do not overlap. `entry` may name a reply: the thread it belongs to
+is answered. A second call for a thread already answered changes nothing and names the first reply
+back with `existing: true`, so a caller that retries does not post twice. The check is a read and
+then an append, so two overlapping calls can both post. `by` defaults to "the publisher". `quote`
+(text on the page, at most 500 characters) pins the reply to the passage that changed, and the
+thread then offers "Show what changed"; without it the reply sits where its thread does. On a
+per-reader page the reply is shown to the reader whose comment started the thread and to no other
+reader. It is allowed after that reader's window has closed. The feed lists it with
+`publisher: true`, and a publisher reply never reopens a resolved thread under `open=1`. 404 for a
+page or comment that is not there, 501 with no `state`.
+
+    // app/api/artifacts/[id]/reply/route.ts
+    import type { NextRequest } from 'next/server'
+    import { artifacts } from '@/lib/artifacts'
+    type Ctx = { params: Promise<{ id: string }> }
+    export function POST(request: NextRequest, ctx: Ctx) { return artifacts.REPLY(request, ctx) }
+
 ### Telling commenters their comments were resolved (`createResolveDigests`)
 
 When threads are resolved, each signed-in reader whose comments were in them can get ONE email per
@@ -800,12 +829,12 @@ appear (the privacy test covers this handler like every other).
 GET /api/comments?since=2026-09-28T12:00:00Z
 Authorization: Bearer <publish key>
 
-200 { now, cursor, more, comments: [ { artifactId, title, entryId, parent, name, quote, region,
-                                       body, transcript, audioUrl, at, resolved, link } ] }
+200 { now, cursor, more, comments: [ { artifactId, title, entryId, parent, name, reader, by, publisher,
+                                       quote, region, body, transcript, audioUrl, at, resolved, link } ] }
 ```
 
 Oldest first, at most 200, strictly after `since` (an ISO 8601 time with a zone; anything else is
-a 400). `name` is null for an anonymous reader; `quote` is the text the comment is pinned to, or
+a 400). `name` is null for an anonymous reader; `reader` is `{ rid, label }` for a comment left through a per-reader link, else null; `by` is the name its writer typed, else null; `publisher` is true for a reply written through the reply route; `quote` is the text the comment is pinned to, or
 null for a box (`region: true`); `parent` is the comment a reply answers; `audioUrl` is a signed
 URL to the recording, when there is one and the host can sign it. `link` is the page with
 `#comment-<entryId>`: opening it scrolls to the pin and opens its thread (a reply opens its
@@ -863,7 +892,7 @@ Routes (spread into your route files by `createArtifactRoutes`): `RECIPIENTS`, `
 | Route | Who | What |
 |---|---|---|
 | `GET /api/artifacts/<id>/recipients` | publish key | Every reader, with the working link for each |
-| `POST /api/artifacts/<id>/recipients` | publish key | Body `{ add?: [{ label, note?, group? }], revoke?: [rid] or '*', expires?: ISO time or null }`. `add` answers each new reader's link; `expires: null` is Keep |
+| `POST /api/artifacts/<id>/recipients` | publish key | Body `{ add?: [{ label, note?, group?, closes? }], revoke?: [rid] or '*', expires?: ISO time or null, closes?: { rids: [rid] or '*', at: ISO time or null } }`. `add` answers each new reader's link; `expires: null` is Keep; `closes` sets, moves or clears a reader's feedback window |
 | `GET /api/artifacts/<id>/views` | publish key | One line per reader: opened, came back, active seconds, plays, devices, comments. A page with no readers yet answers 200 with an empty list; a missing page answers 404 |
 | `POST /api/artifacts/<id>/seen` | the page itself (public) | The reader's own signal, below |
 
@@ -878,6 +907,41 @@ A view is the page rendered in a real browser, visible, for at least 2 seconds. 
 ### Expiry
 
 `expires` sets the date the page, its media, its readers, their views and their comments go. `sweepExpired()` (call it daily from a cron route) deletes them and returns `{ pages, files, skipped, failed }`: pages removed, media files removed, ids it refused to delete (an expiry that is not a past ISO time, or a page republished without per-reader links), and ids that failed and will be retried by the next run. Your `assets` must provide `deletePage`, or every expired page lands in `failed` and nothing is deleted. With a private bucket configured it deletes from both buckets. A Keep that lands mid-sweep is honored. Deleting a page also removes every prior version of its body.
+
+### A feedback window (0.40.0)
+
+A reader may carry `closesAt`, the time their feedback window closes. It is per reader, set when
+the reader is added (`add[].closes`) or afterwards (`closes: { rids, at }`, where `rids` is a list
+of reader ids or `'*'` for every reader but the owner, and `at: null` clears the window). It is
+separate from the page's `expires`: a reader past their window still opens the page and reads
+their own comments. A time in the past closes the window now, and a window that cannot be read as
+a time counts as closed. `closes` answers `windowed`, the reader ids it changed, beside `added` and
+`revoked`. A host with its own `RecipientsStore` needs `setCloses` for this; without it the route
+answers 501 to a `closes` change.
+
+Once the window is closed, a new shared comment or an edit is refused with
+`403 { error: "Feedback on this draft is closed. Your note was not sent.", closed: true }`.
+Deleting their own comment (`remove`) still works. `GET /state` answers
+`feedback: { closesAt, closed }` for a reader who has a window, and `GET /recipients` and
+`GET /views` carry each reader's `closesAt` (null when there is none).
+
+The page says so. A reader with a window sees, above the title, "A draft from <owner>, for
+<label>" (a group link names nobody), the note the publisher wrote for them, and how long is left,
+counted in days from two days up, then hours from two hours, then minutes, and live while the page
+stays open. Past it the line reads "Feedback is closed. You can still read the draft and your own
+notes." A reader with no window sees the `For <label>: <note>` line as before. In a thread, a
+comment of theirs that nobody has answered shows "Waiting for a reply." while the window exists.
+
+### A name on every note: `comment_name: required` (0.40.0)
+
+A per-reader page that says `comment_name: required` in its front matter puts a name on every
+shared comment. A `group` reader (one link shared by several people) must type a first name:
+without one the state route answers `400 { error: "Add your first name, so your note has a name on
+it.", needsName: true }`, and the comment card, the reply form and a signed-in reader's card all
+ask before they send. A reader on a named link is never asked, and a name sent for them is
+dropped: the label is who they are. The line needs `links: per-reader` (a page without it is
+refused), and a republish that leaves it out removes it. A page without the line takes names
+exactly as before.
 
 ## Broadcasts (`template: broadcast`)
 
