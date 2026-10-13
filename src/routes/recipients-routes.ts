@@ -108,7 +108,8 @@ export function createRecipientsRoutes(given: RecipientsRoutesCtx) {
       const made = await ctx.recipients.add(id, adds.map((x) => ({
         label: x.label as string,
         ...(typeof x.note === 'string' ? { note: x.note } : {}), ...(x.owner === true ? { owner: true } : {}), ...(x.group === true ? { group: true } : {}),
-        ...(typeof x.closes === 'string' ? { closesAt: new Date(x.closes).toISOString() } : {}),
+        // Never for the owner, whatever store the host brought: their link has no window.
+        ...(typeof x.closes === 'string' && x.owner !== true ? { closesAt: new Date(x.closes).toISOString() } : {}),
       })))
       added = made.map((r) => ({ rid: r.rid, label: r.label, url: ridLink(ctx.pageUrl(id), id, r.rid, secret) }))
     }

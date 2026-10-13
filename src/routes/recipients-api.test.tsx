@@ -88,6 +88,12 @@ describe('recipients API', () => {
     const v = await (await call('GET', 'VIEWS')).json()
     expect(v.recipients[0].closesAt).toBe(later)
   })
+  it('an owner added with a window gets none: their link would offer Share and then be refused', async () => {
+    const { call } = setup()
+    const past = '2020-01-01T00:00:00.000Z'
+    const made = await (await call('POST', 'RECIPIENTS', { add: [{ label: 'Robin', owner: true, closes: past }, { label: 'Reader A', closes: past }] })).json()
+    expect(made.recipients.map((x: { owner: boolean; closesAt: string | null }) => [x.owner, x.closesAt])).toEqual([[true, null], [false, past]])
+  })
   it('refuses a window that is not a time, in words', async () => {
     const { call } = setup()
     expect((await call('POST', 'RECIPIENTS', { add: [{ label: 'C', closes: 'friday' }] })).status).toBe(400)

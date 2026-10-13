@@ -767,7 +767,9 @@ then an append, so two overlapping calls can both post. `by` defaults to "the pu
 (text on the page, at most 500 characters) pins the reply to the passage that changed, and the
 thread then offers "Show what changed"; without it the reply sits where its thread does. On a
 per-reader page the reply is shown to the reader whose comment started the thread and to no other
-reader. It is allowed after that reader's window has closed. The feed lists it with
+reader. It is allowed after that reader's window has closed. On a page that is not per-reader
+and whose comments are owner-only (`comments_visible: owner`), `REPLY` still answers 200 and stores
+the reply, but the commenter is not shown it: only the owner, the admins and the feed are. The feed lists it with
 `publisher: true`, and a publisher reply never reopens a resolved thread under `open=1`. 404 for a
 page or comment that is not there, 501 with no `state`.
 
@@ -912,7 +914,8 @@ A view is the page rendered in a real browser, visible, for at least 2 seconds. 
 
 A reader may carry `closesAt`, the time their feedback window closes. It is per reader, set when
 the reader is added (`add[].closes`) or afterwards (`closes: { rids, at }`, where `rids` is a list
-of reader ids or `'*'` for every reader but the owner, and `at: null` clears the window). It is
+of reader ids or `'*'` for every reader but the owner, and `at: null` clears the window). The owner
+never has one: `closes` on an `add` entry with `owner: true` is dropped. It is
 separate from the page's `expires`: a reader past their window still opens the page and reads
 their own comments. A time in the past closes the window now, and a window that cannot be read as
 a time counts as closed. `closes` answers `windowed`, the reader ids it changed, beside `added` and

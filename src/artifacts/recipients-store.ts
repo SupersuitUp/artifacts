@@ -40,7 +40,9 @@ function makeRecipients(input: NewRecipient[], taken: Set<string>): Recipient[] 
     while (taken.has(rid)) rid = newRid()
     taken.add(rid)
     const note = typeof i.note === 'string' && i.note.trim() ? i.note.trim().slice(0, NOTE_MAX) : undefined
-    return { rid, label, addedAt: at, ...(note ? { note } : {}), ...(i.owner ? { owner: true as const } : {}), ...(i.group ? { group: true as const } : {}), ...(typeof i.closesAt === 'string' ? { closesAt: i.closesAt } : {}) }
+    // The owner never carries a window: setCloses skips them and the page hides the closed state
+    // from them, so one stored here would offer Share on their link and then refuse it.
+    return { rid, label, addedAt: at, ...(note ? { note } : {}), ...(i.owner ? { owner: true as const } : {}), ...(i.group ? { group: true as const } : {}), ...(typeof i.closesAt === 'string' && !i.owner ? { closesAt: i.closesAt } : {}) }
   })
 }
 

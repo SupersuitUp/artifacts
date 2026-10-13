@@ -73,6 +73,14 @@ for (const [name, make] of [['memory', () => memoryRecipientsStore()], ['firesto
       expect((await s.get('abcd2345'))!.recipients[a.rid].closesAt ?? null).toBeNull()
       expect(await s.setCloses!('zzzz9999', '*', null)).toEqual([])
     })
+    it('the owner is never given a window: one named when they are added is dropped', async () => {
+      s = make()
+      const [o, a] = await s.add('abcd2345', [{ label: 'Me', owner: true, closesAt: '2020-01-01T00:00:00.000Z' }, { label: 'Reader A', closesAt: '2020-01-01T00:00:00.000Z' }])
+      expect(o.closesAt ?? null).toBeNull()
+      const rec = (await s.get('abcd2345'))!
+      expect('closesAt' in rec.recipients[o.rid]).toBe(false)
+      expect(rec.recipients[a.rid].closesAt).toBe('2020-01-01T00:00:00.000Z')
+    })
     it('the views summary carries each reader\'s window', async () => {
       s = make()
       const [a] = await s.add('abcd2345', [{ label: 'Reader A', closesAt: '2026-10-16T12:00:00.000Z' }, { label: 'Reader B' }])
