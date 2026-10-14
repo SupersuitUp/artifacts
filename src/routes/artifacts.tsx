@@ -121,8 +121,9 @@ export type ArtifactRoutesConfig = {
   /** Sign-in emails, besides `ownerEmail`, of the people who administer this host's pages. They
    *  see a page's version history; with `history: 'admins'` (the default) nobody else does. */
   admins?: readonly string[]
-  /** Who sees a page's past versions: the History control under the summary and every
-   *  `/<id>/v/<n>`. `'admins'` (default): only `ownerEmail` and `admins`, signed in; to everyone
+  /** Who sees a page's past versions and its version number: Version history in the page menu,
+   *  every `/<id>/v/<n>`, and "Version N" on the line under the summary (0.41.0; to everyone else
+   *  that line is only "Updated <minute>"). `'admins'` (default): only `ownerEmail` and `admins`, signed in; to everyone
    *  else the History control is absent and a past version is not found, because an earlier draft
    *  can hold what the current one was edited to remove. `'everyone'`: every reader who can open
    *  the page, which was the only behaviour before 0.21.0. */
@@ -620,11 +621,14 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
   }
 
   /** "Version N · Updated <minute>": the line under the summary. The way into the history is the
-   *  page menu's Version history (0.30.0), for whoever `history` lets see it. */
-  function VersionLine({ n, at }: { n: number; at: string }) {
+   *  page menu's Version history (0.30.0), for whoever `history` lets see it. The number is part of
+   *  that history, so the same readers see it (0.41.0): to anyone else the line is only "Updated
+   *  <minute>", because a page sent to someone reads as a message, and "Version 9" on a message
+   *  tells its reader about eight drafts they were never meant to think about. */
+  function VersionLine({ n, at, numbered }: { n: number; at: string; numbered: boolean }) {
     return (
       <p data-nospeak className="mt-4 text-xs opacity-60">
-        {`Version ${n} · Updated `}<UpdatedTime iso={at} />
+        {numbered ? `Version ${n} · Updated ` : 'Updated '}<UpdatedTime iso={at} />
       </p>
     )
   }
@@ -683,8 +687,8 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
           cover={pack.Cover ? (
             <pack.Cover
               title={title} subtitle={v.subtitle} summary={summary} to={v.to} markdown={v.markdown}
-              kicker={<Kicker to={v.to} brand={brand} />} meta={<VersionLine n={n} at={v.at} />}
-              version={n} updatedAt={v.at} createdAt={a.createdAt}
+              kicker={<Kicker to={v.to} brand={brand} />} meta={<VersionLine n={n} at={v.at} numbered />}
+              version={n} showVersion updatedAt={v.at} createdAt={a.createdAt}
             />
           ) : (
             <div className={`mx-auto max-w-2xl px-6 ${top ? 'pt-10 sm:pt-12' : 'pt-10'} pb-8 text-center`}>
@@ -698,7 +702,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
                 </p>
               ) : null}
               <p className="mx-auto mt-6 max-w-xl text-lg italic opacity-80">{summary}</p>
-              <VersionLine n={n} at={v.at} />
+              <VersionLine n={n} at={v.at} numbered />
             </div>
           )}
         >
@@ -803,7 +807,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
             const n = a.version ?? (a.versions?.length ?? 0) + 1
             const meta = (
               <>
-                <VersionLine n={n} at={a.updatedAt} />
+                <VersionLine n={n} at={a.updatedAt} numbered={seesHistory(reader)} />
                 {/* An open page has no banner, so this is the only place a signed-in reader learns
                     which account they are in and how to get out of it. A gated page's banner says it. */}
                 {top && reader ? (
@@ -820,7 +824,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
               <pack.Cover
                 title={a.title} subtitle={a.subtitle} summary={a.summary} to={a.to} markdown={a.markdown}
                 kicker={<Kicker to={a.to} brand={brand} />} meta={meta}
-                version={n} updatedAt={a.updatedAt} createdAt={a.createdAt}
+                version={n} showVersion={seesHistory(reader)} updatedAt={a.updatedAt} createdAt={a.createdAt}
               />
             ) : (
               <div className={`mx-auto max-w-2xl px-6 ${top ? 'pt-24 sm:pt-28' : 'pt-12'} pb-8 text-center`}>

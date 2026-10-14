@@ -194,7 +194,8 @@ before 0.31.0 has no `declared` and takes its file on its next publish, as every
 
 ## Version history
 
-Every page names its version under the summary, "Version 4 · Updated <minute>", and the page
+Every page says when it was last updated under the summary, and to its admins that line also names
+the version: "Version 4 · Updated <minute>". The page
 menu's **Version history** opens a panel listing every version newest first: its number, the minute it went live in
 the reader's own time zone, and its change note. The panel is drawn over the page (a sheet on a
 phone, a side panel on a desk), so opening it moves no text. Each past version is readable at
@@ -205,9 +206,15 @@ the same password or confidential door as the page itself. A version that does n
 **Past versions are for admins by default (0.21.0).** An earlier draft can hold what the current
 one was edited to remove, so only the page's admins see Version history in the page menu or open
 `/<id>/v/<n>`: the reader signed in as `ownerEmail` or any address in `admins` (case does not
-matter). Everyone else still sees "Version N · Updated <minute>", and a past version is a 404 to
-them. With neither configured, nobody does. `history: 'everyone'` in the config restores the old
-behaviour, where every reader who can open the page reads its history.
+matter). A past version is a 404 to everyone else. With neither configured, nobody does.
+`history: 'everyone'` in the config restores the old behaviour, where every reader who can open
+the page reads its history.
+
+**The version number goes with the history (0.41.0).** A page sent to someone reads as a message,
+and "Version 9" on a message tells its reader about eight drafts. So whoever may not see past
+versions sees only "Updated <minute>" under the summary; admins, and every reader under
+`history: 'everyone'`, see "Version N · Updated <minute>". A pack's `Cover` is handed
+`showVersion` alongside `version`, and draws the number itself only when it is true.
 
 ```ts
 createArtifactRoutes({ ..., ownerEmail: 'owner@example.com', admins: ['editor@example.com'] })

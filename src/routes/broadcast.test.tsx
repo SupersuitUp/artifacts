@@ -382,6 +382,7 @@ describe('documents are unaffected', () => {
     expect(html).not.toContain('data-broadcast')
     expect(html).toContain('data-artifact-toc')
     expect(html).toContain('data-page-menu')
-    expect(html).toContain('Version 1')
+    // The document's own line under the summary (a broadcast card has none).
+    expect(html).toMatch(/<p data-nospeak="true"[^>]*>Updated /)
   })
 })

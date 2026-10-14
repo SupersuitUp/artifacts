@@ -221,9 +221,10 @@ describe('past versions are for admins by default (0.21.0)', () => {
   const past1 = async (cookies: Record<string, string>, extra = {}) =>
     renderToStaticMarkup(await routesWith(cookies, { ...cfg, ...extra }).VersionPage({ params: Promise.resolve({ id: ID, n: '1' }), searchParams: Promise.resolve({}) }))
 
-  it('a signed-out reader sees the version number and no History control', async () => {
+  it('a signed-out reader sees when the page was updated, and neither the version number nor a History control (0.41.0)', async () => {
     const html = await page({})
-    expect(html).toContain('Version 3')
+    expect(html).not.toMatch(/Version \d/)
+    expect(html).toMatch(/<p data-nospeak="true"[^>]*>Updated /)
     expect(html).not.toContain('data-version-history')
     expect(html).not.toContain('First draft')
   })

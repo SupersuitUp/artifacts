@@ -51,10 +51,10 @@ const full: BrandPack = {
   ...freedomDefault,
   id: 'full',
   kicker: 'A page from Example',
-  Cover: ({ title, subtitle, summary, kicker, meta, version }) => (
+  Cover: ({ title, subtitle, summary, kicker, meta, version, showVersion }) => (
     <header data-test-cover>
       {kicker}
-      <p data-nospeak data-test-cover-extra>{`Edition ${version}, drawn by the pack`}</p>
+      {showVersion ? <p data-nospeak data-test-cover-extra>{`Edition ${version}, drawn by the pack`}</p> : null}
       <h1>{title}</h1>
       <p>{subtitle}</p>
       <p>{summary}</p>
@@ -84,8 +84,15 @@ const full: BrandPack = {
 }
 
 describe('BrandPack.Cover', () => {
-  it('draws the title block instead of the default header, and is handed the kicker and version line to place', async () => {
+  it('is told not to show the version to a reader who may not see the history, and the line it places carries none', async () => {
     const html = await page(rec, { brand: full })
+    expect(html).toContain('data-test-cover')
+    expect(html).not.toContain('drawn by the pack')
+    expect(html).not.toMatch(/Version \d/)
+    expect(html).toMatch(/data-test-cover-meta="true"><p data-nospeak="true"[^>]*>Updated /)
+  })
+  it('draws the title block instead of the default header, and is handed the kicker and version line to place', async () => {
+    const html = await page(rec, { brand: full, history: 'everyone' })
     expect(html).toContain('data-test-cover')
     expect(html).toContain('Edition 3, drawn by the pack')
     // The shell's own kicker and version line, placed by the pack, still unspoken.
