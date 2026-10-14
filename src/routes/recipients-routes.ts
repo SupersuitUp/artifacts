@@ -132,7 +132,7 @@ export function createRecipientsRoutes(given: RecipientsRoutesCtx) {
     // A page nobody has been added to yet has no readers, which is an answer and not a missing page.
     const rec = (await ctx.recipients.get(id)) ?? { recipients: {}, expireAt: null, keep: false }
     const entries = ctx.state ? await ctx.state.entries(id) : []
-    const comments = entries.filter((e) => e.slot === COMMENTS_SLOT && e.readerKey.startsWith('r:')).map((e) => ({ readerKey: e.readerKey, at: e.at, text: String((e.value as { body?: unknown } | null)?.body ?? '') }))
+    const comments = entries.filter((e) => e.slot === COMMENTS_SLOT && e.readerKey.startsWith('r:')).map((e) => ({ readerKey: e.readerKey, id: e.id, parent: typeof (e.value as { parent?: unknown } | null)?.parent === 'string' ? (e.value as { parent: string }).parent : null, at: e.at, text: String((e.value as { body?: unknown } | null)?.body ?? '') }))
     return json({ id, expireAt: rec.expireAt, keep: rec.keep, recipients: summarizeViews(rec, await ctx.recipients.views(id), comments) })
   }
   /** Reader text goes with the page: every comment and answer on it, whoever wrote it. */
