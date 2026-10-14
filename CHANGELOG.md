@@ -18,10 +18,14 @@ new fields and the new parameter sees 0.42.0.
   than a scan of the host. `since`, `open`, `cursor` and `more` work over that page's comments. A value
   that is not a page id is a 400; a well-formed id with no page is an empty feed. Without the parameter
   the feed is unchanged.
-- A group link on a `comment_name: required` page now counts each NEW browser it starts (a write with
-  no `artifact_anon` cookie) against the anonymous write limit, keyed by the link, and answers
-  `429 { error: "too many new readers through this link; try again in a minute" }` past 30 a minute. A
-  browser holding its cookie, a named link and a page without the line are not counted.
+- On a `comment_name: required` page, the first stored note of each new browser through one group
+  link (a reader key with no entry on the page yet, with or without an `artifact_anon` cookie) is
+  counted against the anonymous write limit, keyed by the link, and answers
+  `429 { error: "too many new readers through this link; try again in a minute" }` past 30 a minute.
+  Counted after validation, so a refused request spends nothing. A browser's later notes, a named link
+  and a page without the line are not counted.
+- `summarizeViews` (a public export) takes comments with `id` and `parent` OPTIONAL: a caller passing
+  `{ readerKey, at, text }` compiles and runs as before, and gets `id: null, parent: null` on each item.
 - README: the `id` and `parent` shapes, the `artifact` parameter, and the note that removing
   `comment_name: required` later turns a group link back into one shared reader and hides every
   per-browser note from its writer.
@@ -29,8 +33,9 @@ new fields and the new parameter sees 0.42.0.
 DETECTOR: a consumer that reads `comments[]` from `/views` and rebuilds each item field by field, or
 that rejects unknown keys, meets two new ones: `rg -n "\.comments" <your consumer>`. A consumer that
 paged the host-wide feed to find one page's comments can ask for that page alone. A group link handed
-to a crowd that arrives all at once (more than 30 new browsers inside a minute) now sees 429 for the
-rest of that minute.
+to a crowd that arrives all at once (more than 30 new browsers writing inside a minute) now sees 429 for
+the rest of that minute. A caller already sending a stray `artifact=` parameter on the feed, ignored
+until now, gets a filtered feed, or a 400 if it is not a page id.
 
 REMEDY: read `id` and `parent` where present and tolerate them where not; add `&artifact=<id>` to a
 per-page poll. Nothing is needed for the limit: the same people write again the next minute.

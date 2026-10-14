@@ -10,7 +10,7 @@ import { createRecipientsRoutes } from './recipients-routes.js'
 import { freedomDefault } from '../brand/pack.js'
 import type { ArtifactStore, ArtifactRecord } from '../artifacts/store.js'
 import { createMemoryStateStore } from '../artifacts/state-store.js'
-import { memoryRecipientsStore } from '../artifacts/recipients-store.js'
+import { memoryRecipientsStore, summarizeViews } from '../artifacts/recipients-store.js'
 import { ridSig } from '../artifacts/recipients.js'
 import { mergeCommentsState } from '../artifacts/comments.js'
 import { ANON_WRITES_PER_MINUTE } from '../artifacts/state.js'
@@ -150,6 +150,23 @@ describe('the comments feed for one page', () => {
     const { feed } = await twoPages()
     expect((await feed('?since=2020-01-01T00:00:00Z')).body.comments.map((c) => c.body)).toEqual(['a1', 'b1', 'a2', 'b2', 'a3'])
   })
+  it('is refused without the publish key, as the unfiltered feed is', async () => {
+    const { routes } = await twoPages()
+    for (const auth of [{}, { authorization: 'Bearer nope' }]) {
+      const res = await routes.COMMENTS_FEED(new NextRequest('https://artifacts.example.com/api/comments?since=2020-01-01T00:00:00Z&artifact=fa234567', { headers: auth }))
+      expect(res.status).toBe(401)
+    }
+  })
+  it('same-millisecond rows come back in the same order filtered and unfiltered', async () => {
+    const b = build([page('fa234567')])
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-10-01T10:00:00.000Z'))
+    for (let i = 0; i < 6; i++) await b.state.append({ artifactId: 'fa234567', slot: 'comments', writer: { key: `u:s${i}`, uid: `s${i}`, email: `s${i}@example.com`, name: 'S', anonymous: false }, value: { anchor, body: `c${i}`, version: 2 } })
+    const all = (await b.feed('?since=2020-01-01T00:00:00Z')).body.comments.map((c) => c.entryId)
+    const one = (await b.feed('?since=2020-01-01T00:00:00Z&artifact=fa234567')).body.comments.map((c) => c.entryId)
+    expect(all).toHaveLength(6)
+    expect(one).toEqual(all)
+  })
   it('a malformed id is a 400 in words; a valid id with no page is an empty feed', async () => {
     const { feed } = await twoPages()
     for (const bad of ['../x', 'short', 'UPPERCASE', 'abcd1111', '']) {
@@ -170,7 +187,10 @@ describe('a limit on new browsers through one group link', () => {
     vi.setSystemTime(new Date('2026-10-01T10:00:10.000Z'))
     return b.recipients.add('rk234567', [{ label, group: label !== 'Reader A' }]).then(([link]) => ({ ...b, link, rid: b.cookie('rk234567', link) }))
   }
-  const send = (routes: ReturnType<typeof build>['routes'], cookie: string, n: number) => routes.STATE_POST(post('rk234567', note(`Note ${n}.`, { by: 'Kit' }), cookie), params('rk234567'))
+  const send = (routes: ReturnType<typeof build>['routes'], cookie: string, n: number, by: string | null = 'Kit') =>
+    routes.STATE_POST(post('rk234567', note(`Note ${n}.`, by ? { by } : {}), cookie), params('rk234567'))
+  const forged = (n: number) => `artifact_anon=${String(n).padStart(24, 'x')}`
+  const WORDS = 'too many new readers through this link; try again in a minute'
 
   it('trips for cookieless writes through one link, in words, and not for a browser that already has its cookie', async () => {
     const { routes, rid } = await group()
@@ -180,12 +200,40 @@ describe('a limit on new browsers through one group link', () => {
     for (let i = 1; i < ANON_WRITES_PER_MINUTE; i++) expect((await send(routes, rid, i)).status).toBe(200)
     const over = await send(routes, rid, 99)
     expect(over.status).toBe(429)
-    expect(((await over.json()) as { error: string }).error).toMatch(/try again in a minute/)
+    expect(((await over.json()) as { error: string }).error).toBe(WORDS)
     expect(over.headers.get('set-cookie')).toBeNull()
-    expect((await send(routes, returning, 100)).status).toBe(200)
-    // The next minute opens it again.
+    for (let i = 0; i < 3; i++) expect((await send(routes, returning, 100 + i)).status).toBe(200)
     vi.setSystemTime(new Date('2026-10-01T10:01:10.000Z'))
     expect((await send(routes, rid, 101)).status).toBe(200)
+  })
+  it('a fresh forged cookie per write trips at the next write after the allowance', async () => {
+    const { routes, rid } = await group()
+    for (let i = 0; i < ANON_WRITES_PER_MINUTE; i++) expect((await send(routes, `${rid}; ${forged(i)}`, i)).status, String(i)).toBe(200)
+    const over = await send(routes, `${rid}; ${forged(999)}`, 999)
+    expect(over.status).toBe(429)
+    expect(((await over.json()) as { error: string }).error).toBe(WORDS)
+  })
+  it('thirty nameless refusals spend nothing: a new browser can still write', async () => {
+    const { routes, state, rid } = await group()
+    for (let i = 0; i < ANON_WRITES_PER_MINUTE + 5; i++) expect((await send(routes, rid, i, null)).status).toBe(400)
+    expect((await state.entries('rk234567'))).toHaveLength(0)
+    expect((await send(routes, rid, 1)).status).toBe(200)
+    expect((await send(routes, `${rid}; ${forged(1)}`, 2)).status).toBe(200)
+  })
+  it('a closed window spends nothing either', async () => {
+    const b = build([page('rk234567', { links: 'per-reader', commentName: 'required' })])
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-10-01T10:00:10.000Z'))
+    const [link] = await b.recipients.add('rk234567', [{ label: 'Anyone with the link', group: true, closesAt: '2020-01-01T00:00:00.000Z' }])
+    const cookie = b.cookie('rk234567', link)
+    for (let i = 0; i < ANON_WRITES_PER_MINUTE + 2; i++) expect((await send(b.routes, cookie, i)).status).toBe(403)
+    expect(await b.state.countAnonWrite('rk234567', `gl.${link.rid}`, Math.floor(Date.now() / 60000))).toBe(1)
+  })
+  it('a returning browser writing many notes is counted once, for its first', async () => {
+    const { routes, rid } = await group()
+    const first = await send(routes, rid, 0)
+    const mine = [rid, anonCookieOf(first)].join('; ')
+    for (let i = 1; i < ANON_WRITES_PER_MINUTE + 10; i++) expect((await send(routes, mine, i)).status).toBe(200)
   })
   it('a named link is unaffected', async () => {
     const { routes, rid } = await group({ commentName: 'required' }, 'Reader A')
@@ -193,6 +241,14 @@ describe('a limit on new browsers through one group link', () => {
   })
   it('a page without comment_name: required is unaffected', async () => {
     const { routes, rid } = await group({})
-    for (let i = 0; i < ANON_WRITES_PER_MINUTE + 5; i++) expect((await routes.STATE_POST(post('rk234567', note(`Note ${i}.`), rid), params('rk234567'))).status).toBe(200)
+    for (let i = 0; i < ANON_WRITES_PER_MINUTE + 5; i++) expect((await routes.STATE_POST(post('rk234567', note(`Note ${i}.`), `${rid}; ${forged(i)}`), params('rk234567'))).status).toBe(200)
+  })
+})
+
+describe('summarizeViews keeps working for a caller that predates the ids', () => {
+  it('accepts comments with no id or parent: id null, parent null', () => {
+    const rec = { recipients: { abcdefghijkl: { rid: 'abcdefghijkl', label: 'Reader A', addedAt: t } }, expireAt: null, keep: false }
+    const out = summarizeViews(rec, [], [{ readerKey: 'r:abcdefghijkl', at: t, text: 'Old shape.' }])
+    expect(out[0].comments).toEqual([{ id: null, parent: null, at: t, text: 'Old shape.' }])
   })
 })

@@ -296,11 +296,6 @@ export function createStateRoutes(ctx: StateRoutesContext) {
         // or edit, and a first note is when it is handed its id.
         if (op === 'remove') return isComments && entryId ? json({ error: 'no comment of yours with that id' }, 404) : json(await viewBody(a, reader, null, true))
         if (op === 'replace') return json({ error: 'no answer of yours with that id' }, 404)
-        // A group link under `comment_name: required` hands every cookieless visit a fresh reader, so
-        // the number of NEW browsers one link can start in a minute is bounded, on the same budget an
-        // anonymous page's writes have. A browser that already holds its cookie never reaches this.
-        const n = await ctx.state!.countAnonWrite(id, `gl.${recipient.rid}`, Math.floor(Date.now() / 60000))
-        if (n > ANON_WRITES_PER_MINUTE) return json({ error: 'too many new readers through this link; try again in a minute' }, 429)
         anonId = newAnonId()
         setCookie = anonCookie(anonId, 31536000)
         key = recipientKey(id, recipient, anonId)!
@@ -373,6 +368,15 @@ export function createStateRoutes(ctx: StateRoutesContext) {
           : (await ctx.state!.entries(id)).some((e) => e.slot === slot && e.readerKey === writer.key))
         if (!replacing) return json({ error: 'this page is not taking more answers here' }, 409)
       }
+      // A group link under `comment_name: required` makes each browser its own reader, so one link
+      // could start any number of them. The FIRST STORED write of a reader key the page has not seen
+      // is counted against the link, whether it came with a cookie or not (any 24 characters pass as
+      // one), and only here, after validation, so a refused request spends nothing. A key that
+      // already has an entry is never counted again.
+      if (recipient?.perBrowser && !(await ctx.state!.entries(id)).some((e) => e.readerKey === writer.key)) {
+        const n = await ctx.state!.countAnonWrite(id, `gl.${recipient.rid}`, Math.floor(Date.now() / 60000))
+        if (n > ANON_WRITES_PER_MINUTE) return json({ error: 'too many new readers through this link; try again in a minute' }, 429)
+      }
       const r = op === 'set'
         ? await ctx.state!.set({ artifactId: id, slot, writer, value })
         : await ctx.state!.append({ artifactId: id, slot, writer, value })
@@ -428,7 +432,7 @@ export function createStateRoutes(ctx: StateRoutesContext) {
     if (only === null && !ctx.state.slotSince) return json({ error: 'this host cannot list comments by time' }, 501)
     const now = new Date().toISOString()
     const entries = only !== null
-      ? (await ctx.state.entries(only)).filter((e) => e.slot === COMMENTS_SLOT && e.at > since).sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0)).slice(0, FEED_MAX)
+      ? (await ctx.state.entries(only)).filter((e) => e.slot === COMMENTS_SLOT && e.at > since).sort((x, y) => x.at.localeCompare(y.at) || x.id.localeCompare(y.id)).slice(0, FEED_MAX)
       : await ctx.state.slotSince!(COMMENTS_SLOT, since, FEED_MAX)
     const pages = new Map<string, Promise<ArtifactRecord | null>>()
     const pageOf = (id: string) => { if (!pages.has(id)) pages.set(id, ctx.store.get(id)); return pages.get(id)! }

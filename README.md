@@ -1007,11 +1007,13 @@ group link are listed under that link's row, each with its own `id`. The publish
 listed. A caller that keeps a local copy of a page's comments compares these ids with
 `GET /api/comments?artifact=<id>` to see exactly which ones it lacks.
 
-**Limit on new browsers.** On a page with `comment_name: required`, a browser on a group link with no
-`artifact_anon` cookie is handed a new reader with its first note. The number of new browsers one link
-can start per minute is the anonymous write limit (30); past it the state route answers
-`429 { error: "too many new readers through this link; try again in a minute" }`. A browser that already
-holds its cookie is never counted, and neither is a named link.
+**Limit on new browsers.** On a page with `comment_name: required`, the first stored note of each new
+browser through one group link is counted against that link, per minute, on the anonymous write limit
+(30). A browser is new when its reader key has no entry on the page yet, whether or not it arrived with
+an `artifact_anon` cookie. Past the limit the state route answers
+`429 { error: "too many new readers through this link; try again in a minute" }`. Only a stored note is
+counted: a request refused for a missing name, a closed window or a malformed body spends nothing. A
+browser's later notes, a named link and a page without the line are never counted.
 
 **Removing the line later.** Taking `comment_name: required` off a page turns its group link back into
 one shared reader, and every note left per browser stops being shown to its writer: the notes stay with
