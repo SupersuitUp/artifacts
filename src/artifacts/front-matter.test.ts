@@ -92,6 +92,25 @@ describe('widgets in the body', () => {
   })
 })
 
+describe('history', () => {
+  const src = (lines: string) => `---\ntitle: T\nsummary: S\n${lines}---\nx`
+  it('a page says who sees its version number and past versions; absent leaves it to the host', () => {
+    const e = parseArtifactSource(src('history: everyone\n'))
+    expect(e.ok && e.meta.history).toBe('everyone')
+    const a = parseArtifactSource(src('history: admins\n'))
+    expect(a.ok && a.meta.history).toBe('admins')
+    const d = parseArtifactSource(src(''))
+    expect(d.ok && d.meta.history).toBeUndefined()
+  })
+  it('refuses a value it does not know', () => {
+    expect(parseArtifactSource(src('history: true\n'))).toEqual({ ok: false, error: 'history must be one of: admins, everyone' })
+  })
+  it('refuses everyone on a per-reader page, whose past versions are never served', () => {
+    expect(parseArtifactSource(src('links: per-reader\nhistory: everyone\n'))).toEqual({ ok: false, error: 'a per-reader page serves no past versions: drop history: everyone' })
+    expect(parseArtifactSource(src('template: broadcast\nhistory: everyone\n')).ok).toBe(false)
+  })
+})
+
 describe('theme and toc', () => {
   it('a page may pick its mode and turn the contents on or off', () => {
     const r = parseArtifactSource('---\ntitle: T\nsummary: S\ntheme: system\ntoc: false\n---\nx')

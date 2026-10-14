@@ -216,6 +216,14 @@ versions sees only "Updated <minute>" under the summary; admins, and every reade
 `history: 'everyone'`, see "Version N · Updated <minute>". A pack's `Cover` is handed
 `showVersion` alongside `version`, and draws the number itself only when it is true.
 
+**One page can choose for itself (0.42.0).** `history: everyone` in a page's front matter shows
+that page's readers the number, Version history and its past versions, on a host that keeps them
+to admins; `history: admins` does the reverse on a host that shows everyone. Use `everyone` for a
+document its readers follow from draft to draft (a spec, a plan, a paper under revision), and
+leave the line out of anything that reads as a message to someone. It is content, like `toc:`: a
+republish without the line goes back to the host's setting. A per-reader page serves no past
+versions, so `history: everyone` is refused there.
+
 ```ts
 createArtifactRoutes({ ..., ownerEmail: 'owner@example.com', admins: ['editor@example.com'] })
 ```
@@ -261,6 +269,7 @@ summary: Three bets, what each costs, and what we stop doing to afford them.
 | `links` | `per-reader`: the page opens only through a link made for one reader (see Per-reader links). Sticky: a republish whose file leaves the line out changes nothing |
 | `media` | `private`: the page's body media is kept private and served through short-lived signed URLs. Needs `links: per-reader`. Sticky like `links` |
 | `comment_name` | `required`: on a per-reader page, a comment through a group link needs a typed first name, and each browser on a group link is its own reader (see Per-reader links). Needs `links: per-reader` |
+| `history` | `everyone` or `admins`: who sees this page's version number and past versions, overriding the host's `history` for this one page (see Version history). Absent, the host decides. Refused as `everyone` on a per-reader page |
 | `change` | One line saying what this version changed (see Version history) |
 | `template` | `document` (the default, the read-along reader) or `broadcast` (one message card sent to several people; see Broadcasts) |
 

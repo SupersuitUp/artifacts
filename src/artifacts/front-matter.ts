@@ -68,7 +68,16 @@ export type ArtifactMeta = {
   /** `comment_name: required` (0.40.0): on a per-reader page, a comment through a group link must
    *  carry a typed first name, and a named link is never asked for one. Opt-in; content, like `toc:`. */
   commentName?: 'required'
+  /** `history: everyone | admins` (0.42.0): who sees this page's version number and past versions,
+   *  overriding the host's `history` for this one page. `everyone` suits a document its readers
+   *  follow from draft to draft; a page that reads as a message leaves the line out. Content, like
+   *  `toc:`: a republish without the line goes back to the host's setting. */
+  history?: PageHistory
 }
+
+/** Who sees a page's version number and past versions. */
+export type PageHistory = 'admins' | 'everyone'
+export const PAGE_HISTORY: readonly PageHistory[] = ['admins', 'everyone']
 
 /** What a page is. A broadcast is its own kind, not a document with extra flags: it renders as a
  *  message card, opens only through per-reader links, keeps its media private, has comments off
@@ -90,7 +99,7 @@ export const PACK_NAME = /^[a-z0-9][a-z0-9-]{0,39}$/
 /** The longest `to:` a page may carry: a name or two, never a sentence. */
 export const MAX_TO_CHARS = 60
 
-const KNOWN = new Set(['title', 'summary', 'subtitle', 'to', 'template', 'audience', 'cover', 'id', 'voice', 'narration', 'timings', 'narrationHash', 'password', 'access', 'state', 'theme', 'pack', 'toc', 'definitions', 'change', 'comments', 'comments_visible', 'links', 'media', 'comment_name'])
+const KNOWN = new Set(['title', 'summary', 'subtitle', 'to', 'template', 'audience', 'cover', 'id', 'voice', 'narration', 'timings', 'narrationHash', 'password', 'access', 'state', 'theme', 'pack', 'toc', 'definitions', 'change', 'comments', 'comments_visible', 'links', 'media', 'comment_name', 'history'])
 
 export function parseArtifactSource(
   text: string,
@@ -160,6 +169,10 @@ export function parseArtifactSource(
     if (typeof d.pack !== 'string' || !PACK_NAME.test(d.pack)) return { ok: false, error: 'pack must be a pack name: lowercase letters, digits and dashes, up to 40 characters' }
     meta.pack = d.pack
   }
+  if (d.history !== undefined && d.history !== null) {
+    if (!PAGE_HISTORY.includes(d.history as PageHistory)) return { ok: false, error: `history must be one of: ${PAGE_HISTORY.join(', ')}` }
+    meta.history = d.history as PageHistory
+  }
   if (d.toc !== undefined) {
     if (typeof d.toc !== 'boolean') return { ok: false, error: 'toc must be true or false' }
     meta.toc = d.toc
@@ -200,6 +213,9 @@ export function parseArtifactSource(
   // People on one broadcast never see each other's comments, so a per-reader page cannot share them.
   if (meta.links === 'per-reader' && meta.commentsVisible === 'readers')
     return { ok: false, error: 'a per-reader page keeps each reader\'s comments to the owner: drop comments_visible: readers' }
+  // /<id>/v/<n> of a per-reader page is never served, so the history list would be dead links.
+  if (meta.history === 'everyone' && meta.links === 'per-reader')
+    return { ok: false, error: 'a per-reader page serves no past versions: drop history: everyone' }
   if (meta.commentName && meta.links !== 'per-reader') return { ok: false, error: 'comment_name: required needs links: per-reader' }
   // Widgets declare their own slots, so a notes block (and a checklist with send) is merged into state: here, before the
   // page is stored, and the state API and the republish shape checks see it like any slot.

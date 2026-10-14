@@ -216,8 +216,14 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
   const owner = config.owner ?? brand.name
   const ownerEmail = config.ownerEmail?.trim().toLowerCase()
   const admins = new Set([ownerEmail, ...(config.admins ?? []).map((e) => e.trim().toLowerCase())].filter((e): e is string => !!e))
-  /** Whether this reader may see a page's past versions (config `history`). */
-  const seesHistory = (reader: Reader | null) => config.history === 'everyone' || (!!reader && admins.has(reader.email.trim().toLowerCase()))
+  /** Whether this reader may see this page's version number and past versions: the page's own
+   *  `history:` line when it has one, else the host's (config `history`). Admins always may. */
+  const seesHistory = (a: Pick<ArtifactRecord, 'history' | 'links'>, reader: Reader | null) => {
+    // A per-reader page serves no past versions, and `links:` is sticky host-side state a later
+    // file need not repeat, so the parser's refusal cannot catch every case: ignore the line here.
+    const page = a.history === 'everyone' && a.links === 'per-reader' ? undefined : a.history
+    return (page ?? config.history) === 'everyone' || (!!reader && admins.has(reader.email.trim().toLowerCase()))
+  }
   const readerSecret = () => config.readerSecret?.()
   /** Who this reader is to this host's pages: the page menu's role. Owner and admins share a menu. */
   const roleOf = (reader: Reader | null): PageRole => {
@@ -368,7 +374,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
         comments={!!comments}
         signIn={!reader && signInOrigin ? signInUrl(signInOrigin, pageUrl(a.id)) : null}
         signOut={reader ? signOutUrl(a.id) : null}
-        history={history && history.length > 1 && seesHistory(reader) && viewing ? { items: history, base: pagePath(a.id), viewing } : null}
+        history={history && history.length > 1 && seesHistory(a, reader) && viewing ? { items: history, base: pagePath(a.id), viewing } : null}
         markdown={admin && source ? source : null}
         settings={admin ? settings ?? null : null}
       />
@@ -661,7 +667,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
   async function VersionBody(a: Rec, n: number, { top, reader }: { top: boolean; reader: Reader | null }) {
     const { pack, brand } = lookOf(a)
     // Past versions are for admins unless the host says otherwise: to anyone else none exists.
-    if (!seesHistory(reader)) notFound()
+    if (!seesHistory(a, reader)) notFound()
     const v = store.version ? await store.version(a.id, n) : null
     if (!v) notFound()
     if (v.current) redirect(pagePath(a.id))
@@ -807,7 +813,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
             const n = a.version ?? (a.versions?.length ?? 0) + 1
             const meta = (
               <>
-                <VersionLine n={n} at={a.updatedAt} numbered={seesHistory(reader)} />
+                <VersionLine n={n} at={a.updatedAt} numbered={seesHistory(a, reader)} />
                 {/* An open page has no banner, so this is the only place a signed-in reader learns
                     which account they are in and how to get out of it. A gated page's banner says it. */}
                 {top && reader ? (
@@ -824,7 +830,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
               <pack.Cover
                 title={a.title} subtitle={a.subtitle} summary={a.summary} to={a.to} markdown={a.markdown}
                 kicker={<Kicker to={a.to} brand={brand} />} meta={meta}
-                version={n} showVersion={seesHistory(reader)} updatedAt={a.updatedAt} createdAt={a.createdAt}
+                version={n} showVersion={seesHistory(a, reader)} updatedAt={a.updatedAt} createdAt={a.createdAt}
               />
             ) : (
               <div className={`mx-auto max-w-2xl px-6 ${top ? 'pt-24 sm:pt-28' : 'pt-12'} pb-8 text-center`}>

@@ -3,6 +3,37 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.42.0
+
+**One page can say who sees its version number and past versions: `history: everyone | admins` in
+front matter.** 0.41.0 made the number follow the host's `history` setting, which is one answer for
+every page on a host. A host carries both kinds of page: a letter to one person, where a version
+number is noise, and a spec its readers follow from draft to draft, where it is the point. The
+page's own line overrides the host's for that page; absent, nothing changes.
+
+- `history: everyone` shows that page's readers "Version N · Updated <minute>", Version history in
+  the page menu and every `/<id>/v/<n>`. `history: admins` keeps all three to admins on a host
+  configured `history: 'everyone'`. Admins always see them.
+- Content, like `toc:`: a republish without the line goes back to the host's setting.
+- Refused with `links: per-reader` (and so on a broadcast), because a per-reader page serves no past
+  versions and the list would be dead links. A page made per-reader by an earlier publish, whose
+  file no longer repeats the line, has its `history: everyone` ignored at render for the same reason.
+- `ArtifactMeta` and `ArtifactRecord` gain `history`; `PageHistory` and `PAGE_HISTORY` are exported
+  from the front matter module. `CoverProps.showVersion` follows the page's line.
+
+DETECTOR: a publisher that validates front matter keys itself, before the host does, refuses
+`history:` as unknown until it learns the key: `rg -n "comment_name" <your publisher>` finds such a
+list. A custom `ArtifactStore` that copies named fields drops `history` until it carries it.
+
+REMEDY: add `history` to such a list and to a custom store's saved fields. Nothing else: a page
+without the line behaves exactly as under 0.41.0.
+
+Tests: `src/artifacts/front-matter.test.ts` (both values, an unknown value, the per-reader and
+broadcast refusals), `src/artifacts/store.test.ts` (rides through; a republish without it clears
+it), `src/routes/page-menu.test.tsx` (a page's `everyone` on a default host, a page's `admins` on
+an `everyone` host, and who opens a past version). The three route tests fail when the route
+ignores the page's line.
+
 ## 0.41.0
 
 **A reader who may not see a page's history is no longer told its version number.** The line under

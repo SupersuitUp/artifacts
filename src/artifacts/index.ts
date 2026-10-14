@@ -1,4 +1,4 @@
-export { parseArtifactSource, ARTIFACT_KINDS, type ArtifactMeta, type ArtifactKind } from './front-matter.js'
+export { parseArtifactSource, ARTIFACT_KINDS, PAGE_HISTORY, type ArtifactMeta, type ArtifactKind, type PageHistory } from './front-matter.js'
 export { ArtifactMarkdown, artifactUrlTransform } from './render.js'
 export { narrationText, narrationTextFromMarkdown, normalizeWord } from './narration.js'
 export { createArtifactStore, newArtifactId, cleanNote, kindOf, listOfKind, MAX_CHANGE_NOTE_CHARS, type ArtifactListItem, type ArtifactStore, type ArtifactRecord, type SaveResult, type SaveInput, type VersionEntry, type VersionRecord } from './store.js'
