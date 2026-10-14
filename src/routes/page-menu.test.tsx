@@ -139,6 +139,26 @@ describe('the items each role gets on a public page', () => {
       expect(html).toMatch(/<p data-nospeak="true"[^>]*>Updated /)
     }
   })
+  it('a page that says history: everyone shows its readers the number and the history, whatever the host default', async () => {
+    rec = { ...base, history: 'everyone' }
+    expect(await page(dana)).toContain('Version 2 · Updated')
+    expect(items(await page(dana))).toEqual(['share', 'history', 'sign-out'])
+    expect(items(await page(null))).toEqual(['share', 'history', 'sign-in'])
+  })
+  it('the page setting also decides who opens a past version', async () => {
+    const past = (who: Reader | null, extra = {}) => routes(who, extra).VersionPage({ params: Promise.resolve({ id: ID, n: '1' }), searchParams: Promise.resolve({}) })
+    rec = { ...base, history: 'everyone' }
+    expect(renderToStaticMarkup(await past(dana))).toContain('first body')
+    rec = { ...base, history: 'admins' }
+    await expect(past(dana, { history: 'everyone' })).rejects.toThrow('NOT_FOUND')
+  })
+  it('a page that says history: admins keeps both from readers on a host that shows everyone', async () => {
+    rec = { ...base, history: 'admins' }
+    const html = await page(dana, { history: 'everyone' })
+    expect(html).not.toMatch(/Version \d/)
+    expect(items(html)).toEqual(['share', 'sign-out'])
+    expect(await page(admin, { history: 'everyone' })).toContain('Version 2 · Updated')
+  })
   it("history: 'everyone' shows every reader the version number", async () => {
     expect(await page(null, { history: 'everyone' })).toContain('Version 2 · Updated')
     expect(await page(dana, { history: 'everyone' })).toContain('Version 2 · Updated')

@@ -44,6 +44,8 @@ export type ArtifactRecord = {
   pack?: string
   toc?: boolean
   commentName?: 'required'
+  /** The page's own `history:` line; absent, the host's setting decides. */
+  history?: 'admins' | 'everyone'
   definitions?: Definition[]
   /** Who may leave shared comments; absent is off. Personal notes need nothing. */
   comments?: CommentsMode
@@ -259,6 +261,7 @@ async function saveArtifact(col: Col, input: SaveInput): Promise<SaveResult> {
     ...(input.meta.pack ? { pack: input.meta.pack } : {}),
     ...(input.meta.toc !== undefined ? { toc: input.meta.toc } : {}),
     ...(input.meta.commentName ? { commentName: input.meta.commentName } : {}),
+    ...(input.meta.history ? { history: input.meta.history } : {}),
     ...(input.meta.definitions?.length ? { definitions: input.meta.definitions } : {}),
   }
   if (input.id) {
@@ -310,6 +313,7 @@ async function saveArtifact(col: Col, input: SaveInput): Promise<SaveResult> {
       ...(input.meta.pack ? {} : { pack: FieldValue.delete() }),
       ...(input.meta.toc !== undefined ? {} : { toc: FieldValue.delete() }),
       ...(input.meta.commentName ? {} : { commentName: FieldValue.delete() }),
+      ...(input.meta.history ? {} : { history: FieldValue.delete() }),
       ...(input.meta.definitions?.length ? {} : { definitions: FieldValue.delete() }),
     }
     // `voice: none` is the page declaring it has no audio. An update merges, so the recording it
