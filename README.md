@@ -1013,7 +1013,8 @@ browser through one group link is counted against that link, per minute, on the 
 an `artifact_anon` cookie. Past the limit the state route answers
 `429 { error: "too many new readers through this link; try again in a minute" }`. Only a stored note is
 counted: a request refused for a missing name, a closed window or a malformed body spends nothing. A
-browser's later notes, a named link and a page without the line are never counted.
+browser's later notes, a named link and a page without the line are never counted. "Note" here means
+any stored entry in any slot, and a browser that removes its only entry and writes again is new again.
 
 **Removing the line later.** Taking `comment_name: required` off a page turns its group link back into
 one shared reader, and every note left per browser stops being shown to its writer: the notes stay with
