@@ -74,6 +74,10 @@ export type CoverProps = {
   /** The version line and, for a signed-in reader, who they are signed in as. Unspoken. */
   meta: ReactNode
   version: number
+  /** Whether this reader may be shown the version number: true for whoever the host's `history`
+   *  lets see past versions (admins by default), false for everyone else. A Cover that draws
+   *  `version` itself draws it only when this is true; `meta` already follows it. */
+  showVersion: boolean
   updatedAt: string
   createdAt: string
 }

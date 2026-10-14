@@ -127,10 +127,21 @@ describe('the items each role gets on a public page', () => {
   it("history: 'everyone' gives every reader Version history, never the markdown", async () => {
     expect(items(await page(dana, { history: 'everyone' }))).toEqual(['share', 'history', 'sign-out'])
   })
-  it('the old History control under the summary is gone; the version line stays', async () => {
+  it('the old History control under the summary is gone; the version line stays for an admin', async () => {
     const html = await page(admin)
     expect(html).toContain('Version 2 · Updated')
     expect(html).not.toContain('>History</button>')
+  })
+  it('a reader who may not see the history is not told the version number, only when it was updated', async () => {
+    for (const who of [null, dana, stranger]) {
+      const html = await page(who)
+      expect(html).not.toMatch(/Version \d/)
+      expect(html).toMatch(/<p data-nospeak="true"[^>]*>Updated /)
+    }
+  })
+  it("history: 'everyone' shows every reader the version number", async () => {
+    expect(await page(null, { history: 'everyone' })).toContain('Version 2 · Updated')
+    expect(await page(dana, { history: 'everyone' })).toContain('Version 2 · Updated')
   })
 })
 

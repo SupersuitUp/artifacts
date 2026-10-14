@@ -3,6 +3,37 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.41.0
+
+**A reader who may not see a page's history is no longer told its version number.** The line under
+the summary read "Version N · Updated <minute>" to everyone. A page sent to someone reads as a
+message, and "Version 9" on a message tells its reader about eight drafts they were never meant to
+think about. The number now goes with the history: whoever `history` lets see past versions
+(the owner and `admins` by default, every reader under `history: 'everyone'`) sees
+"Version N · Updated <minute>", and everyone else sees "Updated <minute>". There is no new config
+key; the existing `history` setting is the toggle, and its default is off for readers.
+
+- `CoverProps` gains `showVersion: boolean`, true exactly when this reader may see the number. The
+  `meta` node a Cover places already follows it. `version` is still handed over unchanged, so a
+  Cover that draws the number itself keeps drawing it until it reads `showVersion`.
+- A past version's page (`/<id>/v/<n>`) is unchanged: only a reader who may see the history reaches
+  it, so it still names its version.
+
+DETECTOR: a host whose pack has a `Cover` that renders `version`: `rg -n "version" <your packs>`.
+Such a Cover still shows the number to every reader after this release, because the shell cannot
+take a prop away from a pack. A host that relied on every reader seeing the version line and does
+not set `history: 'everyone'` will find the number gone for signed-out readers.
+
+REMEDY: in a Cover that draws the number, draw it only when `showVersion` is true. To show every
+reader the number (and the history with it), set `history: 'everyone'`.
+
+Tests: `src/routes/page-menu.test.tsx` (a visitor, a reader and a stranger get "Updated" with no
+version number; an admin and `history: 'everyone'` get "Version 2 · Updated"),
+`src/routes/extension-points.test.tsx` (a Cover is handed `showVersion` false for a reader and true
+under `history: 'everyone'`), `src/routes/versions.test.tsx` and `src/routes/broadcast.test.tsx`
+(the two tests that pinned the old line now pin the new one). All three new tests failed against
+0.40.1.
+
 ## 0.40.1
 
 **0.40.0 was tagged and never published: this is the first release carrying it.** The publish
