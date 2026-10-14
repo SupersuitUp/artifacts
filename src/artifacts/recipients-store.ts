@@ -9,7 +9,7 @@ import { newRid, ridOfReaderKey } from './recipients.js'
 export type Recipient = { rid: string; label: string; note?: string; owner?: true; group?: true; addedAt: string; revokedAt?: string; closesAt?: string | null }
 export type RecipientsRecord = { recipients: Record<string, Recipient>; expireAt: string | null; keep: boolean; revokedAll?: string }
 export type ViewDoc = { artifactId: string; rid: string; session: string; device: string; firstAt: string; lastAt: string; activeSeconds: number; plays: Record<string, number> }
-export type RecipientSummary = { rid: string; label: string; group: boolean; revoked: boolean; closesAt: string | null; opened: boolean; firstOpenAt: string | null; cameBack: boolean; activeSeconds: number; plays: number; devices: number; comments: { at: string; text: string }[] }
+export type RecipientSummary = { rid: string; label: string; group: boolean; revoked: boolean; closesAt: string | null; opened: boolean; firstOpenAt: string | null; cameBack: boolean; activeSeconds: number; plays: number; devices: number; comments: { id: string | null; parent: string | null; at: string; text: string }[] }
 type NewRecipient = { label: string; note?: string; owner?: boolean; group?: boolean; closesAt?: string }
 export interface RecipientsStore {
   get(artifactId: string): Promise<RecipientsRecord | null>
@@ -178,7 +178,7 @@ export function createRecipientsStore(db: Firestore, base: string): RecipientsSt
 }
 
 /** One line per reader (never the owner), in the order they were added. */
-export function summarizeViews(rec: RecipientsRecord, views: ViewDoc[], comments: { readerKey: string; at: string; text: string }[]): RecipientSummary[] {
+export function summarizeViews(rec: RecipientsRecord, views: ViewDoc[], comments: { readerKey: string; id?: string | null; parent?: string | null; at: string; text: string }[]): RecipientSummary[] {
   return Object.values(rec.recipients).filter((r) => !r.owner).sort((a, b) => a.addedAt.localeCompare(b.addedAt)).map((r) => {
     const mine = views.filter((v) => v.rid === r.rid).sort((a, b) => a.firstAt.localeCompare(b.firstAt))
     const firsts = mine.map((v) => Date.parse(v.firstAt))
@@ -190,7 +190,7 @@ export function summarizeViews(rec: RecipientsRecord, views: ViewDoc[], comments
       activeSeconds: mine.reduce((n, v) => n + v.activeSeconds, 0),
       plays: mine.reduce((n, v) => n + Object.values(v.plays).reduce((a, b) => a + b, 0), 0),
       devices: new Set(mine.map((v) => v.device)).size,
-      comments: comments.filter((c) => ridOfReaderKey(c.readerKey) === r.rid).map((c) => ({ at: c.at, text: c.text })),
+      comments: comments.filter((c) => ridOfReaderKey(c.readerKey) === r.rid).map((c) => ({ id: c.id ?? null, parent: c.parent ?? null, at: c.at, text: c.text })),
     }
   })
 }

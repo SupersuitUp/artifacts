@@ -3,6 +3,50 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.43.0
+
+**A comment's id per reader in `/views`, the comments feed for one page, and a limit on new browsers
+through a group link.** A consumer that keeps a local copy of a page's comments could not tell exactly
+which ones it lacked: `/views` listed each reader's comments as `{ at, text }` with no id, and
+`GET /api/comments` is the whole host's feed. Everything here is additive; a caller that ignores the
+new fields and the new parameter sees 0.42.0.
+
+- `GET /api/artifacts/<id>/views`: each comment gains `id` (the entry id the feed calls `entryId`) and
+  `parent` (the entry id it replies to, or null). Under `comment_name: required` every browser on a
+  group link is still listed under the link, each with its own id. Publisher replies stay out.
+- `GET /api/comments?artifact=<page id>`: only that page's rows, read from that page's entries rather
+  than a scan of the host. `since`, `open`, `cursor` and `more` work over that page's comments. A value
+  that is not a page id is a 400; a well-formed id with no page is an empty feed. Without the parameter
+  the feed is unchanged.
+- On a `comment_name: required` page, the first stored note of each new browser through one group
+  link (a reader key with no entry on the page yet, with or without an `artifact_anon` cookie) is
+  counted against the anonymous write limit, keyed by the link, and answers
+  `429 { error: "too many new readers through this link; try again in a minute" }` past 30 a minute.
+  Counted after validation, so a refused request spends nothing. A browser's later notes, a named link
+  and a page without the line are not counted.
+- `summarizeViews` (a public export) takes comments with `id` and `parent` OPTIONAL: a caller passing
+  `{ readerKey, at, text }` compiles and runs as before, and gets `id: null, parent: null` on each item.
+- README: the `id` and `parent` shapes, the `artifact` parameter, and the note that removing
+  `comment_name: required` later turns a group link back into one shared reader and hides every
+  per-browser note from its writer.
+
+DETECTOR: a consumer that reads `comments[]` from `/views` and rebuilds each item field by field, or
+that rejects unknown keys, meets two new ones: `rg -n "\.comments" <your consumer>`. A consumer that
+paged the host-wide feed to find one page's comments can ask for that page alone. A group link handed
+to a crowd that arrives all at once (more than 30 new browsers writing inside a minute) now sees 429 for
+the rest of that minute. A caller already sending a stray `artifact=` parameter on the feed, ignored
+until now, gets a filtered feed, or a 400 if it is not a page id.
+
+REMEDY: read `id` and `parent` where present and tolerate them where not; add `&artifact=<id>` to a
+per-page poll. Nothing is needed for the limit: the same people write again the next minute.
+
+Tests: `src/routes/comment-ids.test.tsx` (ids equal the feed's `entryId`; a reply's `parent`; two
+browsers on one group link under the link with distinct ids; no publisher reply; `artifact=` returns
+one page's rows and composes with `since` and `open=1`; paging 300 comments of one page among 450 in
+pages of 200 never returns another page's row; the unfiltered feed unchanged; a malformed id is 400
+and an unknown page is empty; the limit trips for cookieless writes through one link, not for a
+returning browser, a named link or a page without the line). Every test builds its own stores.
+
 ## 0.42.0
 
 **One page can say who sees its version number and past versions: `history: everyone | admins` in

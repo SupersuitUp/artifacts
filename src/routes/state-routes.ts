@@ -5,7 +5,8 @@
 //   GET  /api/artifacts/<id>/responses  publish key; every answer with who (?format=csv)
 //   DELETE /api/artifacts/<id>/responses?reader=<key>  publish key; one reader's answers
 //   GET  /api/comments?since=<ISO>      publish key; every shared comment on any page after a time
-//                                       (&open=1: leave out threads that are resolved)
+//                                       (&open=1: leave out threads that are resolved;
+//                                       &artifact=<id>: only that page's comments)
 //   POST /api/artifacts/<id>/resolve    publish key, or the owner or an admin signed in; resolve or
 //                                       reopen one comment thread { entry, resolved?, note?, by? }
 //
@@ -367,6 +368,15 @@ export function createStateRoutes(ctx: StateRoutesContext) {
           : (await ctx.state!.entries(id)).some((e) => e.slot === slot && e.readerKey === writer.key))
         if (!replacing) return json({ error: 'this page is not taking more answers here' }, 409)
       }
+      // A group link under `comment_name: required` makes each browser its own reader, so one link
+      // could start any number of them. The FIRST STORED write of a reader key the page has not seen
+      // is counted against the link, whether it came with a cookie or not (any 24 characters pass as
+      // one), and only here, after validation, so a refused request spends nothing. A key that
+      // already has an entry is never counted again.
+      if (recipient?.perBrowser && !(await ctx.state!.entries(id)).some((e) => e.readerKey === writer.key)) {
+        const n = await ctx.state!.countAnonWrite(id, `gl.${recipient.rid}`, Math.floor(Date.now() / 60000))
+        if (n > ANON_WRITES_PER_MINUTE) return json({ error: 'too many new readers through this link; try again in a minute' }, 429)
+      }
       const r = op === 'set'
         ? await ctx.state!.set({ artifactId: id, slot, writer, value })
         : await ctx.state!.append({ artifactId: id, slot, writer, value })
@@ -415,9 +425,15 @@ export function createStateRoutes(ctx: StateRoutesContext) {
     if (openParam !== null && !['1', 'true', '0', 'false'].includes(openParam)) return json({ error: 'open is 1 or 0' }, 400)
     const openOnly = openParam === '1' || openParam === 'true'
     if (!ctx.state) return json({ error: 'this host keeps no answers' }, 501)
-    if (!ctx.state.slotSince) return json({ error: 'this host cannot list comments by time' }, 501)
+    // One page's feed (0.43.0): read that page's entries alone, so a caller paging a single page
+    // never reads, or is handed, another page's comments.
+    const only = req.nextUrl.searchParams.get('artifact')
+    if (only !== null && !ARTIFACT_ID_RE.test(only)) return json({ error: 'artifact must be a page id, like abcd2345' }, 400)
+    if (only === null && !ctx.state.slotSince) return json({ error: 'this host cannot list comments by time' }, 501)
     const now = new Date().toISOString()
-    const entries = await ctx.state.slotSince(COMMENTS_SLOT, since, FEED_MAX)
+    const entries = only !== null
+      ? (await ctx.state.entries(only)).filter((e) => e.slot === COMMENTS_SLOT && e.at > since).sort((x, y) => x.at.localeCompare(y.at) || x.id.localeCompare(y.id)).slice(0, FEED_MAX)
+      : await ctx.state.slotSince!(COMMENTS_SLOT, since, FEED_MAX)
     const pages = new Map<string, Promise<ArtifactRecord | null>>()
     const pageOf = (id: string) => { if (!pages.has(id)) pages.set(id, ctx.store.get(id)); return pages.get(id)! }
     // A reply's thread is resolved on its parent, which may sit outside this window: read the page's

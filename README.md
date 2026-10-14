@@ -851,6 +851,19 @@ Authorization: Bearer <publish key>
                                        quote, region, body, transcript, audioUrl, at, resolved, link } ] }
 ```
 
+**One page's feed (0.43.0).** `&artifact=<page id>` returns only that page's rows. `since`, `open`,
+`cursor` and `more` behave as above, over that page's comments alone, so a caller paging one page
+reaches its end without reading another page's rows. The feed is read from that page's own entries,
+not from a scan of the host. A value that is not a page id is a `400` ("artifact must be a page id,
+like abcd2345"); a well-formed id with no page, or no comments, answers an empty feed
+(`{ now, comments: [], cursor: null, more: false }`), as an empty host does. Without the parameter
+the feed is what it was.
+
+```
+GET /api/comments?since=2026-09-28T12:00:00Z&artifact=abcd2345&open=1
+Authorization: Bearer <publish key>
+```
+
 Oldest first, at most 200, strictly after `since` (an ISO 8601 time with a zone; anything else is
 a 400). `name` is null for an anonymous reader; `reader` is `{ rid, label }` for a comment left through a per-reader link, else null; `by` is the name its writer typed, else null; `publisher` is true for a reply written through the reply route; `quote` is the text the comment is pinned to, or
 null for a box (`region: true`); `parent` is the comment a reply answers; `audioUrl` is a signed
@@ -911,7 +924,7 @@ Routes (spread into your route files by `createArtifactRoutes`): `RECIPIENTS`, `
 |---|---|---|
 | `GET /api/artifacts/<id>/recipients` | publish key | Every reader, with the working link for each |
 | `POST /api/artifacts/<id>/recipients` | publish key | Body `{ add?: [{ label, note?, group?, closes? }], revoke?: [rid] or '*', expires?: ISO time or null, closes?: { rids: [rid] or '*', at: ISO time or null } }`. `add` answers each new reader's link; `expires: null` is Keep; `closes` sets, moves or clears a reader's feedback window |
-| `GET /api/artifacts/<id>/views` | publish key | One line per reader: opened, came back, active seconds, plays, devices, comments. A page with no readers yet answers 200 with an empty list; a missing page answers 404 |
+| `GET /api/artifacts/<id>/views` | publish key | One line per reader: opened, came back, active seconds, plays, devices, comments. Each comment is `{ id, parent, at, text }` (see Comment ids in /views). A page with no readers yet answers 200 with an empty list; a missing page answers 404 |
 | `POST /api/artifacts/<id>/seen` | the page itself (public) | The reader's own signal, below |
 
 Config, both on `createArtifactRoutes`: `recipients` (a store from `createRecipientsStore(db, '<collection path>')`, or `memoryRecipientsStore()` in tests) and `recipientSecret`, a function returning the signing secret, read on every request. A secret shorter than 32 characters is treated as unset: per-reader pages stay shut and the routes answer 404 or 501. Signing with an empty secret throws.
@@ -977,6 +990,35 @@ anonymous cookie. Notes left through a group link before the page gained the lin
 the one shared reader (`r:<rid>`) and are shown to no browser afterwards. A named link is one
 reader either way. The feedback window, the feed's `reader: { rid, label }` and the `/views` line
 stay per link: every browser on a group link shares them.
+
+### Comment ids in `/views` (0.43.0)
+
+Each comment in a reader's `comments` array carries the entry id the comments feed calls
+`entryId`, and the id of the comment it replies to:
+
+```json
+{ "rid": "abcdefghijkl", "label": "Anyone with the link", "group": true, "comments": [
+  { "id": "kq3vN8xTz2LwPd5mRa", "parent": null, "at": "2026-10-11T10:01:00.000Z", "text": "Which river?" },
+  { "id": "Jm7cHy4bQe9sUf1xWk", "parent": "kq3vN8xTz2LwPd5mRa", "at": "2026-10-11T10:04:00.000Z", "text": "The north one." } ] }
+```
+
+`at` and `text` are as before. Under `comment_name: required` the notes of every browser on a
+group link are listed under that link's row, each with its own `id`. The publisher's replies are not
+listed. A caller that keeps a local copy of a page's comments compares these ids with
+`GET /api/comments?artifact=<id>` to see exactly which ones it lacks.
+
+**Limit on new browsers.** On a page with `comment_name: required`, the first stored note of each new
+browser through one group link is counted against that link, per minute, on the anonymous write limit
+(30). A browser is new when its reader key has no entry on the page yet, whether or not it arrived with
+an `artifact_anon` cookie. Past the limit the state route answers
+`429 { error: "too many new readers through this link; try again in a minute" }`. Only a stored note is
+counted: a request refused for a missing name, a closed window or a malformed body spends nothing. A
+browser's later notes, a named link and a page without the line are never counted. "Note" here means
+any stored entry in any slot, and a browser that removes its only entry and writes again is new again.
+
+**Removing the line later.** Taking `comment_name: required` off a page turns its group link back into
+one shared reader, and every note left per browser stops being shown to its writer: the notes stay with
+the publisher, under their per-browser keys.
 
 ## Broadcasts (`template: broadcast`)
 
