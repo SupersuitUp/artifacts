@@ -115,8 +115,8 @@ describe('the items each role gets on a public page', () => {
     expect(items(await page(dana))).toEqual(['share', 'sign-out'])
   })
   it('owner and admin: Share, Version history, Copy the markdown, Sign out', async () => {
-    expect(items(await page(owner))).toEqual(['share', 'history', 'markdown', 'sign-out'])
-    expect(items(await page(admin))).toEqual(['share', 'history', 'markdown', 'sign-out'])
+    expect(items(await page(owner))).toEqual(['share', 'history', 'markdown', 'view-as-reader', 'sign-out'])
+    expect(items(await page(admin))).toEqual(['share', 'history', 'markdown', 'view-as-reader', 'sign-out'])
   })
   it('Show / Hide comments only where shared comments are on', async () => {
     rec = { ...base, comments: 'anyone', state: { writers: 'anyone', visibility: 'private', slots: { comments: { shape: 'many', visibility: 'private', writers: 'anyone' } } } }
@@ -213,5 +213,34 @@ describe('admin-only data never reaches anyone else', () => {
     expect(items(html)).toEqual(['share', 'sign-out'])
     expect(await carries(stranger, SOURCE_MARK)).toBe(false)
     expect(html).not.toContain('river runs north')
+  })
+})
+
+// Gary, 2026-10-15: "if you're an admin ... this should be a view as mode ... so I can preview what
+// it looks like on someone else's phone". The owner always saw owner-only chrome (the version number,
+// Version history, the markdown), so there was no way to see the page a reader is sent.
+describe('view as a reader', () => {
+  const asReader = async (who: Reader | null) => renderToStaticMarkup(await routes(who).Page({ params: Promise.resolve({ id: ID }), searchParams: Promise.resolve({ as: 'reader' }) }))
+  it("the owner's page renders as a reader's: no version number, no owner menu, a way back", async () => {
+    for (const who of [owner, admin]) {
+      const html = await asReader(who)
+      expect(html).not.toMatch(/Version \d/)
+      expect(html).toMatch(/Updated /)
+      expect(html).not.toContain('data-page-menu-item="markdown"')
+      expect(role(html)).not.toBe('owner')
+      expect(html).toContain('data-viewing-as-reader')
+      expect(html).toMatch(/href="\/abc23456"[^>]*>Back to your view/)
+    }
+  })
+  it('a reader or visitor asking for it gets exactly the page they already get, and no banner', async () => {
+    for (const who of [null, dana]) {
+      const html = await asReader(who)
+      expect(html).not.toContain('data-viewing-as-reader')
+      expect(html).toBe(await page(who))
+    }
+  })
+  it('a reader is never offered the toggle', async () => {
+    expect(items(await page(dana))).not.toContain('view-as-reader')
+    expect(items(await page(null))).not.toContain('view-as-reader')
   })
 })

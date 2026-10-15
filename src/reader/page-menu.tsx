@@ -38,6 +38,8 @@ export type PageMenuProps = {
   signIn: string | null
   /** This host's sign-out link, when signed in. */
   signOut: string | null
+  /** The owner's or an admin's link to this page as a reader sees it (`?as=reader`). Null for anyone else. */
+  viewAsReader?: string | null
   /** Every version, when this reader may see past versions and there is more than one. */
   history: { items: HistoryItem[]; base: string; viewing: number } | null
   /** The published source, for the owner and admins only. */
@@ -56,7 +58,7 @@ export function roleLine(role: PageRole, name: string | null, shutOut = false): 
 }
 
 /** The items this reader gets, in order. Exported so the server markup and tests can name them. */
-export function menuItems(p: Pick<PageMenuProps, 'share' | 'comments' | 'signIn' | 'signOut' | 'history' | 'markdown' | 'settings'>): string[] {
+export function menuItems(p: Pick<PageMenuProps, 'share' | 'comments' | 'signIn' | 'signOut' | 'history' | 'markdown' | 'settings' | 'viewAsReader'>): string[] {
   return [
     p.share ? 'share' : null,
     p.comments ? 'comments' : null,
@@ -64,6 +66,7 @@ export function menuItems(p: Pick<PageMenuProps, 'share' | 'comments' | 'signIn'
     p.settings && p.settings.comments !== null ? 'comment-settings' : null,
     p.history ? 'history' : null,
     p.markdown !== null ? 'markdown' : null,
+    p.viewAsReader ? 'view-as-reader' : null,
     p.signOut ? 'sign-out' : p.signIn ? 'sign-in' : null,
   ].filter((x): x is string => !!x)
 }
@@ -100,7 +103,7 @@ async function copyText(text: string): Promise<boolean> {
 }
 
 export function PageMenu(props: PageMenuProps) {
-  const { role, name, shutOut, share, comments, signIn, signOut, history, markdown, settings } = props
+  const { role, name, shutOut, share, comments, signIn, signOut, history, markdown, settings, viewAsReader } = props
   const items = menuItems(props)
   const [mounted, setMounted] = useState(false)
   const [open, setOpen] = useState(false)
@@ -268,6 +271,9 @@ export function PageMenu(props: PageMenuProps) {
             <button type="button" role="menuitem" data-page-menu-item="markdown" onClick={() => void onMarkdown()} style={itemStyle}>
               {said === 'Markdown copied' || said === 'Could not copy the markdown' ? said : 'Copy the markdown'}
             </button>
+          ) : null}
+          {viewAsReader ? (
+            <a role="menuitem" data-page-menu-item="view-as-reader" href={viewAsReader} style={itemStyle}>View as a reader</a>
           ) : null}
           {signOut ? (
             <a role="menuitem" data-page-menu-item="sign-out" href={signOut} style={itemStyle}>Sign out</a>

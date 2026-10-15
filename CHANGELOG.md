@@ -3,6 +3,19 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.46.0
+
+**View as a reader.** The owner and admins get "View as a reader" in the page menu: the page reloads
+at `?as=reader`, rendered for no one signed in, so the owner sees exactly what the people they send it
+to see (no version number or Version history unless the page shows them, no Copy the markdown, no
+owner menu), with a bar at the top reading "Viewing as a reader · Back to your view". A preview is not
+counted as a view. Anyone else asking for `?as=reader` gets the page they already get, byte for byte.
+Not yet on `access:` pages, which keep rendering for the signed-in owner.
+
+- DETECTOR: signed in as the owner, open the page menu. Before, no such item.
+- REMEDY: update the dependency.
+- Tests: routes/page-menu.test.tsx, "view as a reader" (3) and the owner's item list.
+
 ## 0.45.0
 
 **The Comments button shows the comments.** Pressing it now opens a list of every comment on the
