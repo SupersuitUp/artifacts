@@ -3,6 +3,20 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.44.2
+
+**An embed's caption no longer throws the read-along out of step.** The caption under a
+` ```simulator ` or ` ```messages ` block was wrapped as read-along words, but the narration skips
+every fenced block, so each caption added words the voice never says and every word after it lit
+early. A page carrying four embeds ran about sixty words ahead by its end. The embed's figure is now
+`data-nospeak`: the caption still shows, and the highlighter skips it as the voice does.
+
+- DETECTOR: on a narrated page with a simulator or messages block, play past the block. Before, the
+  highlight ran ahead of the voice; now it stays on the spoken word.
+- REMEDY: update the dependency. Nothing to change on a page.
+- Tests: "an embed block is not read aloud" in render.test.tsx, both kinds, with and without a
+  player, the wrapped words equal the narrated words.
+
 ## 0.44.1
 
 **Highlighting text works like any page again.** A press in the gap between paragraphs, in a line's

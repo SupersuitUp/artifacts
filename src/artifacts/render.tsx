@@ -167,7 +167,9 @@ function EmbedFence({ kind, source, ctx }: { kind: EmbedKind; source: string; ct
   const src = ctx ? embedSrc(kind, ctx.embed, r.block.value) : null
   const wide = kind === 'simulator' && src != null
   return (
-    <figure data-artifact-embed={kind} {...(kind === 'simulator' ? { 'data-artifact-simulator': '' } : {})} {...(wide ? { 'data-wide': '' } : {})} className="my-8">
+    // data-nospeak: the narration skips every fenced block (narration.ts), so the caption must not
+    // be a read-along word either, or every word after it lights out of step with the voice.
+    <figure data-artifact-embed={kind} data-nospeak {...(kind === 'simulator' ? { 'data-artifact-simulator': '' } : {})} {...(wide ? { 'data-wide': '' } : {})} className="my-8">
       {wide ? <style>{WIDE_EMBED_CSS}</style> : null}
       {src ? <EmbedFrame src={src} title={r.block.caption} height={r.block.height} /> : null}
       <figcaption className="mt-2 text-sm opacity-80">{r.block.caption}</figcaption>

@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { ArtifactMarkdown } from './render.js'
+import { narrationTextFromMarkdown, normalizeWord } from './narration.js'
+import { wrapWords } from '../reader/artifact-reader.js'
 
 const html = (md: string) => renderToStaticMarkup(<ArtifactMarkdown markdown={md} />)
 
@@ -233,4 +235,25 @@ describe('broadcast media', () => {
     expect(out).toContain('<audio')
     expect(out).toContain('data-artifact-media="note.abc12345.m4a"')
   })
+})
+
+// An embed's caption is part of the block, and the narration skips every fenced block, so the
+// read-along must skip it too: a caption the highlighter wraps but the voice never says shifts every
+// word after it out of step (the lightpaper ran ~60 words ahead once it carried four embeds).
+describe('an embed block is not read aloud', () => {
+  for (const kind of ['simulator', 'messages'] as const) {
+    it(`a ${kind} caption is shown but is not a read-along word, with or without the player`, () => {
+      const key = kind === 'simulator' ? 'scenario: diane-meeting-prep' : 'chat: fritz'
+      const md = `Before it.\n\n\`\`\`${kind}\n${key}\ncaption: The caption, in plain words.\n\`\`\`\n\nAfter it.\n`
+      const spoken = narrationTextFromMarkdown(md).split(/\s+/).map(normalizeWord).filter(Boolean)
+      expect(spoken).toEqual(['before', 'it', 'after', 'it'])
+      for (const ctx of [undefined, { embed: 'https://example.com/embed' }]) {
+        const out = renderToStaticMarkup(<ArtifactMarkdown markdown={md} {...{ [kind]: ctx }} />)
+        expect(out).toContain('The caption, in plain words.')
+        const root = document.createElement('div')
+        root.innerHTML = out
+        expect(wrapWords(root).map((w) => normalizeWord(w.textContent ?? '')).filter(Boolean)).toEqual(spoken)
+      }
+    })
+  }
 })
