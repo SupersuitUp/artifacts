@@ -48,6 +48,9 @@ if (speakers) fail(`the package speaks with the browser voice: ${speakers}`)
 const notesJs = readFileSync(join(dest, 'lib/widgets/notes.js'), 'utf8')
 if (!/^['"]use client['"]/.test(notesJs)) fail("compiled notes widget lost its 'use client' directive")
 if (!/^['"]use client['"]/.test(readFileSync(join(dest, 'lib/widgets/checklist.js'), 'utf8'))) fail("compiled checklist widget lost its 'use client' directive")
+if (!/^['"]use client['"]/.test(readFileSync(join(dest, 'lib/widgets/voice-note.js'), 'utf8'))) fail("compiled voice-note widget lost its 'use client' directive")
+// The transcript-fence bin is a file an author runs with npx: it must ship, as a node script.
+if (!readFileSync(join(dest, 'lib/cli/transcript-fence.js'), 'utf8').startsWith('#!/usr/bin/env node')) fail('the supersuit-transcript-fence bin lost its shebang')
 console.log(`check-packed: ${filename}, ${paths.length} files`)
 
 const next = join(root, 'node_modules/next/dist/bin/next')

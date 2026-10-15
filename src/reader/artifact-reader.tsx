@@ -10,8 +10,9 @@
 // where they are and shows a button that brings them back to the voice.
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { nextRate, PlayerBar } from './player-bar.js'
+import { litWordIndex, type WordTiming } from './karaoke.js'
 
-export type WordTiming = { w: string; s: number; e: number }
+export { litWordIndex, type WordTiming }
 
 const SKIP = '[data-nospeak], [data-artifact-links], pre, [data-footnotes], sup, img, style, script'
 
@@ -112,23 +113,6 @@ function align(spans: HTMLSpanElement[], words: WordTiming[]): (HTMLSpanElement 
     j = found + 1
   }
   return out
-}
-
-/** The word to light at `now`, or -1. Nothing lights until narration has started: the first
- *  word begins at 0, so an untouched page would otherwise sit with its first word highlighted. */
-export function litWordIndex(words: WordTiming[], now: number, started: boolean): number {
-  if (!started) return -1
-  let lo = 0
-  let hi = words.length - 1
-  let idx = -1
-  while (lo <= hi) {
-    const mid = (lo + hi) >> 1
-    if (words[mid].s <= now) {
-      idx = mid
-      lo = mid + 1
-    } else hi = mid - 1
-  }
-  return idx >= 0 && now <= words[idx].e + 0.25 ? idx : -1
 }
 
 function fmt(t: number) {

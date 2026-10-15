@@ -620,6 +620,62 @@ visibility: shared   # optional: private | shared
   can leave or read notes; the banner, watermark and print refusal are unchanged. On a public
   page with `writers: signed-in`, the control offers sign-in through `signInOrigin`.
 
+## Voice notes with their words (`transcript`)
+
+An audio line in a page (`![caption](note.m4a)`, or `.mp3`) plays as a clip with the native
+player. Put a `transcript` fence **directly under it** and it becomes a voice note: one card in the
+page's brand with the caption, a play button and a seek line, and the speaker's own words beneath,
+lit one at a time as they are spoken. Words already said read normally, the word being said carries
+the narration's highlight, and the words still to come are a little muted. Tapping a word plays
+from there.
+
+````markdown
+![Robin, to the family](hello.m4a)
+
+```transcript
+0.00 0.62 Hello!
+0.80 1.10 I
+1.10 1.30 hope
+
+2.00 2.40 Love,
+2.40 2.90 Robin
+```
+````
+
+- **One word per line: its start and end in seconds, then the word as it should read.** A phrase
+  timed together is one line; any script works. **A blank line starts a new paragraph.**
+- **The audio stays plain image syntax**, so the publisher uploads a local file as it does any clip
+  (including under `media: private`) and needs no change. The words travel inside the page.
+- **Refused at publish, naming the line in the file:** a line that is not `<start> <end> <word>`, a
+  word that ends before it starts, a word that starts before the word above it, an empty fence, a
+  name after `transcript`, and a `transcript` fence with no audio line directly above it (a second
+  fence under one note included).
+- **The page's narration skips it** (the card is `data-nospeak`, and the narration text never reads
+  images or fences): a reader hears the speaker, never a robot reading the speaker.
+- **On a phone:** nothing is fetched until play (`preload="none"`), no autoplay, `playsinline`. A
+  tapped word before the clip has loaded seeks once its metadata arrives. Starting a note pauses any
+  other audio on the page, the narration included.
+- **Play tracking is unchanged:** the `<audio>` keeps `data-artifact-media`, so a play counts like
+  any clip. The note keeps the audio line's comment anchor.
+- An audio line **without** a transcript fence renders exactly as before.
+
+**Making the fence** (never by hand): `supersuit-transcript-fence` ships with the package and runs
+a transcriber already on your machine, locally, with word timestamps: `mlx_whisper` (Apple Silicon,
+`pip install mlx-whisper`), else openai-whisper's `whisper`. The package itself carries no
+transcriber.
+
+```bash
+npx -p @supersuit/artifacts supersuit-transcript-fence hello.m4a > fence.md
+# --language zh   the spoken language, when auto-detect guesses wrong
+# --gap 1.5       seconds of silence that start a new paragraph (default 1.5)
+# --model <name>  the whisper model (default mlx-community/whisper-large-v3-turbo)
+# --body          the lines only, without the ``` fence
+```
+
+Paste it under the audio line, then correct any word (a name, a phrase in another language)
+and keep its two times. `transcriptFenceFromWords` and `wordsFromWhisperJson` (from
+`@supersuit/artifacts/artifacts`) do the same from code.
+
 ## Comments and personal notes
 
 Every page takes comments pinned to any part of it. A reader selects text (a **Comment** chip

@@ -5,6 +5,7 @@
 //   ```links   one "url | note" per line, rendered as link cards
 //   ```checklist   items a reader ticks, kept in their browser (widgets/checklist.tsx)
 //   > [!note] / > [!warning]   a callout instead of a blockquote
+//   ```transcript   right under an audio line: a voice note whose words light up as spoken (voice-note.ts)
 // A checklist's item text and descriptions are markdown drawn by the same safe renderer: raw
 // HTML escaped, links only where a reader can follow them, no images.
 import { Children, isValidElement, type ComponentType, type ReactElement, type ReactNode } from 'react'
@@ -24,6 +25,8 @@ import { VideoAutoplay } from '../reader/video-autoplay.js'
 import { CodeCopy } from '../reader/code-copy.js'
 import { DefinitionLayer } from '../reader/definition-layer.js'
 import { remarkDefinitions, type Definition } from './definitions.js'
+import { AUDIO_SRC, remarkVoiceNotes, TRANSCRIPT_LANG, type VoiceNoteBlock } from './voice-note.js'
+import { VoiceNote } from '../widgets/voice-note.js'
 
 // Every colour is a theme variable (brand/theme.ts), so a page follows its light, dark or system mode.
 const GOLD = 'var(--a-accent)'
@@ -102,7 +105,7 @@ const VIDEO = /\.mp4(?:[?#].*)?$/i
 /** `![caption](x.mp3)` is a clip the reader plays: an annotated conversation, a voice note, a
  *  quote heard rather than read. Native controls, and `preload="none"` so a page of clips fetches
  *  nothing until one is pressed. The alt is its caption, shown above the player. */
-const AUDIO = /\.(mp3|m4a)(?:[?#].*)?$/i
+const AUDIO = AUDIO_SRC
 /** The stored file's name, for play tracking: the last path segment before any query. */
 const mediaName = (src: string) => {
   const last = src.split(/[?#]/)[0].split('/').pop() ?? ''
@@ -231,8 +234,16 @@ function ChecklistFence({ line, ctx }: { line: number; ctx: ChecklistCtx }) {
   )
 }
 
-function baseComponents(block: BlockAttr, figure?: FigureFor, checklists?: ChecklistCtx, embeds?: EmbedCtx): Components {
+function baseComponents(block: BlockAttr, figure?: FigureFor, checklists?: ChecklistCtx, embeds?: EmbedCtx, voiceNotes?: VoiceNoteBlock[]): Components {
   return {
+  // A voice note (remarkVoiceNotes): the audio line and its transcript, drawn as one keepsake.
+  div: ({ node, ...props }) => {
+    const at = (props as Record<string, unknown>)['data-artifact-voicenote-at']
+    const v = at === undefined ? undefined : voiceNotes?.[Number(at)]
+    // Any other div (a section body, a definition) is drawn as it would be with no override.
+    if (!v) return <div {...props} />
+    return <VoiceNote src={artifactUrlTransform(v.src)} label={v.label} media={mediaName(v.src)} paragraphs={v.paragraphs} block={block(node) as Record<string, string>} />
+  },
   p: ({ node, children }) => {
     // An image alone in its paragraph that the pack draws itself replaces the paragraph, so the
     // pack's figure may hold block content (a <p> cannot) and still carry the comment anchor.
@@ -303,6 +314,8 @@ function baseComponents(block: BlockAttr, figure?: FigureFor, checklists?: Check
     // A notes fence is the widget's place on the page. Without notes enabled (the host keeps no
     // answers) it draws nothing: its settings are not prose and never shown as code.
     if (lang === 'notes') return null
+    // A transcript not under an audio line draws nothing (publish refuses one; an old page may hold it).
+    if (lang === TRANSCRIPT_LANG) return null
     if (lang === 'simulator' || lang === 'messages') return <EmbedFence kind={lang} source={textOf(children)} ctx={embeds?.[lang]} />
     if (!className) {
       return <code className="rounded bg-[color:var(--a-surface-strong)] px-1.5 py-0.5 text-[0.9em] text-[color:var(--a-strong)]">{children}</code>
@@ -313,7 +326,7 @@ function baseComponents(block: BlockAttr, figure?: FigureFor, checklists?: Check
     // A links fence renders its own block; do not wrap it in <pre>.
     const inner = Array.isArray(children) ? children[0] : children
     const cls = (inner as { props?: { className?: string } })?.props?.className ?? ''
-    if (/language-(links|notes|checklist|simulator|messages)/.test(cls)) return <>{children}</>
+    if (/language-(links|notes|checklist|simulator|messages|transcript)/.test(cls)) return <>{children}</>
     return (
       <pre
         {...block(node)}
@@ -370,7 +383,7 @@ const HEADING_CLASS: Record<number, string> = {
 
 /** Components for any page: every heading gets its slug as an id, the one headingsOf derived,
  *  so a contents link and a note both land on it. */
-function pageComponents(headings: Heading[], block: BlockAttr, figure?: FigureFor, checklists?: ChecklistCtx, embeds?: EmbedCtx): Components {
+function pageComponents(headings: Heading[], block: BlockAttr, figure?: FigureFor, checklists?: ChecklistCtx, embeds?: EmbedCtx, voiceNotes?: VoiceNoteBlock[]): Components {
   const byLine = new Map(headings.map((h) => [h.line, h]))
   const heading = (depth: 1 | 2 | 3 | 4 | 5 | 6): Components['h1'] =>
     function Heading({ node, children }) {
@@ -378,14 +391,14 @@ function pageComponents(headings: Heading[], block: BlockAttr, figure?: FigureFo
       const h = byLine.get(node?.position?.start.line ?? -1)
       return <Tag id={h?.slug} {...block(node)} className={HEADING_CLASS[depth]}>{children}</Tag>
     }
-  return { ...baseComponents(block, figure, checklists, embeds), h1: heading(1), h2: heading(2), h3: heading(3), h4: heading(4), h5: heading(5), h6: heading(6) }
+  return { ...baseComponents(block, figure, checklists, embeds, voiceNotes), h1: heading(1), h2: heading(2), h3: heading(3), h4: heading(4), h5: heading(5), h6: heading(6) }
 }
 
 /** Components for a page with a notes block: every heading gets its slug as an id, a note
  *  control, and its notes after it. The heading is found by its source line, so the slug is the
  *  one headingsOf derived, the same one a note stores. */
-function notesComponents(headings: Heading[], block: BlockAttr, figure?: FigureFor, checklists?: ChecklistCtx, embeds?: EmbedCtx): Components {
-  const components = baseComponents(block, figure, checklists, embeds)
+function notesComponents(headings: Heading[], block: BlockAttr, figure?: FigureFor, checklists?: ChecklistCtx, embeds?: EmbedCtx, voiceNotes?: VoiceNoteBlock[]): Components {
+  const components = baseComponents(block, figure, checklists, embeds, voiceNotes)
   const byLine = new Map(headings.map((h) => [h.line, h]))
   const heading = (depth: 1 | 2 | 3 | 4 | 5 | 6): Components['h1'] =>
     function NotedHeading({ node, children }) {
@@ -524,14 +537,17 @@ export function ArtifactMarkdown({
   }
   const defined = definitions?.length ? definitions : null
   const outline = Section ? sectionOutline(markdown, headings) : []
-  const plugins = [remarkGfm, ...(defined ? [remarkDefinitions(defined)] : []), ...(outline.length ? [remarkSections(outline[0].depth)] : [])]
+  // Voice notes first, so a section groups the note node the pair became.
+  const voiceNotes: VoiceNoteBlock[] = []
+  const voiced = /^ {0,3}(`{3,}|~{3,})\s*transcript\b/m.test(markdown)
+  const plugins = [remarkGfm, ...(voiced ? [remarkVoiceNotes(voiceNotes)] : []), ...(defined ? [remarkDefinitions(defined)] : []), ...(outline.length ? [remarkSections(outline[0].depth)] : [])]
   const lists = /^ {0,3}(`{3,}|~{3,})\s*checklist\b/m.test(markdown) ? checklistsOf(markdown) : null
   const checklists: ChecklistCtx | undefined = lists
     // `send` from the host means it keeps answers and the page declared the `checklist` slot; on a
     // page whose checklists sync, that same slot is the shared set, so it turns sync on instead.
     ? { byLine: lists, artifactId: checklist?.artifactId, send: !!checklist?.send, sync: !!checklist?.send && checklistSyncs(lists.values()), owner: checklist?.owner, accent: checklist?.accent }
     : undefined
-  const components = on ? notesComponents(headings, block, figure, checklists, embeds) : pageComponents(headings, block, figure, checklists, embeds)
+  const components = on ? notesComponents(headings, block, figure, checklists, embeds, voiceNotes) : pageComponents(headings, block, figure, checklists, embeds, voiceNotes)
   if (outline.length) components.section = sectionComponent(Section!, outline, block)
   const body = (
     <ReactMarkdown remarkPlugins={plugins} components={components} urlTransform={artifactUrlTransform}>

@@ -3,6 +3,44 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.44.0
+
+**Voice notes with their own words, lit as they are spoken.** An audio line followed directly by a
+` ```transcript ` fence of timed words (`<start> <end> <word>` per line, a blank line for a new
+paragraph) now draws one card in the page's brand: the caption, a play button and a seek line
+instead of the native bar, and the transcript beneath, where the word being spoken carries the
+narration's highlight, words already said read normally and words to come are muted. Tapping a word
+plays from there. Additive: a page with no transcript fence renders byte for byte as 0.43.0.
+
+- Publish refuses, with the line in the file: a malformed transcript line, an end before its start,
+  a start before the word above, an empty fence, a name after `transcript`, and a transcript with no
+  audio line directly above it.
+- The card is `data-nospeak` (the narration already skips images and fences), keeps
+  `data-artifact-media` on its `<audio>` for play tracking and the audio line's comment anchor, and
+  plays on iPhone with `preload="none"`, `playsinline` and no autoplay. Starting a note pauses any
+  other audio on the page.
+- The karaoke primitives moved to `src/reader/karaoke.ts` and are shared by the narration and the
+  voice note: `litWordIndex` (same behaviour, still exported from `./reader`), new `begunCount`, and
+  one highlight rule.
+- New bin `supersuit-transcript-fence <audio>`: runs a local transcriber already on the machine
+  (`mlx_whisper`, else `whisper`) with word timestamps and prints the fence. The package carries no
+  transcriber. New exports from `./artifacts`: `parseTranscriptFence`, `scanVoiceNotes`,
+  `transcriptFenceFromWords`, `wordsFromWhisperJson`, `isAudioSrc`, `TRANSCRIPT_LANG`,
+  `MAX_TRANSCRIPT_WORDS`.
+
+DETECTOR: a page whose body already holds a ` ```transcript ` fence (it rendered as a code block)
+now publishes only when that fence parses and sits under an audio line: `rg -n '^```transcript' <pages>`.
+A host whose Tailwind build does not scan this package's `lib/` would draw the card unstyled; the
+existing widgets need the same scan.
+
+REMEDY: none for most hosts; bump. A page that used `transcript` as a plain code label renames the
+fence (```text).
+
+Tests: `src/artifacts/voice-note.test.ts` (grammar, publish refusals with line numbers, comment
+anchors, fence writer, whisper JSON), `src/widgets/voice-note.test.tsx` (the card's markup, iPhone
+attributes, an audio line without a transcript byte-identical to 0.43.0, lighting, tap to seek,
+seek before load).
+
 ## 0.43.0
 
 **A comment's id per reader in `/views`, the comments feed for one page, and a limit on new browsers

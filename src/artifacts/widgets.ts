@@ -19,6 +19,7 @@ import type { StateConfig, Visibility } from './state.js'
 import { blockId } from './anchor.js'
 import { MAX_NOTE_CHARS, NOTES_SLOT, type Heading } from './notes-place.js'
 import { isEmbedKind, parseEmbedFence } from './simulator.js'
+import { scanVoiceNotes, TRANSCRIPT_LANG } from './voice-note.js'
 import { CHECKLIST_SLOT, assignChecklistIds, parseChecklistFence, type ChecklistBlock, type ChecklistItem, type RawChecklistBlock } from './checklist.js'
 
 export { MAX_NOTE_CHARS, NOTES_SLOT, placeNotes, type Heading, type NoteValue, type PlacedNote } from './notes-place.js'
@@ -78,7 +79,8 @@ export function headingsOf(markdown: string): Heading[] {
 export function scanWidgets(body: string, offset: number):
   { ok: true; notes: NotesWidget | null; checklists: ChecklistBlock[] } | { ok: false; error: string } {
   const fences: Code[] = []
-  walk(parse(body).children, (n) => { if (n.type === 'code') fences.push(n) })
+  const tree = parse(body)
+  walk(tree.children, (n) => { if (n.type === 'code') fences.push(n) })
   let notes: NotesWidget | null = null
   for (const f of fences) {
     const line = (f.position?.start.line ?? 1) + offset
@@ -105,6 +107,8 @@ export function scanWidgets(body: string, offset: number):
     const r = parseEmbedFence(f.lang, f.value, (f.position?.start.line ?? 1) + offset)
     if (!r.ok) return r
   }
+  const voiced = scanVoiceNotes(tree, offset)
+  if (!voiced.ok) return voiced
   const lists = scanChecklists(fences, offset)
   if (!lists.ok) return lists
   return { ok: true, notes, checklists: lists.checklists }
@@ -258,7 +262,7 @@ export function blocksOf(markdown: string): Map<number, string> {
     else if (n.type === 'table') { kind = 'table'; content = plain(n) }
     else if (n.type === 'blockquote') { kind = 'quote'; content = plain(n) }
     else if (n.type === 'code') {
-      if (n.lang === 'links' || n.lang === NOTES_SLOT || n.lang === 'checklist') continue
+      if (n.lang === 'links' || n.lang === NOTES_SLOT || n.lang === 'checklist' || n.lang === TRANSCRIPT_LANG) continue
       kind = 'code'; content = n.value
     } else continue
     const k = `${kind}\n${content}`

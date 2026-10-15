@@ -20,6 +20,9 @@
   ],
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
+  "bin": {
+    "supersuit-transcript-fence": "lib/cli/transcript-fence.js"
+  },
   "exports": {
     ".": {
       "types": "./lib/index.d.ts",

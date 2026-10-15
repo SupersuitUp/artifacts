@@ -8,6 +8,7 @@
 // button, the seek line, the progress and the speed. The speed button has a FIXED width wide enough
 // for its longest label ("1.25x"), so stepping 1x -> 1.25x -> 2x never resizes it and never shifts
 // the seek line beside it (Gary: "the bottom bar speed dial shouldn't cause reflow when clicked").
+import { litDeclarations } from './karaoke.js'
 
 export function PlayerBar({
   playing,
@@ -42,7 +43,7 @@ export function PlayerBar({
       <style>{`
         .artifact-word { border-radius: 3px; transition: background-color 120ms; }
         .artifact-word:hover { background: var(--a-surface-strong, rgba(255,255,255,0.08)); cursor: pointer; }
-        .artifact-word-lit { background: color-mix(in srgb, ${accent} 35%, transparent); color: var(--a-strong, #fff); }
+        .artifact-word-lit { ${litDeclarations(accent)} }
       `}</style>
       <div data-artifact-player className="fixed inset-x-0 bottom-0 z-40 border-t border-[color:var(--a-line)] backdrop-blur" style={{ background: `color-mix(in srgb, ${ground} 90%, transparent)` }}>
         <div className="mx-auto flex max-w-2xl items-center gap-4 px-6 py-3">

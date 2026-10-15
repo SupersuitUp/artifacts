@@ -1,6 +1,7 @@
 // The `./reader` entry: the reader and the bar it uses. Each component module carries its
 // own 'use client'; this barrel is plain re-exports so it can be imported from either side.
 export { ArtifactReader, wrapWords, seekableWord, litWordIndex, type WordTiming } from './artifact-reader.js'
+export { begunCount } from './karaoke.js'
 export { PlayerBar } from './player-bar.js'
 export { QuietView } from './quiet-view.js'
 export { CommentLayer } from './comment-layer.js'
