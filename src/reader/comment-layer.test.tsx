@@ -131,6 +131,18 @@ describe('CommentLayer', () => {
     }
   })
 
+  it('Escape cancels the comment being written, saving nothing', async () => {
+    stubFetch()
+    await mount()
+    selectWord('river', 1)
+    await act(async () => { document.getElementById('root')!.dispatchEvent(new MouseEvent('mouseup', { bubbles: true })) })
+    await act(async () => { document.querySelector<HTMLButtonElement>('[data-comment-chip]')!.click() })
+    expect(document.querySelector('[data-comment-card]')).not.toBeNull()
+    await act(async () => { document.querySelector('textarea')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })) })
+    expect(document.querySelector('[data-comment-card]')).toBeNull()
+    expect(deviceNotes('abc23456')).toHaveLength(0)
+  })
+
   it('a reader without comment access selects text, sees the warning before typing, and the note stays on the device', async () => {
     stubFetch()
     await mount()

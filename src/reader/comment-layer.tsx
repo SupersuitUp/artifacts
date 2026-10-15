@@ -256,6 +256,21 @@ export function CommentLayer({
     return () => { live = false; window.removeEventListener('resize', relayout); ro?.disconnect() }
   }, [artifactId, comments, signedIn, stateUrl, personalUrl, rootId, call, refreshDevice, host, audioDb])
 
+  // Escape closes the top card: the comment being written, else the open thread, else the panel.
+  // Writing a comment is a draft nobody has saved, so Escape is its Cancel.
+  useEffect(() => {
+    if (!draft && !thread && !panel) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return
+      e.preventDefault()
+      if (draft) setDraft(null)
+      else if (thread) { setThread(null); setExpanded(null) }
+      else setPanel(false)
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [draft, thread, panel])
+
   // Text selection inside the page shows the Comment chip.
   useEffect(() => {
     const root = document.getElementById(rootId)
