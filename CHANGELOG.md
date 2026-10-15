@@ -3,6 +3,16 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.44.3
+
+**Escape closes a comment card.** Pressing Escape cancels the comment being written (nothing is
+saved), or closes the open thread, or the comments panel, topmost first. It ignores an Escape
+another layer already handled, so the definition popover and page menu keep theirs.
+
+- DETECTOR: select text, press Comment, press Escape. Before, the card stayed open.
+- REMEDY: update the dependency.
+- Tests: comment-layer.test.tsx, "Escape cancels the comment being written, saving nothing".
+
 ## 0.44.2
 
 **An embed's caption no longer throws the read-along out of step.** The caption under a
@@ -16,16 +26,6 @@ early. A page carrying four embeds ran about sixty words ahead by its end. The e
 - REMEDY: update the dependency. Nothing to change on a page.
 - Tests: "an embed block is not read aloud" in render.test.tsx, both kinds, with and without a
   player, the wrapped words equal the narrated words.
-
-## 0.44.3
-
-**Escape closes a comment card.** Pressing Escape cancels the comment being written (nothing is
-saved), or closes the open thread, or the comments panel, topmost first. It ignores an Escape
-another layer already handled, so the definition popover and page menu keep theirs.
-
-- DETECTOR: select text, press Comment, press Escape. Before, the card stayed open.
-- REMEDY: update the dependency.
-- Tests: comment-layer.test.tsx, "Escape cancels the comment being written, saving nothing".
 
 ## 0.44.1
 
