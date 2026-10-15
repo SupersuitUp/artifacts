@@ -3,6 +3,19 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.45.0
+
+**The Comments button shows the comments.** Pressing it now opens a list of every comment on the
+page, in page order with open threads first and resolved ones after: the quoted words, the first
+lines of the comment, and who left it. Tapping one closes the list, scrolls to the comment and
+opens its thread, the same jump a `#comment-<id>` link makes. A comment on an earlier version
+jumps to its entry in "Comments on earlier versions". The help line and the Hide comments toggle
+stay below the list.
+
+- DETECTOR: on a page with comments, press "Comments · N". Before, only the help text showed.
+- REMEDY: update the dependency.
+- Tests: comment-layer.test.tsx, "the Comments button lists every comment, and a tap opens that thread".
+
 ## 0.44.3
 
 **Escape closes a comment card.** Pressing Escape cancels the comment being written (nothing is

@@ -203,6 +203,21 @@ describe('CommentLayer', () => {
     expect(shared.querySelector('[data-comment-reply]')).not.toBeNull()
   })
 
+  it('the Comments button lists every comment, and a tap opens that thread', async () => {
+    stubFetch({ shared: [
+      { id: 's1', name: 'Sam', value: value(text('floods'), 'Second on the page'), at: '2026-09-28T00:00:00Z' },
+      { id: 's2', name: 'Jo', value: value(text('Sales'), 'First on the page'), at: '2026-09-28T00:00:01Z' },
+    ] })
+    await mount({ comments: 'anyone', canShare: true })
+    await act(async () => { document.querySelector<HTMLButtonElement>('[data-comment-button]')!.click() })
+    const rows = [...document.querySelectorAll('[data-comment-list-item]')]
+    expect(rows.map((r) => r.getAttribute('data-comment-list-item'))).toHaveLength(2)
+    expect(rows.map((r) => r.textContent).join('|')).toContain('Second on the page')
+    await act(async () => { document.querySelector<HTMLButtonElement>('[data-comment-list-item="s1"]')!.click() })
+    expect(document.querySelector('[data-comment-panel]')).toBeNull()
+    expect(document.querySelector('[data-comment-thread]')!.textContent).toContain('Second on the page')
+  })
+
   it('the toggle hides every pin for clean reading', async () => {
     stubFetch({ shared: [{ id: 's1', name: 'Sam', value: value(text('floods'), 'Theirs'), at: '2026-09-28T00:00:00Z' }] })
     await mount({ comments: 'anyone', canShare: true })

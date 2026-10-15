@@ -531,6 +531,8 @@ export function CommentLayer({
   const open = layout.placed.find((p) => p.item.id === thread)
   const openItem = open?.item ?? layout.earlier.find((i) => i.id === thread)
   const count = tops.filter((i) => !resolvedOf(i)).length
+  const inPageOrder = [...layout.placed.map((p) => p.item).filter((i) => tops.includes(i)), ...layout.earlier.filter((i) => tops.includes(i))]
+  const panelList = [...inPageOrder.filter((i) => !resolvedOf(i)), ...inPageOrder.filter((i) => resolvedOf(i))]
   const overlay: ReactNode = mounted ? (
     <div data-comment-ui data-nospeak className="font-sans" style={theme as CSSProperties}>
       {missing ? (
@@ -586,7 +588,27 @@ export function CommentLayer({
       ) : null}
       <div className="fixed right-4 z-40 flex flex-col items-end gap-2" style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 5.5rem)' }}>
         {panel ? (
-          <div data-comment-panel className="w-64 rounded-xl border border-[color:var(--a-line-strong)] bg-[color:var(--a-surface)] p-3 text-xs text-[color:var(--a-strong)] shadow-xl">
+          <div data-comment-panel className="flex max-h-[min(70vh,32rem)] w-80 max-w-[calc(100vw-2rem)] flex-col rounded-xl border border-[color:var(--a-line-strong)] bg-[color:var(--a-surface)] p-3 text-xs text-[color:var(--a-strong)] shadow-xl">
+            {/* Every comment, in page order, open ones first. The button says how many there are, so
+                pressing it shows them; a tap scrolls to the comment and opens its thread (Gary,
+                2026-10-15: "I have to like scroll somewhere in the page to find the comment"). */}
+            {panelList.length ? (
+              <ul data-comment-list className="-mx-1 mb-2 min-h-0 flex-1 list-none overflow-y-auto p-0">
+                {panelList.map((item) => (
+                  <li key={item.id} className="m-0">
+                    <button type="button" data-comment-list-item={item.id} onClick={() => { setPanel(false); setTarget(item.id) }}
+                      className="w-full rounded-lg px-2 py-2 text-left hover:bg-[color:var(--a-line)]"
+                      style={resolvedOf(item) ? { opacity: 0.6 } : undefined}>
+                      <span className="block truncate text-[12px] italic opacity-70">
+                        {resolvedOf(item) ? '✓ ' : ''}{item.value.anchor.kind === 'text' ? `“${item.value.anchor.quote}”` : 'A box on the page'}
+                      </span>
+                      <span className="line-clamp-2 block text-[14px] leading-snug">{item.value.body}</span>
+                      <span className="block text-[11px] opacity-60">{item.kind === 'personal' ? 'only you' : item.name}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
             <p className="opacity-80">Select any text, or hold and drag a box over an image, to leave a comment.</p>
             {isOwner ? <p data-comment-owner className="mt-1 opacity-80">This is your page: you see every comment, with the name of who left it.</p> : null}
             <button type="button" data-comment-pins-toggle className="mt-2 underline" onClick={() => setShowPins((v) => !v)}>
