@@ -676,6 +676,43 @@ Paste it under the audio line, then correct any word (a name, a phrase in anothe
 and keep its two times. `transcriptFenceFromWords` and `wordsFromWhisperJson` (from
 `@supersuit/artifacts/artifacts`) do the same from code.
 
+## Embedded players (`simulator`, `messages`, `figure`, `helm`)
+
+Four fences play a page the HOST serves, inline, in a frame under a caption:
+
+| Fence | Names | Default height | Plays |
+| --- | --- | --- | --- |
+| `simulator` | `scenario: <id>` (required) | 720px | a Supersuit Session demo |
+| `messages` | `chat: <id>` (optional) | 760px | a Messages-app phone, open on one thread or the list |
+| `figure` | `figure: <id>` (required) | 560px | an interactive figure |
+| `helm` | `scene: <id>` (required), `autoplay: true` (optional) | 760px | a scene on a Helm phone |
+
+````markdown
+```figure
+figure: doug-week
+caption: A week of Doug, before and after.
+height: 560px        # optional
+```
+
+```helm
+scene: doug-walk
+caption: A year later, on the reservoir loop.
+autoplay: true       # optional, true or false
+```
+````
+
+- **Every block needs a `caption`**, the line a reader sees under the player. Publish refuses a
+  block with no caption, no required id, an id that is not lowercase letters, digits and dashes, a
+  height that is not pixels, or an unknown key, naming the line in the file.
+- **The host names each player's embed page** (`simulatorEmbed`, `messagesEmbed`, `figureEmbed`,
+  `helmEmbed` in `createArtifactRoutes`, each an https URL; or `embeds` on `ArtifactMarkdown`). The
+  frame loads it with the id (`?figure=doug-week`, `?scene=doug-walk`) and `fit=content`. There is
+  no default: a host that names no page for a kind shows that block's caption alone, never its
+  source as code, which is also what print and a page with the player blocked show.
+- **The frame fits its player.** It opens at `height:` and takes the height the embed page posts
+  as `{ type: 'embed:fit', height }` from its own origin.
+- **Narration skips it**, caption included, and it carries no comment anchor.
+
 ## Comments and personal notes
 
 Every page takes comments pinned to any part of it. A reader selects text (a **Comment** chip

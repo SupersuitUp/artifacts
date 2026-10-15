@@ -216,6 +216,44 @@ describe('the messages block', () => {
   })
 })
 
+describe('the figure and helm blocks', () => {
+  const figure = '```figure\nfigure: doug-week\ncaption: A week of Doug, before and after.\n```\n'
+  const helm = '```helm\nscene: doug-walk\ncaption: A year later, on the reservoir loop.\nautoplay: true\n```\n'
+  const embeds = { figure: { embed: 'https://example.com/figures/embed' }, helm: { embed: 'https://example.com/helm/embed' } }
+  it('plays a figure inline from the host\'s figure page, lazily, at its default height, with its caption', () => {
+    const out = renderToStaticMarkup(<ArtifactMarkdown markdown={figure} embeds={embeds} />)
+    expect(out).toContain('src="https://example.com/figures/embed?figure=doug-week&amp;fit=content"')
+    expect(out).toContain('loading="lazy"')
+    expect(out).toMatch(/<iframe[^>]*title="A week of Doug, before and after."/)
+    expect(out).toMatch(/<iframe[^>]*style="height:560px/)
+    expect(out).toContain('data-artifact-embed="figure"')
+    expect(out).toContain('<figcaption class="mt-2 text-sm opacity-80">A week of Doug, before and after.</figcaption>')
+    expect(out).not.toContain('<pre')
+    expect(out).not.toContain('data-wide')
+  })
+  it('plays a Helm scene inline, with autoplay when the block asks, at the block\'s height', () => {
+    const out = renderToStaticMarkup(<ArtifactMarkdown markdown={helm.replace('autoplay', 'height: 820px\nautoplay')} embeds={embeds} />)
+    expect(out).toContain('src="https://example.com/helm/embed?scene=doug-walk&amp;autoplay=true&amp;fit=content"')
+    expect(out).toMatch(/<iframe[^>]*style="height:820px/)
+    expect(out).toContain('data-artifact-embed="helm"')
+    expect(out).toContain('A year later, on the reservoir loop.')
+  })
+  it('on a host that names no figure or Helm page, shows the caption and never the block as code', () => {
+    for (const md of [figure, helm]) {
+      const out = html(md)
+      expect(out).not.toContain('<iframe')
+      expect(out).not.toContain('<pre')
+      expect(out).toMatch(/<figcaption[^>]*>A (week|year)/)
+    }
+  })
+  it('a malformed block draws nothing rather than its source', () => {
+    const out = renderToStaticMarkup(<ArtifactMarkdown markdown={'```helm\ncaption: no scene\n```\n'} embeds={embeds} />)
+    expect(out).not.toContain('<iframe')
+    expect(out).not.toContain('<pre')
+    expect(out).not.toContain('no scene')
+  })
+})
+
 
 describe('broadcast media', () => {
   it('a sound: video plays with controls and sound, never muted or looping', () => {
@@ -241,14 +279,15 @@ describe('broadcast media', () => {
 // read-along must skip it too: a caption the highlighter wraps but the voice never says shifts every
 // word after it out of step (the lightpaper ran ~60 words ahead once it carried four embeds).
 describe('an embed block is not read aloud', () => {
-  for (const kind of ['simulator', 'messages'] as const) {
+  const keys = { simulator: 'scenario: diane-meeting-prep', messages: 'chat: fritz', figure: 'figure: doug-week', helm: 'scene: doug-walk' }
+  for (const kind of ['simulator', 'messages', 'figure', 'helm'] as const) {
     it(`a ${kind} caption is shown but is not a read-along word, with or without the player`, () => {
-      const key = kind === 'simulator' ? 'scenario: diane-meeting-prep' : 'chat: fritz'
+      const key = keys[kind]
       const md = `Before it.\n\n\`\`\`${kind}\n${key}\ncaption: The caption, in plain words.\n\`\`\`\n\nAfter it.\n`
       const spoken = narrationTextFromMarkdown(md).split(/\s+/).map(normalizeWord).filter(Boolean)
       expect(spoken).toEqual(['before', 'it', 'after', 'it'])
       for (const ctx of [undefined, { embed: 'https://example.com/embed' }]) {
-        const out = renderToStaticMarkup(<ArtifactMarkdown markdown={md} {...{ [kind]: ctx }} />)
+        const out = renderToStaticMarkup(<ArtifactMarkdown markdown={md} embeds={{ [kind]: ctx }} />)
         expect(out).toContain('The caption, in plain words.')
         const root = document.createElement('div')
         root.innerHTML = out

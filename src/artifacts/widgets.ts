@@ -262,7 +262,9 @@ export function blocksOf(markdown: string): Map<number, string> {
     else if (n.type === 'table') { kind = 'table'; content = plain(n) }
     else if (n.type === 'blockquote') { kind = 'quote'; content = plain(n) }
     else if (n.type === 'code') {
-      if (n.lang === 'links' || n.lang === NOTES_SLOT || n.lang === 'checklist' || n.lang === TRANSCRIPT_LANG) continue
+      // An embed block draws a player and a caption the reader cannot comment on (data-nospeak, no
+      // data-block), so it takes no anchor either.
+      if (n.lang === 'links' || n.lang === NOTES_SLOT || n.lang === 'checklist' || n.lang === TRANSCRIPT_LANG || isEmbedKind(n.lang)) continue
       kind = 'code'; content = n.value
     } else continue
     const k = `${kind}\n${content}`

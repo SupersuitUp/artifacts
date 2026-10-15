@@ -9,7 +9,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { isPublisherAuthed } from '../artifacts/auth.js'
 import { ARTIFACT_KINDS, parseArtifactSource, type ArtifactKind } from '../artifacts/front-matter.js'
 import { narrationText } from '../artifacts/narration.js'
-import { ArtifactMarkdown } from '../artifacts/render.js'
+import { ArtifactMarkdown, type EmbedCtx } from '../artifacts/render.js'
 import { CHECKLIST_SLOT } from '../artifacts/checklist.js'
 import { ArtifactDoor } from '../artifacts/door.js'
 import { isUnlocked, keyHash, unlockCookieName } from '../artifacts/unlock.js'
@@ -78,6 +78,13 @@ export type ArtifactRoutesConfig = {
   /** The embed page of this host's Messages phone (an https URL), for ```messages blocks: a
    *  `chat=<id>` opens one thread. Without it a block shows its caption only. No default. */
   messagesEmbed?: string
+  /** The embed page of this host's interactive figures (an https URL, e.g.
+   *  https://example.com/figures/embed), for ```figure blocks: `figure=<id>` opens one. Without it
+   *  a block shows its caption only. No default. */
+  figureEmbed?: string
+  /** The embed page of this host's Helm player (an https URL), for ```helm blocks: `scene=<id>`
+   *  plays one, `autoplay=true` when the block asks. Without it a block shows its caption only. No default. */
+  helmEmbed?: string
   /** Read at request time, so a rotated key needs no rebuild. */
   publishKey: () => string | undefined
   /** Verifies publisher passes (`p1`, see artifacts/publisher.ts): a signed, hour-long stand-in
@@ -214,6 +221,10 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
   // The version in the URL is what makes a re-publish show up: every unfurler caches by URL.
   const signInOrigin = config.signInOrigin
   const owner = config.owner ?? brand.name
+  // The embed page of each player this host serves, for every ArtifactMarkdown below.
+  const embeds: EmbedCtx = {}
+  for (const [kind, url] of [['simulator', config.simulatorEmbed], ['messages', config.messagesEmbed], ['figure', config.figureEmbed], ['helm', config.helmEmbed]] as const)
+    if (url) embeds[kind] = { embed: url }
   const ownerEmail = config.ownerEmail?.trim().toLowerCase()
   const admins = new Set([ownerEmail, ...(config.admins ?? []).map((e) => e.trim().toLowerCase())].filter((e): e is string => !!e))
   /** Whether this reader may see this page's version number and past versions: the page's own
@@ -712,7 +723,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
             </div>
           )}
         >
-          <ArtifactMarkdown markdown={v.markdown} simulator={config.simulatorEmbed ? { embed: config.simulatorEmbed } : undefined} messages={config.messagesEmbed ? { embed: config.messagesEmbed } : undefined} definitions={a.definitions} checklist={{ artifactId: a.id, accent: brand.accent }} Section={pack.Section} figure={pack.figure} />
+          <ArtifactMarkdown markdown={v.markdown} embeds={embeds} definitions={a.definitions} checklist={{ artifactId: a.id, accent: brand.accent }} Section={pack.Section} figure={pack.figure} />
         </Framed>
       </>
     )
@@ -751,8 +762,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
               <ArtifactMarkdown
                 markdown={a.markdown}
                 checklist={{ artifactId: a.id, owner, accent: brand.accent }}
-                simulator={config.simulatorEmbed ? { embed: config.simulatorEmbed } : undefined}
-                messages={config.messagesEmbed ? { embed: config.messagesEmbed } : undefined}
+                embeds={embeds}
               />
             </div>
             {perReader?.note ? (
@@ -876,7 +886,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
                   checklist={{ artifactId: a.id, send: !!config.state && !!a.state && Object.hasOwn(a.state.slots, CHECKLIST_SLOT), owner, accent: brand.accent }}
                   Section={pack.Section}
                   figure={pack.figure}
-                  simulator={config.simulatorEmbed ? { embed: config.simulatorEmbed } : undefined} messages={config.messagesEmbed ? { embed: config.messagesEmbed } : undefined}
+                  embeds={embeds}
                 />
               </Framed>
             )
