@@ -3,6 +3,12 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.46.1
+
+0.46.0 republished: its tag's publish run refused on two settings-menu tests that still listed the
+owner's items without "View as a reader". The tests now expect it; no code changed. Everything in
+0.46.0 below ships in this version.
+
 ## 0.46.0
 
 **View as a reader.** The owner and admins get "View as a reader" in the page menu: the page reloads

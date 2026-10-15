@@ -219,15 +219,15 @@ describe('each setting round-trips', () => {
 
 describe('the menu and the settings it is handed', () => {
   it('Share settings and Comment settings for the owner and admins only', async () => {
-    expect(items((await served(owner)).html)).toEqual(['share', 'share-settings', 'comment-settings', 'markdown', 'sign-out'])
-    expect(items((await served(admin)).html)).toEqual(['share', 'share-settings', 'comment-settings', 'markdown', 'sign-out'])
+    expect(items((await served(owner)).html)).toEqual(['share', 'share-settings', 'comment-settings', 'markdown', 'view-as-reader', 'sign-out'])
+    expect(items((await served(admin)).html)).toEqual(['share', 'share-settings', 'comment-settings', 'markdown', 'view-as-reader', 'sign-out'])
     expect(items((await served(dana)).html)).toEqual(['share', 'sign-out'])
     expect(items((await served(null)).html)).toEqual(['share', 'sign-in'])
   })
   it('no Comment settings on a host that keeps no comments; no settings at all on a store that cannot change them', async () => {
-    expect(items((await served(admin, { state: undefined })).html)).toEqual(['share', 'share-settings', 'markdown', 'sign-out'])
+    expect(items((await served(admin, { state: undefined })).html)).toEqual(['share', 'share-settings', 'markdown', 'view-as-reader', 'sign-out'])
     delete store.setSettings
-    expect(items((await served(admin)).html)).toEqual(['share', 'markdown', 'sign-out'])
+    expect(items((await served(admin)).html)).toEqual(['share', 'markdown', 'view-as-reader', 'sign-out'])
   })
   it('the list and the key are handed to no page but the owner\'s and admins\'', async () => {
     rec = { ...base, password: 'hunter2' }
