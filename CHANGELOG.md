@@ -17,7 +17,7 @@ early. A page carrying four embeds ran about sixty words ahead by its end. The e
 - Tests: "an embed block is not read aloud" in render.test.tsx, both kinds, with and without a
   player, the wrapped words equal the narrated words.
 
-## 0.44.2
+## 0.44.3
 
 **Escape closes a comment card.** Pressing Escape cancels the comment being written (nothing is
 saved), or closes the open thread, or the comments panel, topmost first. It ignores an Escape
