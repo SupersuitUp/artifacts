@@ -3,6 +3,27 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.47.0
+
+**Figures and Helm scenes play inline, as two new embed fences.** A ```` ```figure ```` block
+(`figure: <id>`, `caption:`, optional `height:`, default 560px) plays an interactive figure, and a
+```` ```helm ```` block (`scene: <id>`, `caption:`, optional `height:`, default 760px, optional
+`autoplay: true`) plays a scene on a Helm phone, both in the same fitted, lazy frame and under the
+same caption as `simulator` and `messages`. They are rows in the one table of embed kinds, which
+now also carries per-kind options (helm's `autoplay`, passed to the embed page only when true), so
+a fifth kind is one line. Publish refuses a block with no id or no caption, naming the line. Embed
+blocks, the old two included, no longer take a comment anchor: the player and its caption were
+never selectable text. The host names the pages with two new config fields, `figureEmbed` and
+`helmEmbed`; there is no default. `ArtifactMarkdown` takes every kind's page as `embeds`
+(`simulator` and `messages` still work).
+
+- DETECTOR: a page carrying a ```` ```figure ```` or ```` ```helm ```` block. Before, it drew as a code block.
+- REMEDY: update the dependency, and set `figureEmbed` / `helmEmbed` in `createArtifactRoutes` to
+  the host's figure and Helm embed pages. Without them the blocks show their caption only.
+- Tests: simulator.test.ts ("the figure block", "the helm block", "every embed kind"),
+  render.test.tsx ("the figure and helm blocks", "an embed block is not read aloud"),
+  widgets.test.ts ("scanWidgets and the figure and helm blocks", "blocksOf and embed blocks").
+
 ## 0.46.1
 
 0.46.0 republished: its tag's publish run refused on two settings-menu tests that still listed the

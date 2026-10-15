@@ -19,7 +19,7 @@ import { blocksOf, checklistSyncs, checklistsOf, hasNotesWidget, headingsOf, typ
 import type { ChecklistBlock } from './checklist.js'
 import { HeadingNotes, NoteToggle, NotesEarlier, NotesProvider } from '../widgets/notes.js'
 import { Checklist } from '../widgets/checklist.js'
-import { embedSrc, parseEmbedFence, type EmbedKind } from './simulator.js'
+import { embedSrc, isEmbedKind, parseEmbedFence, EMBED_KINDS, type EmbedKind } from './simulator.js'
 import { EmbedFrame } from './embed-frame.js'
 import { VideoAutoplay } from '../reader/video-autoplay.js'
 import { CodeCopy } from '../reader/code-copy.js'
@@ -143,7 +143,10 @@ function InlineAudio({ src, label }: { src: string; label: string }) {
 
 type Positioned = { position?: { start: { offset?: number } } } | undefined
 type SimulatorCtx = { embed: string }
-type EmbedCtx = Partial<Record<EmbedKind, SimulatorCtx>>
+/** The host's embed page for each embed kind it serves (ArtifactMarkdown `embeds`). */
+export type EmbedCtx = Partial<Record<EmbedKind, SimulatorCtx>>
+/** Fences that draw something other than code, so `pre` must not wrap them. */
+const OWN_BLOCK = new RegExp(`language-(links|notes|checklist|transcript|${EMBED_KINDS.join('|')})\\b`)
 
 // A session demo on a wide screen is wider than the reading column, so the device it draws (a
 // laptop, or a phone beside what was made) has room: up to 64rem, centred on the column, and clear
@@ -158,13 +161,13 @@ const WIDE_EMBED_CSS =
   `@media (min-width:1280px){${WIDE}{width:max(100%,min(64rem,calc(100vw - 36rem)))}}` +
   `@media (min-width:1536px){${WIDE}{width:max(100%,min(64rem,calc(100vw - 40rem)))}}`
 
-/** An embed block (```simulator, ```messages): the player in a frame when the host names one, its
+/** An embed block (```simulator, ```messages, ```figure, ```helm): the player in a frame when the host names one, its
  *  caption alone when it does not, and nothing when the block does not parse (a page published
  *  before validation existed). */
 function EmbedFence({ kind, source, ctx }: { kind: EmbedKind; source: string; ctx?: SimulatorCtx }) {
   const r = parseEmbedFence(kind, source.replace(/\n$/, ''), 0)
   if (!r.ok) return null
-  const src = ctx ? embedSrc(kind, ctx.embed, r.block.value) : null
+  const src = ctx ? embedSrc(kind, ctx.embed, r.block.value, r.block.options) : null
   const wide = kind === 'simulator' && src != null
   return (
     // data-nospeak: the narration skips every fenced block (narration.ts), so the caption must not
@@ -318,7 +321,7 @@ function baseComponents(block: BlockAttr, figure?: FigureFor, checklists?: Check
     if (lang === 'notes') return null
     // A transcript not under an audio line draws nothing (publish refuses one; an old page may hold it).
     if (lang === TRANSCRIPT_LANG) return null
-    if (lang === 'simulator' || lang === 'messages') return <EmbedFence kind={lang} source={textOf(children)} ctx={embeds?.[lang]} />
+    if (isEmbedKind(lang)) return <EmbedFence kind={lang} source={textOf(children)} ctx={embeds?.[lang]} />
     if (!className) {
       return <code className="rounded bg-[color:var(--a-surface-strong)] px-1.5 py-0.5 text-[0.9em] text-[color:var(--a-strong)]">{children}</code>
     }
@@ -328,7 +331,7 @@ function baseComponents(block: BlockAttr, figure?: FigureFor, checklists?: Check
     // A links fence renders its own block; do not wrap it in <pre>.
     const inner = Array.isArray(children) ? children[0] : children
     const cls = (inner as { props?: { className?: string } })?.props?.className ?? ''
-    if (/language-(links|notes|checklist|simulator|messages|transcript)/.test(cls)) return <>{children}</>
+    if (OWN_BLOCK.test(cls)) return <>{children}</>
     return (
       <pre
         {...block(node)}
@@ -510,6 +513,7 @@ export function ArtifactMarkdown({
   figure,
   simulator,
   messages,
+  embeds: hosted,
 }: {
   markdown: string
   /** The page a ```checklist keeps its ticks under, and whether its Send can reach the owner
@@ -528,9 +532,13 @@ export function ArtifactMarkdown({
   simulator?: SimulatorCtx
   /** The host's Messages phone, for ```messages blocks. Without it a block shows its caption only. */
   messages?: SimulatorCtx
+  /** The host's embed page for every embed kind it serves (```simulator, ```messages, ```figure,
+   *  ```helm). A kind with none shows its caption only. `simulator` and `messages` above still work
+   *  and win over this. */
+  embeds?: EmbedCtx
 }) {
   const on = !!notes && hasNotesWidget(markdown)
-  const embeds: EmbedCtx = { simulator, messages }
+  const embeds: EmbedCtx = { ...hosted, ...(simulator ? { simulator } : {}), ...(messages ? { messages } : {}) }
   const headings = headingsOf(markdown)
   const blocks = blocksOf(markdown)
   const block: BlockAttr = (node) => {
