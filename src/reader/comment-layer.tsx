@@ -1,7 +1,8 @@
 'use client'
 // Comments on any part of a page, Figma style. Select text and a "Comment" chip appears; hold and
-// drag over anything that is not text (an image, a table, the gap between paragraphs) and a box
-// draws. Either opens the card (comment-card.tsx), which says before anything is typed whether
+// drag on something that is not text (an image, a diagram, a video, an empty block) and a box
+// draws. Everywhere else the browser's own selection runs untouched, gaps between paragraphs
+// included, so copying and highlighting work as on any page. Either opens the card (comment-card.tsx), which says before anything is typed whether
 // the owner will ever read it.
 //
 // Two kinds, kept apart all the way down:
@@ -59,10 +60,20 @@ const DRAG_PX = 8
 /** Where a drag never starts a box: controls, and anything that is somebody's words. */
 const NOT_FOR_BOXES = 'a, button, input, textarea, select, audio, video[controls], summary, label, [data-comment-ui], [data-note-toggle], [data-heading-notes], [data-artifact-notes], .artifact-defined-term, .artifact-word'
 
-function isTextTarget(el: Element): boolean {
-  if (el.closest(NOT_FOR_BOXES)) return true
-  for (const c of Array.from(el.childNodes)) if (c.nodeType === Node.TEXT_NODE && c.textContent?.trim()) return true
-  return false
+/** What a box may start on: things a native selection cannot highlight. */
+const BOX_TARGETS = 'img, svg, canvas, picture, video, iframe, hr, [data-boxable]'
+
+/**
+ * Whether a press here starts a comment box rather than the browser's own selection. Only on
+ * content with no text to select: a press in the gap between paragraphs, in a line's empty end,
+ * or anywhere in a text block is the start of a normal highlight, and a box there stole it
+ * (Gary, 2026-10-15: "it should also just allow people to do normal copying functionality").
+ */
+export function startsBox(el: Element): boolean {
+  if (el.closest(NOT_FOR_BOXES) || el.closest('figcaption')) return false
+  if (el.closest(BOX_TARGETS)) return true
+  const block = el.closest<HTMLElement>('[data-block]')
+  return !!block && !block.textContent?.trim()
 }
 
 function sharedFrom(body: unknown): Item[] {
@@ -276,14 +287,14 @@ export function CommentLayer({
     return () => { clearTimeout(timer); root.removeEventListener('mouseup', check); root.removeEventListener('keyup', check); document.removeEventListener('selectionchange', settle) }
   }, [rootId])
 
-  // Hold and drag over anything that is not text draws a box. A mouse starts after 8px of travel;
+  // Hold and drag on content with no text (startsBox) draws a box. A mouse starts after 8px of travel;
   // a finger after a 400 ms long-press, so an ordinary swipe still scrolls.
   const dragRef = useRef<{ x: number; y: number; armed: boolean; drawing: boolean; timer?: ReturnType<typeof setTimeout> } | null>(null)
   useEffect(() => {
     const root = document.getElementById(rootId)
     if (!root) return
     const down = (e: PointerEvent) => {
-      if (e.button !== 0 || !(e.target instanceof Element) || isTextTarget(e.target)) return
+      if (e.button !== 0 || !(e.target instanceof Element) || !startsBox(e.target)) return
       const d: NonNullable<typeof dragRef.current> = { x: e.clientX, y: e.clientY, armed: e.pointerType !== 'touch', drawing: false }
       if (e.pointerType === 'touch') d.timer = setTimeout(() => { d.armed = true; navigator.vibrate?.(10) }, LONG_PRESS_MS)
       else e.preventDefault()
@@ -561,7 +572,7 @@ export function CommentLayer({
       <div className="fixed right-4 z-40 flex flex-col items-end gap-2" style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 5.5rem)' }}>
         {panel ? (
           <div data-comment-panel className="w-64 rounded-xl border border-[color:var(--a-line-strong)] bg-[color:var(--a-surface)] p-3 text-xs text-[color:var(--a-strong)] shadow-xl">
-            <p className="opacity-80">Select any text, or hold and drag a box over anything, to leave a comment.</p>
+            <p className="opacity-80">Select any text, or hold and drag a box over an image, to leave a comment.</p>
             {isOwner ? <p data-comment-owner className="mt-1 opacity-80">This is your page: you see every comment, with the name of who left it.</p> : null}
             <button type="button" data-comment-pins-toggle className="mt-2 underline" onClick={() => setShowPins((v) => !v)}>
               {showPins ? 'Hide comments' : 'Show comments'}

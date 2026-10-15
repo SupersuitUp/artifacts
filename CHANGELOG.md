@@ -3,6 +3,22 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.44.1
+
+**Highlighting text works like any page again.** A press in the gap between paragraphs, in a line's
+empty end, around a table or a list used to start the dashed comment box, so dragging to highlight
+or copy drew a box instead of selecting. A box now starts only on content with no text to select:
+an image, an SVG diagram, a canvas, a video, an iframe, a rule, an empty block, or anything marked
+`data-boxable`. Everywhere else the browser's own selection runs untouched, and a selection still
+shows the Comment chip as before.
+
+- DETECTOR: on a page with comments on, drag from the space between two paragraphs. Before, a
+  dashed box drew; now the text highlights.
+- REMEDY: update the dependency. A host that wants boxes on a custom element marks it
+  `data-boxable`.
+- Tests: `startsBox` in comment-layer.test.tsx, text and gaps select natively, image, diagram and
+  empty block start a box.
+
 ## 0.44.0
 
 **Voice notes with their own words, lit as they are spoken.** An audio line followed directly by a

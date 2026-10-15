@@ -1,6 +1,6 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { CommentLayer } from './comment-layer.js'
+import { CommentLayer, startsBox } from './comment-layer.js'
 import { deviceNotes, deviceNotesKey } from './device-notes.js'
 import { indexText, offsetAt, placeAnchor } from './comment-place.js'
 import { textAnchorFrom } from '../artifacts/anchor.js'
@@ -544,5 +544,28 @@ describe('deep link', () => {
       expect(sent.body).toMatchObject({ op: 'replace', entry: 'm1', value: { body: 'Mine, edited' } })
       expect((sent.body as { value: object }).value).not.toHaveProperty('resolved')
     })
+  })
+})
+
+describe('startsBox: a box never steals a native text selection', () => {
+  const page = () => {
+    document.body.innerHTML = `
+      <article id="a">
+        <p data-block="b-p-1">Words to <b>copy</b>.</p>
+        <figure data-block="b-f-1"><img alt="" src="https://cdn.example.com/x.png"><figcaption>A caption</figcaption></figure>
+        <div data-block="b-d-1"><svg><rect /></svg></div>
+        <div data-block="b-e-1"></div>
+        <table data-block="b-t-1"><tbody><tr><td>cell</td></tr></tbody></table>
+        <ul data-block="b-l-1"><li>item</li></ul>
+      </article>`
+    return (sel: string) => document.querySelector(sel)!
+  }
+  it('lets text, the gaps around it and a caption select natively', () => {
+    const q = page()
+    for (const sel of ['#a', 'p', 'b', 'td', 'table', 'ul', 'figcaption']) expect(startsBox(q(sel)), sel).toBe(false)
+  })
+  it('starts a box on an image, a diagram and an empty block', () => {
+    const q = page()
+    for (const sel of ['img', 'rect', '[data-block="b-e-1"]']) expect(startsBox(q(sel)), sel).toBe(true)
   })
 })
