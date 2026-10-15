@@ -168,7 +168,7 @@ export type ArtifactRoutesConfig = {
 export const ARTIFACT_ID = ARTIFACT_ID_RE
 
 type Params = { params: Promise<{ id: string }> }
-type PageProps = Params & { searchParams?: Promise<{ key?: string | string[]; r?: string | string[] }> }
+type PageProps = Params & { searchParams?: Promise<{ key?: string | string[]; r?: string | string[]; as?: string | string[] }> }
 type VersionParams = { params: Promise<{ id: string; n: string }> }
 type VersionProps = VersionParams & { searchParams?: Promise<{ key?: string | string[]; r?: string | string[] }> }
 type Rec = NonNullable<Awaited<ReturnType<ArtifactStore['get']>>>
@@ -198,6 +198,22 @@ async function defaultReadCookie(name: string): Promise<string | undefined> {
 async function defaultReadHeader(name: string): Promise<string | undefined> {
   const { headers } = await import('next/headers')
   return (await headers()).get(name) ?? ''
+}
+
+/** `?as=reader` on a page's address: the owner's preview of the page as a reader sees it. */
+function wantsReaderView(sp: { as?: string | string[] }): boolean {
+  return (Array.isArray(sp.as) ? sp.as[0] : sp.as) === 'reader'
+}
+
+/** The owner's bar while previewing as a reader. Never spoken, never on a reader's page. */
+function ViewingAsReader({ back }: { back: string }) {
+  return (
+    <div data-viewing-as-reader data-nospeak className="fixed inset-x-0 top-3 z-50 flex justify-center px-3">
+      <p className="m-0 rounded-full border border-[color:var(--a-line-strong)] bg-[color:var(--a-surface)] px-4 py-1.5 font-sans text-xs text-[color:var(--a-strong)] shadow-lg">
+        Viewing as a reader · <a href={back} className="underline">Back to your view</a>
+      </p>
+    </div>
+  )
 }
 
 export function createArtifactRoutes(config: ArtifactRoutesConfig) {
@@ -388,6 +404,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
         history={history && history.length > 1 && seesHistory(a, reader) && viewing ? { items: history, base: pagePath(a.id), viewing } : null}
         markdown={admin && source ? source : null}
         settings={admin ? settings ?? null : null}
+        viewAsReader={admin && source ? `${pagePath(a.id)}?as=reader` : null}
       />
     )
   }
@@ -478,8 +495,9 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
       const me = readerSecret() ? verifyGrant(readerSecret(), await readCookie(GRANT_COOKIE).catch(() => undefined)) : null
       if (isAdmin(me)) {
         const markdown = await media(a.markdown)
-        const page = broadcast ? await BroadcastCard({ ...a, markdown }, { reader: me, bot }) : await Body({ ...a, markdown }, { top: true, reader: me })
-        return <BrandGround pack={pack} mode={a.theme}>{page}</BrandGround>
+        const viewer = wantsReaderView(sp) ? null : me
+        const page = broadcast ? await BroadcastCard({ ...a, markdown }, { reader: viewer, bot }) : await Body({ ...a, markdown }, { top: true, reader: viewer })
+        return <BrandGround pack={pack} mode={a.theme}>{viewer ? null : <ViewingAsReader back={pagePath(id)} />}{page}</BrandGround>
       }
       const secret = usableSecret(config.recipientSecret?.())
       const g = await perReaderGate({ id, param, cookie: await readCookie(ridCookieName(id)).catch(() => undefined), secret, recipients: config.recipients })
@@ -551,11 +569,16 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
         </BrandGround>
       )
     }
-    const page = await render(true, reader)
-    if (n === null) void store.bumpViews(id)
+    // The owner or an admin previewing the page as the people it is sent to see it (`?as=reader`):
+    // rendered for no one signed in, with a bar back to their own view. Anyone else asking gets the
+    // page they already get.
+    const asReader = isAdmin(reader) && wantsReaderView(sp)
+    const page = await render(true, asReader ? null : reader)
+    if (n === null && !asReader) void store.bumpViews(id)
     return (
       <BrandGround pack={pack} mode={a.theme}>
         {remember ? <script dangerouslySetInnerHTML={{ __html: remember }} /> : null}
+        {asReader ? <ViewingAsReader back={n === null ? pagePath(id) : `${pagePath(id)}/v/${n}`} /> : null}
         {page}
       </BrandGround>
     )

@@ -3,7 +3,7 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
-## Unreleased
+## 0.47.0
 
 **Figures and Helm scenes play inline, as two new embed fences.** A ```` ```figure ```` block
 (`figure: <id>`, `caption:`, optional `height:`, default 560px) plays an interactive figure, and a
@@ -23,6 +23,25 @@ never selectable text. The host names the pages with two new config fields, `fig
 - Tests: simulator.test.ts ("the figure block", "the helm block", "every embed kind"),
   render.test.tsx ("the figure and helm blocks", "an embed block is not read aloud"),
   widgets.test.ts ("scanWidgets and the figure and helm blocks", "blocksOf and embed blocks").
+
+## 0.46.1
+
+0.46.0 republished: its tag's publish run refused on two settings-menu tests that still listed the
+owner's items without "View as a reader". The tests now expect it; no code changed. Everything in
+0.46.0 below ships in this version.
+
+## 0.46.0
+
+**View as a reader.** The owner and admins get "View as a reader" in the page menu: the page reloads
+at `?as=reader`, rendered for no one signed in, so the owner sees exactly what the people they send it
+to see (no version number or Version history unless the page shows them, no Copy the markdown, no
+owner menu), with a bar at the top reading "Viewing as a reader · Back to your view". A preview is not
+counted as a view. Anyone else asking for `?as=reader` gets the page they already get, byte for byte.
+Not yet on `access:` pages, which keep rendering for the signed-in owner.
+
+- DETECTOR: signed in as the owner, open the page menu. Before, no such item.
+- REMEDY: update the dependency.
+- Tests: routes/page-menu.test.tsx, "view as a reader" (3) and the owner's item list.
 
 ## 0.45.0
 
