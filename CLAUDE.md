@@ -19,6 +19,8 @@ git add package.json package-lock.json CHANGELOG.md
 git commit -m "<version>: <one line>"
 git push origin main
 git tag v<version> && git push origin v<version>
+# once the publish run is green, in each consuming host (see below):
+npm run update-artifacts -- <version>
 ```
 
 **Stage `package-lock.json` with `package.json`, always.** The workflow runs `npm ci`, which
@@ -31,15 +33,20 @@ next version.
 **Before tagging, run the workflow as a dry run** (`gh workflow run publish -f dry_run=true`) when
 the workflow itself changed.
 
-## Hosts update themselves; this repo tells them
+## The release is not done until the hosts run it
 
-After a publish, the workflow sends a `repository_dispatch` (`supersuit-artifacts-published`) to
-every repo named in the `CONSUMING_HOSTS` repository variable (space-separated `owner/repo`, kept
-out of the source so this public repo does not list its hosts), using the `HOSTS_DISPATCH_TOKEN`
-secret. Each host's own workflow
-bumps the dependency, runs its tests and build, and pushes only a green result. Hosts also check
-npm on a schedule (hourly on the reference host), so a missing token delays an update by up to an hour and loses nothing. Adding a host is one word in
-`CONSUMING_HOSTS` plus that host's workflow.
+**Last step of every release, after the tag's publish run is green: update each consuming host
+from this machine.** Every host carries `npm run update-artifacts -- <version>`, which waits for
+the registry, installs the version, runs that host's tests and build, and pushes only a green
+result (the push deploys). The hosts are the repos named in this repo's `CONSUMING_HOSTS` variable
+(`gh variable get CONSUMING_HOSTS`), kept out of the source so this public repo does not list
+them. A release that stops at the tag is published and reaches nobody's site.
+
+Hosts used to update themselves through a GitHub Action, triggered by the publish workflow's
+`repository_dispatch` (still sent, and harmless) and an hourly schedule. That stopped on
+2026-10-15 when a host's org could no longer start Actions jobs, and nothing reported it: releases
+kept succeeding here while production stayed on the old version. Running the update from the
+machine that cut the release is the step that cannot fail without you seeing it.
 
 ## What must never land in this repo
 
