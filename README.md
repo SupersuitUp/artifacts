@@ -116,6 +116,13 @@ hostname and pick by the `host` header.
 body. The response carries the page's id and URL. Posting a file whose front matter carries
 that `id:` republishes it in place, keeping every earlier version.
 
+**Taking a page down keeps its history (0.48.0).** `POST /api/artifacts?id=<id>&unpublish=1`
+(publish key, empty body) takes the page off the web: every reader path answers 404, and the
+record, every version, every comment and every file are kept. Republishing to that id puts it back
+at the same link. `DELETE /api/artifacts/<id>` is the separate act that destroys all of it. A host
+older than 0.48.0 answers the unpublish with a 400 and changes nothing, so a publisher can never
+mistake it for a delete; a store without `setUnpublished` answers 501, likewise changing nothing.
+
 ## The page menu
 
 Every page, past version and door carries one small round **⋯** button in the top right corner

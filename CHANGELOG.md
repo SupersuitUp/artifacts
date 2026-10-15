@@ -3,6 +3,24 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.48.0
+
+**Unpublishing keeps the history.** `POST /api/artifacts?id=<id>&unpublish=1` takes a page off the
+web and keeps everything that happened on it: the record, every version, every comment, every
+file. Every reader-facing path (the page, its versions, its share card, comments, answers, per-reader
+links) reads through a view of the store that does not see an unpublished page, so each answers
+404; the publisher's own routes (publish, the narration GET, uploads, DELETE) still reach it. A
+republish to the id puts the page back at the same link. Until now the only way to take a page
+down was DELETE, which destroys every version and every comment for good. DELETE is unchanged,
+and is now the explicit "destroy" rather than the only "take down". The new store method is
+`setUnpublished(id, at | null)`; the Firestore store has it, and a store without it answers 501.
+On the publish route rather than a new one, so no host has a route file to add, and a host older
+than this answers the empty body with a 400 and changes nothing.
+
+- DETECTOR: a publisher that sends `?unpublish=1` and gets a 400 is talking to a host before 0.48.0.
+- REMEDY: update the dependency. Nothing to configure.
+- Tests: unpublish.test.tsx.
+
 ## 0.47.0
 
 **Figures and Helm scenes play inline, as two new embed fences.** A ```` ```figure ```` block

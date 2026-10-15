@@ -217,7 +217,11 @@ function ViewingAsReader({ back }: { back: string }) {
 }
 
 export function createArtifactRoutes(config: ArtifactRoutesConfig) {
-  const { store, siteUrl } = config
+  const { store: kept, siteUrl } = config
+  // An unpublished page (0.48.0) is KEPT, versions, comments and files all, and served to nobody:
+  // every reader-facing path reads through this view, which does not see it. The publisher's own
+  // routes (POST, GET, DELETE, the uploads) read `kept`, so the page can be put back or destroyed.
+  const store: ArtifactStore = { ...kept, get: async (id) => { const a = await kept.get(id); return a?.unpublishedAt ? null : a } }
   // The pack as configured draws the share card; the page paints with its theme variables, so a
   // page follows its light, dark or system mode (brand/theme.ts).
   const pack = config.brand
@@ -1158,6 +1162,18 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
 
   async function POST(request: NextRequest) {
     if (!authed(request)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // `?unpublish=1`: take the page off the web and keep everything. On the publish route rather
+    // than a route of its own so no host has a file to add, and so a host older than 0.48.0 refuses
+    // the empty body with a 400 instead of doing anything at all: it can never be mistaken for a delete.
+    if (request.nextUrl.searchParams.get('unpublish') === '1') {
+      const id = request.nextUrl.searchParams.get('id')
+      if (!id || !ARTIFACT_ID.test(id)) return NextResponse.json({ error: 'unpublish needs ?id=<page id>' }, { status: 400 })
+      if (!kept.setUnpublished) return NextResponse.json({ error: 'this store cannot keep a page unpublished; nothing was changed' }, { status: 501 })
+      const at = new Date().toISOString()
+      if (!(await kept.get(id)) || !(await kept.setUnpublished(id, at))) return NextResponse.json({ error: `no artifact with id ${id}` }, { status: 404 })
+      revalidatePath(pagePath(id))
+      return NextResponse.json({ id, unpublished: true, at })
+    }
     const text = await request.text()
     let parsed = parseArtifactSource(text)
     if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 })
@@ -1165,7 +1181,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     // The kind is sticky, like `links:`: a republish of a broadcast that leaves `template:` out is
     // still a broadcast, and one that says `document` is refused rather than quietly changed.
     if (id && parsed.meta.template === 'document') {
-      const stored = await store.get(id)
+      const stored = await kept.get(id)
       if (stored && kindOf(stored) === 'broadcast') {
         const again = parseArtifactSource(text, { defaultKind: 'broadcast' })
         if (!again.ok) return NextResponse.json({ error: again.error }, { status: 400 })
@@ -1176,10 +1192,10 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     // Fail closed: private media needs a private store. Without one the media would have to sit in
     // the public bucket, which may carry a bucket-wide public read grant, so nothing is saved.
     // `media:` is sticky, so a stored page that already keeps private media counts too.
-    if (!keepsPrivateMedia() && (parsed.meta.privateMedia || (id && (await store.get(id))?.privateMedia)))
+    if (!keepsPrivateMedia() && (parsed.meta.privateMedia || (id && (await kept.get(id))?.privateMedia)))
       return NextResponse.json({ error: NO_PRIVATE_STORE }, { status: 501 })
     if (id && parsed.meta.state) {
-      const existing = await store.get(id)
+      const existing = await kept.get(id)
       const changed = shapeChanges(existing?.state, parsed.meta.state)
       if (changed.length) return NextResponse.json({ error: changed.join('; ') }, { status: 400 })
       // The declared shape can be dodged by republishing once with `state` omitted (which clears
@@ -1201,7 +1217,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     // `?amend=1` is the publisher finishing the publish it started (image URLs, then narration).
     const note = cleanNote(request.nextUrl.searchParams.get('note')) ?? parsed.meta.change
     const amend = request.nextUrl.searchParams.get('amend') === '1'
-    const result = await store.save({ id, meta: parsed.meta, markdown: parsed.body, note, amend })
+    const result = await kept.save({ id, meta: parsed.meta, markdown: parsed.body, note, amend })
     if ('notFound' in result) return NextResponse.json({ error: `no artifact with id ${id}` }, { status: 404 })
     // A broadcast with no date gets one: 90 days from now. A date already set (by the sender, or
     // by an earlier publish) stands, and Keep (expireAt null, keep true) is never undone.
@@ -1229,7 +1245,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
   async function GET(request: NextRequest, { params }: Params) {
     if (!authed(request)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     const { id } = await params
-    const a = await store.get(id)
+    const a = await kept.get(id)
     if (!a) return NextResponse.json({ error: `no artifact with id ${id}` }, { status: 404 })
     return NextResponse.json({ id, text: narrationText({ title: a.title, subtitle: a.subtitle, summary: a.summary, markdown: a.markdown }) })
   }
@@ -1242,7 +1258,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     if (priv && !config.assets.putPrivate) return NextResponse.json({ error: NO_PRIVATE_STORE }, { status: 501 })
     const { id, name } = await params
     if (!ARTIFACT_ID.test(id)) return NextResponse.json({ error: `no artifact with id ${id}` }, { status: 404 })
-    if (!(await store.get(id))) return NextResponse.json({ error: `no artifact with id ${id}` }, { status: 404 })
+    if (!(await kept.get(id))) return NextResponse.json({ error: `no artifact with id ${id}` }, { status: 404 })
     if (!ASSET_NAME.test(name)) return NextResponse.json({ error: 'asset name must be one path segment: letters, digits, dot, dash, underscore' }, { status: 400 })
     const type = contentTypeFor(name)
     if (!type) return NextResponse.json({ error: 'asset type not allowed; use webp, png, jpg, gif, mp3, mp4 or json' }, { status: 415 })
@@ -1281,7 +1297,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     } else if (!assets?.signUpload || !assets.finishUpload) return NextResponse.json({ error: 'this host does not take direct uploads' }, { status: 501 })
     const { id, name } = await params
     if (!ARTIFACT_ID.test(id)) return NextResponse.json({ error: `no artifact with id ${id}` }, { status: 404 })
-    if (!(await store.get(id))) return NextResponse.json({ error: `no artifact with id ${id}` }, { status: 404 })
+    if (!(await kept.get(id))) return NextResponse.json({ error: `no artifact with id ${id}` }, { status: 404 })
     if (!ASSET_NAME.test(name)) return NextResponse.json({ error: 'asset name must be one path segment: letters, digits, dot, dash, underscore' }, { status: 400 })
     const type = contentTypeFor(name)
     if (!type) return NextResponse.json({ error: 'asset type not allowed; use webp, png, jpg, gif, mp3, mp4 or json' }, { status: 415 })
@@ -1332,7 +1348,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
   async function DELETE(request: NextRequest, { params }: Params) {
     if (!authed(request)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     const { id } = await params
-    if (!ARTIFACT_ID.test(id) || !(await store.get(id))) return NextResponse.json({ error: `no artifact with id ${id}` }, { status: 404 })
+    if (!ARTIFACT_ID.test(id) || !(await kept.get(id))) return NextResponse.json({ error: `no artifact with id ${id}` }, { status: 404 })
     let files = 0
     if (config.assets?.deletePage) {
       try {
@@ -1347,7 +1363,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     } catch (e) {
       return NextResponse.json({ error: `the page's readers could not be forgotten, so the page was kept; delete it again: ${e instanceof Error ? e.message : String(e)}` }, { status: 502 })
     }
-    const ok = await store.delete(id)
+    const ok = await kept.delete(id)
     if (!ok) return NextResponse.json({ error: `no artifact with id ${id}` }, { status: 404 })
     revalidatePath(pagePath(id))
     return NextResponse.json({ deleted: true, files })

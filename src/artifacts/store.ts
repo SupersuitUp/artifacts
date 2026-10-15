@@ -65,6 +65,10 @@ export type ArtifactRecord = {
    *  given: a version is never described by anything its author did not write. */
   note?: string
   views: number
+  /** When the page was taken off the web (0.48.0). The record, every version, every comment and
+   *  every file are KEPT: an unpublished page is served to no reader, and a republish to its id
+   *  puts it back. DELETE is the separate act that destroys. */
+  unpublishedAt?: string
 }
 
 /** One line of a page's history. `at` is when that version went live. */
@@ -133,6 +137,9 @@ export interface ArtifactStore {
   version?(id: string, n: number): Promise<VersionRecord | null>
   /** Write (or, with null, clear) the change note on one version after the fact. */
   setNote?(id: string, n: number, note: string | null): Promise<boolean>
+  /** Take a page off the web keeping everything (an ISO time), or put it back (null). False when
+   *  no such page. A store without it can only destroy, and the host refuses to unpublish. */
+  setUnpublished?(id: string, at: string | null): Promise<boolean>
   /** Every page of one kind, newest first, without bodies (0.37.0): the owner's documents and the
    *  owner's broadcasts are two lists. */
   list?(kind: ArtifactKind): Promise<ArtifactListItem[]>
@@ -168,6 +175,12 @@ export function createArtifactStore(db: Firestore, collection = 'artifacts'): Ar
     history: (id) => historyOf(col, id),
     version: (id, n) => versionOf(col, id, n),
     setNote: (id, n, note) => setNote(col, id, n, note),
+    setUnpublished: async (id, at) => {
+      const ref = col().doc(id)
+      if (!(await ref.get()).exists) return false
+      await ref.update({ unpublishedAt: at ?? FieldValue.delete() })
+      return true
+    },
     list: async (kind) => {
       // `select` keeps every body out of the listing; a tenant's pages number in the hundreds.
       const snap = await col().select('title', 'summary', 'template', 'createdAt', 'updatedAt', 'views').get()
@@ -326,6 +339,8 @@ async function saveArtifact(col: Col, input: SaveInput): Promise<SaveResult> {
       // `updatedAt` is when this version went live; finishing its own publish does not move it.
       ...(fresh || input.markdown !== existing.markdown ? { updatedAt: now } : {}),
       note: nextNote ?? FieldValue.delete(),
+      // A republish is the page going back up: an unpublished page is live again at the same link.
+      unpublishedAt: FieldValue.delete(),
       ...(existing.versions ? { versions: FieldValue.delete() } : {}),
     })
     return { id: input.id, version: next, created: false }
