@@ -41,18 +41,18 @@ describe('to: on the page', () => {
   it('the kicker reads "<brand kicker> · For <name>", inside the unspoken kicker', async () => {
     const html = renderToStaticMarkup(await routesFor({ ...base, to: 'Marisol' }).Page(params))
     const k = kicker(html)
-    expect(k.text).toBe('A page from Freedom · For Marisol')
+    expect(k.text).toBe('A page from Supersuit · For Marisol')
     expect(k.tag).toMatch(/<span data-nospeak="true" data-to="true">/)
   })
   it('a page with no to: shows the brand kicker alone', async () => {
     const html = renderToStaticMarkup(await routesFor(base).Page(params))
-    expect(kicker(html).text).toBe('A page from Freedom')
+    expect(kicker(html).text).toBe('A page from Supersuit')
     expect(html).not.toContain('data-to')
   })
   it('a password door shows it too, because the door shows the title', async () => {
     const html = renderToStaticMarkup(await routesFor({ ...base, to: 'Marisol', password: 'pw', markdown: '# the secret body' }).Page({ ...params, searchParams: Promise.resolve({}) }))
     expect(html).not.toContain('the secret body')
-    expect(kicker(html).text).toBe('A page from Freedom · For Marisol')
+    expect(kicker(html).text).toBe('A page from Supersuit · For Marisol')
   })
   it('a gated door shows it too, because the door shows the title', async () => {
     const readers = {
@@ -63,15 +63,15 @@ describe('to: on the page', () => {
     const r = routesFor({ ...base, to: 'Marisol', access: 'freedom', markdown: '# the secret body' }, { readers, readerSecret: () => 's', signInOrigin: 'https://example.com' })
     const html = renderToStaticMarkup(await r.Page(params))
     expect(html).not.toContain('the secret body')
-    expect(kicker(html).text).toBe('A page from Freedom · For Marisol')
+    expect(kicker(html).text).toBe('A page from Supersuit · For Marisol')
   })
   it('a past version shows who THAT version was for', async () => {
     const past: VersionRecord = { version: 1, at: base.createdAt, markdown: '# old', title: 'The Plan', to: 'Dov' }
     const r = routesFor({ ...base, to: 'Marisol' }, {}, past)
     const html = renderToStaticMarkup(await r.VersionPage({ params: Promise.resolve({ id: ID, n: '1' }) }))
-    expect(kicker(html).text).toBe('A page from Freedom · For Dov')
+    expect(kicker(html).text).toBe('A page from Supersuit · For Dov')
     const none = renderToStaticMarkup(await routesFor({ ...base, to: 'Marisol' }, {}, { ...past, to: undefined }).VersionPage({ params: Promise.resolve({ id: ID, n: '1' }) }))
-    expect(kicker(none).text).toBe('A page from Freedom')
+    expect(kicker(none).text).toBe('A page from Supersuit')
   })
 })
 

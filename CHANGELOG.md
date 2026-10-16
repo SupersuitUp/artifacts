@@ -3,6 +3,71 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## Unreleased (0.49.0)
+
+**The default look is Supersuit's, the Maison.** The product the default pack is named for became
+Supersuit on 2026-10-14, and its maker's house look, the Maison, became the brand on 2026-10-15.
+`freedomDefault` (the export keeps its name, so no host breaks) now reads "A page from Supersuit"
+and names Supersuit in metadata (`siteName`); paints night `#17171a` with mist `#d8d1c4` and bronze
+`#a8834f` by default and travertine `#e8e0d2` with ink `#1c1a17` and bronze deepened with ink in
+light mode, each text and accent pairing at 4.5:1 or better; and sets DM Serif Display over DM Sans
+by name (Georgia and the system face if a host does not load them; README, "The default look's
+faces"). The default mark (`BrandMark` with no `Mark`) is a short rule in the accent instead of a
+dove: the dove stood for the agent, and no figure stands in for her until her look is designed.
+What a reader reads moves with the name: the confidential door's default line ("the Google account
+your Supersuit account uses"), the member reason ("you are a Supersuit user"), and the share
+sheet's "Any Supersuit account" and "Supersuit accounts get in without being on the list." The
+`freedom` access level keeps its identifier. A pack of a host's own is untouched, and the share
+card keeps the bundled Newsreader so no tracing config changes.
+
+- DETECTOR: a host whose operators have no pack of their own (`freedomDefault`, or a spread of it
+  with only the kicker changed) renders on the night ground with bronze, not the old near-black and
+  gold, and its kicker says Supersuit.
+- REMEDY: nothing required. To draw the default look in its own faces, load DM Serif Display and
+  DM Sans in the host's root layout (README).
+- Tests: pack.test.tsx (the default look: tokens only, 4.5:1 pairings, the house pair, no dove, no
+  Freedom), the default-pages golden regenerated on purpose (palette, faces and kicker only), and
+  the kicker, metadata and door expectations in artifacts, to, extension-points and gated.
+
+## 0.48.0
+
+**Unpublishing keeps the history.** `POST /api/artifacts?id=<id>&unpublish=1` takes a page off the
+web and keeps everything that happened on it: the record, every version, every comment, every
+file. Every reader-facing path (the page, its versions, its share card, comments, answers, per-reader
+links) reads through a view of the store that does not see an unpublished page, so each answers
+404; the publisher's own routes (publish, the narration GET, uploads, DELETE) still reach it. A
+republish to the id puts the page back at the same link. Until now the only way to take a page
+down was DELETE, which destroys every version and every comment for good. DELETE is unchanged,
+and is now the explicit "destroy" rather than the only "take down". The new store method is
+`setUnpublished(id, at | null)`; the Firestore store has it, and a store without it answers 501.
+On the publish route rather than a new one, so no host has a route file to add, and a host older
+than this answers the empty body with a 400 and changes nothing.
+
+- DETECTOR: a publisher that sends `?unpublish=1` and gets a 400 is talking to a host before 0.48.0.
+- REMEDY: update the dependency. Nothing to configure.
+- Tests: unpublish.test.tsx.
+
+## 0.47.0
+
+**Figures and Helm scenes play inline, as two new embed fences.** A ```` ```figure ```` block
+(`figure: <id>`, `caption:`, optional `height:`, default 560px) plays an interactive figure, and a
+```` ```helm ```` block (`scene: <id>`, `caption:`, optional `height:`, default 760px, optional
+`autoplay: true`) plays a scene on a Helm phone, both in the same fitted, lazy frame and under the
+same caption as `simulator` and `messages`. They are rows in the one table of embed kinds, which
+now also carries per-kind options (helm's `autoplay`, passed to the embed page only when true), so
+a fifth kind is one line. Publish refuses a block with no id or no caption, naming the line. Embed
+blocks, the old two included, no longer take a comment anchor: the player and its caption were
+never selectable text. The host names the pages with two new config fields, `figureEmbed` and
+`helmEmbed`; there is no default. `ArtifactMarkdown` takes every kind's page as `embeds`
+(`simulator` and `messages` still work).
+
+- DETECTOR: a page carrying a ```` ```figure ```` or ```` ```helm ```` block. Before, it drew as a code block.
+- REMEDY: update the dependency, and set `figureEmbed` / `helmEmbed` in `createArtifactRoutes` to
+  the host's figure and Helm embed pages. Without them the blocks show their caption only.
+- Tests: simulator.test.ts ("the figure block", "the helm block", "every embed kind"),
+  render.test.tsx ("the figure and helm blocks", "an embed block is not read aloud"),
+  widgets.test.ts ("scanWidgets and the figure and helm blocks", "blocksOf and embed blocks").
+
 ## 0.46.1
 
 0.46.0 republished: its tag's publish run refused on two settings-menu tests that still listed the

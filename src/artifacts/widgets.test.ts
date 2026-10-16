@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { slugify, headingsOf, scanWidgets, mergeWidgetState, checkNoteValue, placeNotes, NOTES_SLOT } from './widgets.js'
+import { slugify, headingsOf, scanWidgets, mergeWidgetState, checkNoteValue, placeNotes, NOTES_SLOT, blocksOf } from './widgets.js'
 
 describe('slugify and headingsOf', () => {
   it('slugs like GitHub: lowercase, punctuation dropped, spaces to dashes', () => {
@@ -123,6 +123,34 @@ describe('scanWidgets and the messages block', () => {
   it('refuses a messages block with no caption, naming the line', () => {
     const r = scanWidgets('```messages\nchat: fritz\n```\n', 4)
     expect(!r.ok && r.error).toMatch(/^line 5: .*caption/)
+  })
+})
+
+describe('scanWidgets and the figure and helm blocks', () => {
+  it('refuses a figure or helm block with no id, naming the line the author sees', () => {
+    const f = scanWidgets('# T\n\n```figure\ncaption: A week.\n```\n', 10)
+    expect(!f.ok && f.error).toBe('line 13: the figure block needs a figure')
+    const h = scanWidgets('```helm\ncaption: A year later.\n```\n', 0)
+    expect(!h.ok && h.error).toBe('line 1: the helm block needs a scene')
+  })
+  it('refuses a figure or helm block with no caption', () => {
+    const f = scanWidgets('```figure\nfigure: doug-week\n```\n', 4)
+    expect(!f.ok && f.error).toMatch(/^line 5: the figure block needs a caption/)
+    const h = scanWidgets('```helm\nscene: doug-walk\nautoplay: true\n```\n', 4)
+    expect(!h.ok && h.error).toMatch(/^line 5: the helm block needs a caption/)
+  })
+  it('passes well-formed ones', () => {
+    expect(scanWidgets('```figure\nfigure: doug-week\ncaption: A week.\n```\n\n```helm\nscene: doug-walk\ncaption: A year later.\nautoplay: true\n```\n', 0).ok).toBe(true)
+  })
+})
+
+describe('blocksOf and embed blocks', () => {
+  it('gives no embed block a comment anchor: the player is not text a reader can select', () => {
+    for (const fence of ['```simulator\nscenario: a\ncaption: x\n```', '```messages\nchat: a\ncaption: x\n```', '```figure\nfigure: a\ncaption: x\n```', '```helm\nscene: a\ncaption: x\n```']) {
+      const ids = [...blocksOf(`Before.\n\n${fence}\n\nAfter.\n`).values()]
+      expect(ids).toHaveLength(2)
+      expect(ids.every((id) => !id.startsWith('b-code'))).toBe(true)
+    }
   })
 })
 

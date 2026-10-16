@@ -59,7 +59,7 @@ describe('createArtifactRoutes', () => {
     const m = await routes.generateMetadata(params('abc23456'))
     expect(m.robots).toEqual({ index: false, follow: false })
     expect((m.openGraph as { url?: string }).url).toBe('https://example.com/abc23456')
-    expect((m.openGraph as { siteName?: string }).siteName).toBe('Freedom')
+    expect((m.openGraph as { siteName?: string }).siteName).toBe('Supersuit')
   })
   it('a pack with a share card unfurls every page as its own title card, versioned by updatedAt', async () => {
     // Order: a cover the author supplied, then the pack's title card, then the instance's static
@@ -88,7 +88,7 @@ describe('createArtifactRoutes', () => {
   it('the page renders the pack kicker, the title and the body', async () => {
     const el = await routes.Page(params('abc23456'))
     const out = renderToStaticMarkup(el)
-    expect(out).toContain('A page from Freedom')
+    expect(out).toContain('A page from Supersuit')
     expect(out).toContain('>T<')
     expect(out).toContain('hi')
     expect(out).toContain('data-brand-ground="freedom-default"')
@@ -156,7 +156,7 @@ describe('createArtifactRoutes', () => {
     expect(out).not.toContain('data-brand-mark')
     expect(out).not.toContain('\u{1F54A}')
     expect(out).not.toContain('north-star-cross')
-    expect(out).toContain('A page from Freedom')   // the kicker is still the header
+    expect(out).toContain('A page from Supersuit')   // the kicker is still the header
   })
   it('PUT_ASSET stores bytes for a known artifact and refuses bad names, types and unknown ids', async () => {
     const put = vi.fn(async (id: string, name: string, _bytes: Buffer, _type: string) => `https://cdn/${id}/${name}`)

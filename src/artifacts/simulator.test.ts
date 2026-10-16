@@ -1,5 +1,47 @@
 import { describe, it, expect } from 'vitest'
-import { parseSimulatorFence, simulatorSrc, parseEmbedFence, embedSrc, fitFrom, FIT_MIN, FIT_MAX } from './simulator.js'
+import { parseSimulatorFence, simulatorSrc, parseEmbedFence, embedSrc, fitFrom, FIT_MIN, FIT_MAX, EMBED_KINDS } from './simulator.js'
+
+describe('the figure block', () => {
+  it('takes a figure id, a caption and an optional height', () => {
+    expect(parseEmbedFence('figure', 'figure: doug-week\ncaption: A week of Doug, before and after.', 1)).toEqual({ ok: true, block: { value: 'doug-week', caption: 'A week of Doug, before and after.', height: '560px' } })
+    expect(parseEmbedFence('figure', 'figure: clicks\ncaption: x\nheight: 480px', 1)).toMatchObject({ ok: true, block: { height: '480px' } })
+  })
+  it('refuses a missing figure, a missing caption, a bad id or an unknown key, naming the line', () => {
+    expect(parseEmbedFence('figure', 'caption: x', 7)).toMatchObject({ ok: false, error: expect.stringMatching(/^line 7: the figure block needs a figure/) })
+    expect(parseEmbedFence('figure', 'figure: a', 7)).toMatchObject({ ok: false, error: expect.stringMatching(/^line 7: .*caption/) })
+    expect(parseEmbedFence('figure', 'figure: Doug Week\ncaption: x', 7)).toMatchObject({ ok: false, error: expect.stringMatching(/^line 8: .*figure/) })
+    expect(parseEmbedFence('figure', 'figure: a\ncaption: x\nautoplay: true', 7)).toMatchObject({ ok: false, error: expect.stringMatching(/unknown key: autoplay/) })
+  })
+  it('points the host\'s figure page at the figure, asking it to fit', () => {
+    expect(embedSrc('figure', 'https://example.com/figures/embed', 'doug-week')).toBe('https://example.com/figures/embed?figure=doug-week&fit=content')
+    expect(embedSrc('figure', 'http://example.com/figures/embed', 'a')).toBeNull()
+  })
+})
+
+describe('the helm block', () => {
+  it('takes a scene, a caption, an optional height and an optional autoplay', () => {
+    expect(parseEmbedFence('helm', 'scene: doug-walk\ncaption: A year later, on the reservoir loop.', 1)).toEqual({ ok: true, block: { value: 'doug-walk', caption: 'A year later, on the reservoir loop.', height: '760px' } })
+    expect(parseEmbedFence('helm', 'scene: doug-walk\ncaption: x\nautoplay: true\nheight: 820px', 1)).toEqual({ ok: true, block: { value: 'doug-walk', caption: 'x', height: '820px', options: { autoplay: 'true' } } })
+    expect(parseEmbedFence('helm', 'scene: doug-walk\ncaption: x\nautoplay: false', 1)).toMatchObject({ ok: true, block: { options: { autoplay: 'false' } } })
+  })
+  it('refuses a missing scene, a missing caption, a bad autoplay or an unknown key, naming the line', () => {
+    expect(parseEmbedFence('helm', 'caption: x', 2)).toMatchObject({ ok: false, error: expect.stringMatching(/^line 2: the helm block needs a scene/) })
+    expect(parseEmbedFence('helm', 'scene: a', 2)).toMatchObject({ ok: false, error: expect.stringMatching(/^line 2: .*caption/) })
+    expect(parseEmbedFence('helm', 'scene: a\ncaption: x\nautoplay: yes', 2)).toMatchObject({ ok: false, error: expect.stringMatching(/^line 5: a helm autoplay is true or false/) })
+    expect(parseEmbedFence('helm', 'scene: a\ncaption: x\nfigure: b', 2)).toMatchObject({ ok: false, error: expect.stringMatching(/unknown key: figure/) })
+  })
+  it('points the host\'s Helm page at the scene, asking it to fit, and passes autoplay only when it is on', () => {
+    expect(embedSrc('helm', 'https://example.com/helm/embed', 'doug-walk')).toBe('https://example.com/helm/embed?scene=doug-walk&fit=content')
+    expect(embedSrc('helm', 'https://example.com/helm/embed', 'doug-walk', { autoplay: 'true' })).toBe('https://example.com/helm/embed?scene=doug-walk&autoplay=true&fit=content')
+    expect(embedSrc('helm', 'https://example.com/helm/embed', 'doug-walk', { autoplay: 'false' })).toBe('https://example.com/helm/embed?scene=doug-walk&fit=content')
+  })
+})
+
+describe('every embed kind', () => {
+  it('lists the four kinds', () => {
+    expect([...EMBED_KINDS].sort()).toEqual(['figure', 'helm', 'messages', 'simulator'])
+  })
+})
 
 describe('parseSimulatorFence', () => {
   it('reads a scenario, a caption and an optional height', () => {

@@ -31,7 +31,7 @@ export type BrandPack = {
   type: { display: string; body: string }
   /** The small uppercase line above a title, e.g. "From Sam Rivera". */
   kicker: string
-  /** Unused since 0.33.1: the player bar names no narrator (it read "Read aloud by Freedom").
+  /** Unused since 0.33.1: the player bar names no narrator.
    *  Optional so a pack that still sets it compiles; nothing reads it. */
   narratorLabel?: (voice?: string) => string
   /** Optional full-page backdrop. Receives the page as children. */
@@ -117,18 +117,33 @@ export type ShareCardAssets = {
   backdrop?: () => Promise<string>
 }
 
+/**
+ * THE DEFAULT LOOK: Supersuit's own, for every operator with no pack of their own. Named
+ * `freedomDefault` because the product was Freedom until 2026-10-14; the export keeps its name so
+ * no host breaks, and everything a reader sees says Supersuit.
+ *
+ * Since 0.49.0 it is the Maison, the house look of Supersuit's maker: stone, and colour only for
+ * context. Night (#17171a) with mist type and bronze by default; travertine with ink one tap away,
+ * its accent bronze deepened with ink so a link reads at 4.5:1. Every value is one of the house's
+ * seven tokens or a mix of two (night, walnut, travertine, marble, bronze, ink, mist). The dark
+ * palette stays plain hex because the share card draws with it and its renderer has no color-mix().
+ *
+ * Type is the house pair: DM Serif Display to inscribe, DM Sans to read. Both are named, not
+ * fetched: a host loads them (README, "The default look's faces"), and one that does not falls back
+ * to Georgia and the system face rather than asking a font service for them on every page view.
+ */
 export const freedomDefault: BrandPack = {
   id: 'freedom-default',
-  name: 'Freedom',
-  ground: '#0e0f13',
-  ink: '#ece7dc',
-  accent: '#c9a96e',
-  light: { ground: '#f6f1e7', ink: '#1c1a17', accent: '#8a6a2c' },
+  name: 'Supersuit',
+  ground: '#17171a',
+  ink: '#d8d1c4',
+  accent: '#a8834f',
+  light: { ground: '#e8e0d2', ink: '#1c1a17', accent: 'color-mix(in srgb,#a8834f 60%,#1c1a17)' },
   type: {
-    display: 'Georgia, "Iowan Old Style", "Times New Roman", serif',
-    body: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif',
+    display: '"DM Serif Display", Georgia, "Times New Roman", serif',
+    body: '"DM Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif',
   },
-  kicker: 'A page from Freedom',
+  kicker: 'A page from Supersuit',
   // Pages unfurl as their title on the ground colour. A pack with a backdrop of its own
   // overrides this whole field.
   share: { font: newsreader },

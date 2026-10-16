@@ -106,7 +106,7 @@ export type Decision =
   | { open: false; why: 'signed-out' }
   | { open: false; why: 'not-allowed'; reader: Reader }
 
-export const MEMBER_REASON = 'you are a Freedom user'
+export const MEMBER_REASON = 'you are a Supersuit user'
 export const LISTED_REASON = 'you were given access to it by name'
 export const STAFF_REASON = 'you are its owner or an admin of this hub'
 
