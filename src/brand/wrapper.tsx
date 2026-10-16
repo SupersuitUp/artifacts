@@ -33,12 +33,12 @@ export function BrandGround({ pack, mode, children }: { pack: BrandPack; mode?: 
   )
 }
 
-/** The mark above the kicker: the pack's own, else a small dove. */
+/** The mark above the kicker: the pack's own, else a short rule in the accent. Not a dove: the dove
+ *  stood for the agent, and no bird or figure stands in for her until her own look is designed. */
 export function BrandMark({ pack, className }: { pack: BrandPack; className?: string }) {
   if (pack.Mark) return <pack.Mark className={className} />
   return (
-    <span data-brand-mark={pack.id} aria-hidden className={className} style={{ color: pack.accent }}>
-      🕊
-    </span>
+    <span data-brand-mark={pack.id} aria-hidden className={className}
+      style={{ display: 'inline-block', width: 28, height: 1, verticalAlign: 'middle', background: pack.accent }} />
   )
 }

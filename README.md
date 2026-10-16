@@ -5,7 +5,7 @@ site shell behind that: the store, the route handlers, the read-along reader, br
 password pages, confidential pages with a signed-in reader list, and the share card a link
 unfurls as. You mount it in a Next.js App Router app with a handful of one-line route files.
 
-It is the shell that serves every Freedom operator's `artifacts.<theirname>` page, published
+It is the shell that serves every Supersuit operator's `artifacts.<theirname>` page, published
 openly because none of it is secret and all of it is better with more eyes on it.
 
 ```bash
@@ -23,7 +23,7 @@ Firestore), and optionally `@google-cloud/storage >= 7` for uploaded files.
 | `createArtifactStore(db, path)` | Firestore store for pages and their version history, under any collection path |
 | `createReadersStore(db, path)` | The record for confidential pages: allowlist, agreements, reading sessions, flags |
 | `createArtifactAssets(bucket, prefix, { privateBucket? })` | Uploaded images for a page, in a Cloud Storage bucket; private media in a separate private bucket |
-| `freedomDefault`, `BrandPack` | The default look and the type any other look implements |
+| `freedomDefault`, `BrandPack` | The default look (Supersuit's, the Maison) and the type any other look implements |
 | `BrandGround`, `BrandMark` | The pack's page backdrop and mark, for your own pages (a home, a 404) |
 | `parseArtifactSource` | The front-matter contract, as a parser you can call before publishing (widget fences included) |
 | `headingsOf`, `scanWidgets`, `placeNotes` | The notes widget's pure parts: heading slugs, fence validation, where each note shows |
@@ -164,7 +164,7 @@ anyone else. `PageMenu`, `roleLine` and `menuItems` are exported from `/reader`.
 The owner and the hub's admins change a page's settings from the menu, with no republish. Each item
 opens a sheet (from the bottom on a phone, under the button on a desk):
 
-- **Share settings.** Who can open it: anyone with the link, any Freedom account (plus the list),
+- **Share settings.** Who can open it: anyone with the link, any Supersuit account (plus the list),
   or only the list. The list itself: add or remove an email. On a page open to anyone, a password
   on or off (on makes a 12-character key). The link to send, with a Copy button: on a password page
   it carries the key. Under them, read-only lines: what a stranger with the bare URL sees and what
@@ -314,7 +314,7 @@ their change alone.
 
 ## A confidential page (`access:`)
 
-`access: freedom` opens the page only to a signed-in reader with an active Freedom account or
+`access: freedom` opens the page only to a signed-in reader with an active Supersuit account or
 on the page's list; `access: invite` opens it only to the list. Everyone else gets the title,
 the summary and a sign-in door; the body never reaches them.
 
@@ -1180,6 +1180,16 @@ A `BrandPack` is data plus at most two components: colours, type, the kicker lin
 an optional full-page `Wrapper` and `Mark`, and an optional `share` block
 (a font loader and a backdrop) that draws the unfurl card. `freedomDefault` is the default look.
 Keep a pack carrying your own trademark in your own app, not in a pull request here.
+
+**The default look's faces.** Since 0.49.0 `freedomDefault` is Supersuit's own look, the Maison:
+night with mist type and bronze by default, travertine with ink behind the light toggle, every
+colour one of seven stone tokens or a mix of two, and the mark above the kicker a short rule in
+the accent (no dove). It sets DM Serif Display for headings and DM Sans for reading, by name. The
+package does not fetch them, so a host that wants them loads them itself, for example
+`import '@fontsource/dm-serif-display/400.css'` and `import '@fontsource/dm-sans/400.css'` (plus
+500 and 600) in its root layout, which serves the files from the host's own origin. A host that
+does not falls back to Georgia and the system face. The share card still sets its title in the
+bundled Newsreader, so no host's `outputFileTracingIncludes` has to change.
 
 **Light, dark or system.** A pack's `ground`, `ink` and `accent` are its dark palette; `light` is
 the other one (absent, warm paper with the pack's accent), and `mode` is the one a page opens in

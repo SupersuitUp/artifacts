@@ -163,19 +163,19 @@ describe('one page, its own pack', () => {
     expect(await page({ ...rec, pack: 'other' }, { packs: { other } })).toContain('A page in the other look')
   })
   it('a name the host does not know renders in its default pack', async () => {
-    expect(await page({ ...rec, pack: 'nope' }, { packs: { other } })).toContain('A page from Freedom')
+    expect(await page({ ...rec, pack: 'nope' }, { packs: { other } })).toContain('A page from Supersuit')
   })
   it('the host can choose for a page whose file cannot say, ahead of the front matter', async () => {
     const packFor = (a: ArtifactRecord) => (a.id === ID ? full : undefined)
     const html = await page({ ...rec, pack: 'other' }, { packs: { other }, packFor })
     expect(html).toContain('A page from Example')
-    expect(await page(rec, { packFor: () => undefined })).toContain('A page from Freedom')
+    expect(await page(rec, { packFor: () => undefined })).toContain('A page from Supersuit')
   })
   it('every other page on the host keeps the default', async () => {
     const packFor = (a: ArtifactRecord) => (a.id === 'xxx23456' ? full : undefined)
     const html = await page(rec, { packFor })
     expect(html).not.toContain('data-test-cover')
-    expect(html).toContain('A page from Freedom')
+    expect(html).toContain('A page from Supersuit')
   })
   it('the share card is drawn by the page\'s pack', async () => {
     const noCard: BrandPack = { ...freedomDefault, id: 'no-card', share: undefined }

@@ -3,6 +3,32 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## Unreleased (0.49.0)
+
+**The default look is Supersuit's, the Maison.** The product the default pack is named for became
+Supersuit on 2026-10-14, and its maker's house look, the Maison, became the brand on 2026-10-15.
+`freedomDefault` (the export keeps its name, so no host breaks) now reads "A page from Supersuit"
+and names Supersuit in metadata (`siteName`); paints night `#17171a` with mist `#d8d1c4` and bronze
+`#a8834f` by default and travertine `#e8e0d2` with ink `#1c1a17` and bronze deepened with ink in
+light mode, each text and accent pairing at 4.5:1 or better; and sets DM Serif Display over DM Sans
+by name (Georgia and the system face if a host does not load them; README, "The default look's
+faces"). The default mark (`BrandMark` with no `Mark`) is a short rule in the accent instead of a
+dove: the dove stood for the agent, and no figure stands in for her until her look is designed.
+What a reader reads moves with the name: the confidential door's default line ("the Google account
+your Supersuit account uses"), the member reason ("you are a Supersuit user"), and the share
+sheet's "Any Supersuit account" and "Supersuit accounts get in without being on the list." The
+`freedom` access level keeps its identifier. A pack of a host's own is untouched, and the share
+card keeps the bundled Newsreader so no tracing config changes.
+
+- DETECTOR: a host whose operators have no pack of their own (`freedomDefault`, or a spread of it
+  with only the kicker changed) renders on the night ground with bronze, not the old near-black and
+  gold, and its kicker says Supersuit.
+- REMEDY: nothing required. To draw the default look in its own faces, load DM Serif Display and
+  DM Sans in the host's root layout (README).
+- Tests: pack.test.tsx (the default look: tokens only, 4.5:1 pairings, the house pair, no dove, no
+  Freedom), the default-pages golden regenerated on purpose (palette, faces and kicker only), and
+  the kicker, metadata and door expectations in artifacts, to, extension-points and gated.
+
 ## 0.48.0
 
 **Unpublishing keeps the history.** `POST /api/artifacts?id=<id>&unpublish=1` takes a page off the

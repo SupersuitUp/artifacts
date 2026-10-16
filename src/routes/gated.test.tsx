@@ -50,8 +50,8 @@ describe('a gated page', () => {
     expect(html).toContain('/artifact/sign-in?to=https%3A%2F%2Fartifacts.example.com%2Fabc23456')
     expect(html).not.toContain('the secret body')
   })
-  it('signed out: the door says the Freedom account by default, and a host can say its own line', async () => {
-    expect(await page()).toContain('Google account your Freedom account uses')
+  it('signed out: the door says the Supersuit account by default, and a host can say its own line', async () => {
+    expect(await page()).toContain('Google account your Supersuit account uses')
     const r = createArtifactRoutes({
       store, brand: freedomDefault, siteUrl: 'https://artifacts.example.com', publishKey: () => 'k',
       readers, readerSecret: () => SECRET, readCookie: async () => undefined,
@@ -59,7 +59,7 @@ describe('a gated page', () => {
     })
     const html = renderToStaticMarkup(await r.Page({ params: Promise.resolve({ id: 'abc23456' }) }))
     expect(html).toContain('Sign in with the Google account this was shared with.')
-    expect(html).not.toContain('Freedom account')
+    expect(html).not.toContain('Supersuit account')
   })
   it('no sign-in authority configured: the door stays shut and offers no way through', async () => {
     // The package names no sign-in service of its own, so a host that forgot signInOrigin must
@@ -77,11 +77,11 @@ describe('a gated page', () => {
   it('a forged or foreign-secret cookie is signed out', async () => {
     expect(await page(mintGrant('wrong', member))).not.toContain('the secret body')
   })
-  it('a Freedom member reads it, addressed by name, told why, with the rule and the record', async () => {
+  it('a Supersuit member reads it, addressed by name, told why, with the rule and the record', async () => {
     const html = await page(mintGrant(SECRET, member))
     expect(html).toContain('the secret body')
     expect(html).toContain('Jordan, this is confidential.')
-    expect(html).toContain('You are reading it because you are a Freedom user.')
+    expect(html).toContain('You are reading it because you are a Supersuit user.')
     expect(html).toContain('anyone Example Co has not given access')
     expect(html).toContain('Your reading is recorded under jordan@example.com')
     expect(html).toContain('@media print')

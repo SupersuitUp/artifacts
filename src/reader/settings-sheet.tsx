@@ -38,7 +38,7 @@ export type SheetKind = 'share' | 'comments'
 
 export const ACCESS_LABEL: Record<AccessLevel, string> = {
   public: 'Anyone with the link',
-  freedom: 'Any Freedom account',
+  freedom: 'Any Supersuit account',
   invite: 'Only the list',
 }
 export const COMMENTS_LABEL = { anyone: 'Anyone', 'signed-in': 'Signed-in readers', off: 'Nobody' } as const
@@ -200,7 +200,7 @@ export function SettingsSheet({ kind, settings, phone, vars, onClose, onCopy, sa
               style={{ flex: 1, minWidth: 0, font: 'inherit', ...NO_ZOOM_FONT, padding: phone ? '8px 10px' : '6px 8px', borderRadius: 8, border: '1px solid var(--a-line, rgba(127,127,127,0.4))', background: 'transparent', color: 'inherit' }} />
             <button type="submit" disabled={busy} style={btn}>Add</button>
           </form>
-          {s.access === 'invite' ? null : <p style={muted}>Freedom accounts get in without being on the list.</p>}
+          {s.access === 'invite' ? null : <p style={muted}>Supersuit accounts get in without being on the list.</p>}
         </fieldset>
       ) : null}
       <div style={{ margin: '0 0 14px' }} data-settings-link>
