@@ -3,7 +3,7 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
-## Unreleased (0.49.0)
+## 0.49.0 (2026-10-16)
 
 **The default look is Supersuit's, the Maison.** The product the default pack is named for became
 Supersuit on 2026-10-14, and its maker's house look, the Maison, became the brand on 2026-10-15.
