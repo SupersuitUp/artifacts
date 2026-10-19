@@ -1174,6 +1174,22 @@ export const config = { matcher: ['/:id([a-z0-9]{8})'] }
 
 Any per-reader page served to a known unfurl fetcher (or a request with no user agent) carries its text only: no media, no signed URL, no reader's note, no cookie. `readHeader` on `createArtifactRoutes` reads the agent (default through `next/headers`). `DELETE /api/artifacts/<id>` removes the page's files from both buckets (`deletePage`), then its readers, their notes and views and every comment, before the record, and keeps the record (502) if the files could not go, so it can be run again.
 
+## Product analytics (`analytics`)
+
+Pass `analytics: { posthogKey: 'phc_...', posthogHost?: 'https://us.i.posthog.com', tenant?: 'name' }`
+to `createArtifactRoutes` and the host's pages record visits in PostHog: session replay, heatmaps,
+autocapture, scroll depth on leave, `section_viewed` (heading id, text, seconds) and
+`narration_play` / `narration_pause` / `narration_complete`. Without it no page loads any analytics
+code. Switch session replay and heatmaps on in the PostHog project as well.
+
+Who is recorded, and as whom (`analyticsPlan`, `src/reader/analytics-plan.ts`):
+
+- Never the owner or an admin (signed in, previewing `?as=reader`, or on the owner's own per-reader
+  link), never a link-preview fetcher, never a past version.
+- A gated page identifies the signed-in reader by email and masks all text in its replays.
+- A per-reader link identifies as `recipient:<rid>` with the label the publisher gave it.
+- A public or password page stays anonymous.
+
 ## Brand packs
 
 A `BrandPack` is data plus at most two components: colours, type, the kicker line above a title,

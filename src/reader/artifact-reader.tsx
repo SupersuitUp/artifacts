@@ -286,6 +286,7 @@ export function ArtifactReader({
     <>
       <audio
         ref={audioRef}
+        data-artifact-narration
         src={src}
         preload="metadata"
         onPlay={() => {

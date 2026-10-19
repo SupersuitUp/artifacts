@@ -48,6 +48,8 @@ import { ARTIFACT_ID_RE } from './ids.js'
 import { createStateRoutes } from './state-routes.js'
 import { createRecipientsRoutes } from './recipients-routes.js'
 import { QuietView } from '../reader/quiet-view.js'
+import { PageAnalytics } from '../reader/page-analytics.js'
+import { analyticsPlan, type AnalyticsConfig } from '../reader/analytics-plan.js'
 import { createPersonalRoutes } from './personal-routes.js'
 import { createVoiceRoutes } from './voice-routes.js'
 import type { PersonalStore } from '../artifacts/personal-store.js'
@@ -162,6 +164,12 @@ export type ArtifactRoutesConfig = {
   recipients?: RecipientsStore
   /** Signs per-reader links and render tokens. At least 32 characters. Read at request time. */
   recipientSecret?: () => string | undefined
+  /** Product analytics for this host's pages (0.50.0): PostHog with session replay, heatmaps,
+   *  autocapture, scroll depth on leave, and section_viewed / narration_* events. Without a key no
+   *  page loads any analytics script. Never records the owner or an admin, never a link-preview
+   *  fetcher, never a past version; identifies a reader only on a gated page (their email) or a
+   *  per-reader link (its recipient id and label). See reader/analytics-plan.ts. */
+  analytics?: AnalyticsConfig | null
 }
 
 /** Ids are 8 chars from the safe alphabet; anything else is not a page and never reaches the store. */
@@ -481,7 +489,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     const a = ARTIFACT_ID.test(id) ? await store.get(id) : null
     if (!a) notFound()
     const { pack, brand } = lookOf(a)
-    const render = (top: boolean, reader: Reader | null) => (n === null ? Body(a, { top, reader }) : VersionBody(a, n, { top, reader }))
+    const render = (top: boolean, reader: Reader | null, untracked = false) => (n === null ? Body(a, { top, reader, untracked }) : VersionBody(a, n, { top, reader }))
     if (a.access) return GatedPage(a, id, render, n)
     const broadcast = kindOf(a) === 'broadcast'
     if (a.links === 'per-reader' || broadcast) {
@@ -500,7 +508,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
       if (isAdmin(me)) {
         const markdown = await media(a.markdown)
         const viewer = wantsReaderView(sp) ? null : me
-        const page = broadcast ? await BroadcastCard({ ...a, markdown }, { reader: viewer, bot }) : await Body({ ...a, markdown }, { top: true, reader: viewer })
+        const page = broadcast ? await BroadcastCard({ ...a, markdown }, { reader: viewer, bot, untracked: true }) : await Body({ ...a, markdown }, { top: true, reader: viewer, untracked: true })
         return <BrandGround pack={pack} mode={a.theme}>{viewer ? null : <ViewingAsReader back={pagePath(id)} />}{page}</BrandGround>
       }
       const secret = usableSecret(config.recipientSecret?.())
@@ -577,7 +585,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     // rendered for no one signed in, with a bar back to their own view. Anyone else asking gets the
     // page they already get.
     const asReader = isAdmin(reader) && wantsReaderView(sp)
-    const page = await render(true, asReader ? null : reader)
+    const page = await render(true, asReader ? null : reader, asReader)
     if (n === null && !asReader) void store.bumpViews(id)
     return (
       <BrandGround pack={pack} mode={a.theme}>
@@ -590,7 +598,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
 
   /** A page with `access:`. The body is rendered only after the reader is known and allowed;
    *  everyone else gets the title, the summary, and a door. */
-  async function GatedPage(a: Rec, id: string, render: (top: boolean, reader: Reader | null) => Promise<React.ReactNode>, n: number | null) {
+  async function GatedPage(a: Rec, id: string, render: (top: boolean, reader: Reader | null, untracked?: boolean) => Promise<React.ReactNode>, n: number | null) {
     const { pack, brand } = lookOf(a)
     const here = n === null ? pageUrl(id) : `${pageUrl(id)}/v/${n}`
     const readCookie = config.readCookie ?? defaultReadCookie
@@ -761,7 +769,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
    *  them, then this reader's own note. None of the document's furniture: no table of contents, no
    *  version line, no read-along (a voice note is its own audio), and no page menu for a reader.
    *  Comments only when the file turned them on; the quiet view beacon always, for a reader. */
-  async function BroadcastCard(a: Rec, { reader, perReader, bot }: { reader: Reader | null; bot: boolean; perReader?: { rid: string; sig: string; label: string; note: string | null; owner: boolean; group: boolean; closesAt: string | null; token: string } }) {
+  async function BroadcastCard(a: Rec, { reader, perReader, bot, untracked = false }: { reader: Reader | null; bot: boolean; untracked?: boolean; perReader?: { rid: string; sig: string; label: string; note: string | null; owner: boolean; group: boolean; closesAt: string | null; token: string } }) {
     const { brand } = lookOf(a)
     const mode: CommentsMode = !bot && config.state && a.state && a.comments && a.comments !== 'off' && a.state.slots[COMMENTS_SLOT] ? a.comments : 'off'
     const admin = isAdmin(reader)
@@ -819,12 +827,13 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
           />
         ) : null}
         {perReader && !perReader.owner ? <QuietView id={a.id} rid={perReader.rid} sig={perReader.sig} token={perReader.token} /> : null}
+        {await Analytics(a, { reader, perReader, untracked, bot })}
       </>
     )
   }
 
   /** The page itself, shared by open and gated pages. */
-  async function Body(a: Rec, { top, reader, perReader }: { top: boolean; reader: Reader | null; perReader?: { rid: string; sig: string; label: string; note: string | null; owner: boolean; group: boolean; closesAt: string | null; token: string } }) {
+  async function Body(a: Rec, { top, reader, perReader, untracked = false }: { top: boolean; reader: Reader | null; untracked?: boolean; perReader?: { rid: string; sig: string; label: string; note: string | null; owner: boolean; group: boolean; closesAt: string | null; token: string } }) {
     const { pack, brand } = lookOf(a)
     let words: WordTiming[] = []
     if (a.narration && a.timings) {
@@ -937,6 +946,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
         />
         {/* A reader's own link reports that it was looked at; the owner's opens never do. */}
         {perReader && !perReader.owner ? <QuietView id={a.id} rid={perReader.rid} sig={perReader.sig} token={perReader.token} /> : null}
+        {await Analytics(a, { reader, perReader, untracked })}
         {a.narration && words.length > 0 ? (
           <ArtifactReader
             src={a.narration}
@@ -950,6 +960,23 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
           recorded at publish, or there is none. */}
       </>
     )
+  }
+
+  /** The page's analytics, or nothing (analytics-plan.ts has the rules). `untracked` is the owner or
+   *  an admin previewing as a reader, who arrives here with no reader at all. */
+  async function Analytics(a: Rec, { reader, perReader, untracked, bot }: { reader: Reader | null; perReader?: { rid: string; label: string; owner: boolean }; untracked: boolean; bot?: boolean }) {
+    if (!config.analytics?.posthogKey) return null
+    const ua = bot === undefined ? await (config.readHeader ?? defaultReadHeader)('user-agent').catch(() => undefined) : undefined
+    const plan = analyticsPlan({
+      config: config.analytics,
+      pageId: a.id,
+      kind: perReader ? 'per-reader' : a.access ? 'gated' : a.password ? 'password' : 'public',
+      owner: untracked || isAdmin(reader) || !!perReader?.owner,
+      bot: bot ?? (ua !== undefined && isUnfurlAgent(ua)),
+      reader: a.access ? reader : null,
+      recipient: perReader ? { rid: perReader.rid, label: perReader.label } : null,
+    })
+    return plan ? <PageAnalytics plan={plan} /> : null
   }
 
   const cookieLine = (value: string, maxAge: number) =>

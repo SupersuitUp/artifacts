@@ -3,6 +3,31 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.50.0 (2026-10-19)
+
+**Product analytics, with video of each visit.** A host that passes `analytics: { posthogKey,
+posthogHost?, tenant? }` to `createArtifactRoutes` gets PostHog on its pages: session replay (text
+fields masked, PostHog's default), heatmaps, autocapture, and `$pageleave` with scroll depth, plus
+two kinds of reading PostHog cannot see on its own: `section_viewed` (the heading's id and text and
+the visible seconds spent in it, timed by the contents rail's own rule, now `currentSection` in
+`toc-spy.tsx`) and `narration_play` / `narration_pause` / `narration_complete` (the narration
+`<audio>` now carries `data-artifact-narration`). Every event carries `artifact_id`, `page_kind`
+and `tenant`. The rules live in one pure function, `analyticsPlan` (`reader/analytics-plan.ts`):
+no key, no script at all (posthog-js is imported only by `PageAnalytics`, after mount); never the
+owner or an admin, signed in, previewing `?as=reader`, or on the owner's own per-reader link; never
+a link-preview fetcher; never a past version. A reader is identified only where the page already
+knows them: a gated page by the signed-in email, a per-reader link as `recipient:<rid>` with its
+label. Public and password pages stay anonymous, even for a signed-in reader. A gated page also
+masks all text in its replays, because its body is confidential and a replay is a copy of it.
+
+- DETECTOR: a host that wants analytics has none; with no `analytics` config nothing changes and
+  no analytics code is downloaded.
+- REMEDY: pass `analytics` per tenant (a public `phc_` project key). Turn on session replay and
+  heatmaps in the PostHog project's settings, which is where PostHog switches them on.
+- Tests: analytics-plan.test.ts (no key, owner, bot, anonymous kinds, gated and per-reader
+  identity), page-analytics-mount.test.tsx (where it mounts on real routes, and as whom),
+  page-analytics.test.ts (section timing, narration events).
+
 ## 0.49.0 (2026-10-16)
 
 **The default look is Supersuit's, the Maison.** The product the default pack is named for became
