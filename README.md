@@ -85,6 +85,7 @@ The rest, each exporting the named handler(s) from `artifacts`:
 | `app/api/reader/track/route.ts` | `POST` = `TRACK` |
 | `app/api/artifacts/[id]/resolve/route.ts` | `POST` = `RESOLVE` (see [resolving a thread](#resolving-a-thread)) |
 | `app/api/comments/route.ts` | `GET` = `COMMENTS_FEED` (see [the comments feed](#the-comments-feed)) |
+| `app/api/health/route.ts` | `GET` = `HEALTH` (see [the comments feed](#the-comments-feed)) |
 
 Pages live at `/<id>` by default. Mounting inside a larger site, pass `pagePrefix: '/a/'` and put
 the page at `app/a/[id]/`. One deployment can serve many sites: build one set of routes per
@@ -990,8 +991,21 @@ export function GET(request: NextRequest) { return artifacts.COMMENTS_FEED(reque
 
 On Firestore (`createStateStore`) the query is one range scan over `<base>State` and needs a
 composite index: **`slot` ascending, `at` ascending**, collection scope. Without it Firestore
-refuses the query and the error names a link that creates the index. A host with its own
-`StateStore` implements `slotSince(slot, after, limit)`; without it the feed answers 501.
+refuses the query and the feed answers **503** `{ error: 'missing_firestore_index', index, create }`,
+`create` being Firestore's link that makes the index. A host with its own `StateStore` implements
+`slotSince(slot, after, limit)`; without it the feed answers 501.
+
+**Ship the index as a file, not a step to remember.** `firestoreIndexesFor(bases)` returns every
+composite the stores need, for the bases you pass `createStateStore`, in the shape of
+`firestore.indexes.json`. Commit it, point `firebase.json` at it
+(`{ "firestore": { "indexes": "firestore.indexes.json" } }`), deploy it with
+`firebase deploy --only firestore:indexes --project <project>`, and keep a test asserting the
+committed file still contains `firestoreIndexesFor(...)`, so a release that needs a new index
+fails your tests rather than your readers.
+
+**`HEALTH`** (`GET /api/health`, no key) runs the feed's query for one comment after now and
+answers 200 `{ ok: true, checks }`, or 503 naming the missing index. Call it after every deploy;
+a hub with no index went five days answering every feed request with a bare 500.
 
 ## Per-reader links
 

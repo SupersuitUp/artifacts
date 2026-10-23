@@ -3,6 +3,29 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.51.0 (2026-10-23)
+
+**A hub can no longer go live with a dead comments feed without being told.** The feed's Firestore
+query needs a composite index (`<base>State`: `slot` ASC, `at` ASC) that 0.13.0 told hubs to create
+by hand; a hub that never did answered every `GET /api/comments` with a bare 500 for five days.
+
+- `firestoreIndexesFor(stateBases)`: every composite index the Firestore stores need, as the
+  contents of `firestore.indexes.json`, so a hub deploys it with `firebase deploy --only
+  firestore:indexes` and tests that its committed file still carries it.
+- `COMMENTS_FEED` answers **503** `{ error: 'missing_firestore_index', index, create }` (create is
+  Firestore's link) instead of throwing. Any other error still throws.
+- New route `HEALTH` (`GET /api/health`, no key): probes the feed query for one comment after now;
+  200 `{ ok: true, checks }`, or 503 naming the missing index. Another failure reports
+  `query_failed` without its message.
+- `missingIndexOf(err)` and `COMMENTS_FEED_INDEX`, exported for a host's own checks.
+- DETECTOR: `curl <hub>/api/health` is 404 (no route), or 503 with `missing_firestore_index`.
+- REMEDY: bump; add `app/api/health/route.ts` delegating GET to `HEALTH`; commit
+  `firestore.indexes.json` from `firestoreIndexesFor([...your state bases])` with `firebase.json`
+  pointing at it, add a test that the file contains it, and run `firebase deploy --only
+  firestore:indexes --project <project>` once.
+- Tests: firestore-indexes.test.ts, and six in comments-feed.test.tsx (503 with the link, other
+  errors still throw, HEALTH red/green/other-failure/no-store).
+
 ## 0.50.0 (2026-10-19)
 
 **Product analytics, with video of each visit.** A host that passes `analytics: { posthogKey,
