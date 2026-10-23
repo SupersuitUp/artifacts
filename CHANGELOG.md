@@ -5,6 +5,24 @@ host can tell whether it is affected (DETECTOR), what a host does about it (REME
 
 ## 0.51.0 (2026-10-23)
 
+**Every page's session replay now masks all text and all inputs, not only a gated page's.** Since
+0.50.0 a public, password or per-reader page recorded its replays with every word readable, so a
+page shared by key or by link sat in full in the analytics provider's copy. `posthog.init` now gets
+`session_recording: { maskAllInputs: true, maskTextSelector: '*' }` on every kind (these client
+options override the PostHog project's own masking setting), and `mask_all_text: true` so
+autocapture stops collecting a clicked element's text. There is no opt-out. Replays still show where
+the reader went, how far and how fast.
+
+- `posthogInitOptions(plan)` and `RECORDING_MASK`, exported: the exact init options, pure.
+- DETECTOR: open a replay of a public or per-reader page in PostHog; readable page text means the
+  host is on 0.50.x. Autocapture events carrying `$el_text` from page body are the same leak.
+- REMEDY: bump. Replays recorded before the bump keep their text; delete them in PostHog (filter
+  recordings by the `artifact_id` / `page_kind` event properties, then delete), and consider
+  deleting old autocapture events' `$el_text` the same way.
+- Tests: page-analytics-recording.test.tsx (mounts the component against a stand-in posthog-js and
+  holds every page kind's init options to the mask; red on 0.50.0 for public, password and
+  per-reader).
+
 **A hub can no longer go live with a dead comments feed without being told.** The feed's Firestore
 query needs a composite index (`<base>State`: `slot` ASC, `at` ASC) that 0.13.0 told hubs to create
 by hand; a hub that never did answered every `GET /api/comments` with a bare 500 for five days.

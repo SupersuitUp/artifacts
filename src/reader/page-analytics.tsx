@@ -6,9 +6,11 @@
 // The server decides whether this mounts at all and as whom (analytics-plan.ts). posthog-js is
 // imported only here, after mount, so a host with no key never downloads it.
 //
-// Text fields are masked in replays (PostHog's default). A gated page masks ALL text too, because
-// its body is confidential and a replay is a copy of it held by a third party: the replay still
-// shows where the reader went, how far and how fast, without the words.
+// EVERY page's replay masks all text and all inputs, whatever its kind (since 0.51.0). A replay is a
+// copy of the page held by a third party, and a page shared by key or by link is no less private
+// than a gated one: the replay still shows where the reader went, how far and how fast, without the
+// words. Autocapture is told not to collect element text for the same reason. There is no opt-out:
+// the options come from posthogInitOptions, which a test holds to RECORDING_MASK for every kind.
 import { useEffect } from 'react'
 import type { AnalyticsPlan } from './analytics-plan.js'
 import { currentSection } from '../artifacts/toc-spy.js'
@@ -51,6 +53,26 @@ export function narrationEvent(type: string, audio: { currentTime: number; durat
   return null
 }
 
+/** How every replay is masked: every text node and every input, on every page kind. The options set
+ *  in `posthog.init` override the PostHog project's own masking setting, so this is the whole rule. */
+export const RECORDING_MASK = Object.freeze({ maskAllInputs: true, maskTextSelector: '*' } as const)
+
+/** The options the page hands `posthog.init`. Pure, so a test can hold it to the mask. */
+export function posthogInitOptions(plan: Pick<AnalyticsPlan, 'host'>) {
+  return {
+    api_host: plan.host,
+    person_profiles: 'identified_only' as const,
+    capture_pageview: true,
+    capture_pageleave: true,
+    autocapture: true,
+    // Autocapture records a clicked element's text; on these pages that text is the page.
+    mask_all_text: true,
+    enable_heatmaps: true,
+    disable_session_recording: false,
+    session_recording: { ...RECORDING_MASK },
+  }
+}
+
 export function PageAnalytics({ plan, rootId = 'artifact-narration-root' }: { plan: AnalyticsPlan; rootId?: string }) {
   const { key, host, pageId, kind, tenant } = plan
   const identity = plan.identity ? JSON.stringify(plan.identity) : ''
@@ -59,16 +81,7 @@ export function PageAnalytics({ plan, rootId = 'artifact-narration-root' }: { pl
     let cleanup = () => {}
     void import('posthog-js').then(({ default: posthog }) => {
       if (cancelled) return
-      posthog.init(key, {
-        api_host: host,
-        person_profiles: 'identified_only',
-        capture_pageview: true,
-        capture_pageleave: true,
-        autocapture: true,
-        enable_heatmaps: true,
-        disable_session_recording: false,
-        session_recording: { maskAllInputs: true, ...(kind === 'gated' ? { maskTextSelector: '*' } : {}) },
-      })
+      posthog.init(key, posthogInitOptions({ host }))
       posthog.register({ artifact_id: pageId, page_kind: kind, ...(tenant ? { tenant } : {}) })
       if (identity) {
         const who = JSON.parse(identity) as NonNullable<AnalyticsPlan['identity']>

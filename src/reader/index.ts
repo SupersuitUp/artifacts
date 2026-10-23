@@ -15,5 +15,5 @@ export { indexText, offsetAt, rangeOf, headingAt, placeAnchor, boxOf, regionFrom
 export { VoiceRecorder, AudioPlay, hostVoice, pickRecordingType, newMemoId, recognitionCtor, LIVE_LINE, type VoiceHost, type VoiceMemo, type VoiceScope } from './voice-recorder.js'
 export { deviceAudio, isDeviceAudio, type DeviceAudio } from './device-audio.js'
 export { type SavedMemo } from './comment-card.js'
-export { PageAnalytics, trackSections, narrationEvent, MIN_SECTION_SECONDS } from './page-analytics.js'
+export { PageAnalytics, trackSections, narrationEvent, MIN_SECTION_SECONDS, posthogInitOptions, RECORDING_MASK } from './page-analytics.js'
 export { analyticsPlan, DEFAULT_POSTHOG_HOST, type AnalyticsConfig, type AnalyticsPlan, type PageKind } from './analytics-plan.js'
