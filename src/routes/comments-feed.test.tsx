@@ -187,3 +187,66 @@ describe('COMMENTS_FEED', () => {
     expect((await b.routes.COMMENTS_FEED(feed('2026-09-28T10:00:00Z'))).status).toBe(501)
   })
 })
+
+// October 2026: a hub whose Firestore lacks the feed's composite index
+// answered every GET /api/comments with a bare 500 for five days. The feed now names the index, and
+// HEALTH (GET /api/health) reports it before anyone polls the feed.
+describe('a missing Firestore index', () => {
+  const LINK = 'https://console.firebase.google.com/v1/r/project/p/firestore/indexes?create_composite=abc'
+  const refusing = (): StateStore => {
+    const s = createMemoryStateStore()
+    s.slotSince = async () => { throw Object.assign(new Error(`9 FAILED_PRECONDITION: The query requires an index. You can create it here: ${LINK}`), { code: 9 }) }
+    return s
+  }
+
+  it('COMMENTS_FEED answers 503 naming the index and its create link, not a bare 500', async () => {
+    const { routes } = await build({ state: refusing() })
+    const res = await routes.COMMENTS_FEED(feed('2026-09-28T10:00:00Z'))
+    expect(res.status).toBe(503)
+    const body = await res.json()
+    expect(body.error).toBe('missing_firestore_index')
+    expect(body.index).toMatch(/slot ASC, at ASC/)
+    expect(body.create).toBe(LINK)
+  })
+
+  it('COMMENTS_FEED still throws an error that is not a missing index', async () => {
+    const s = createMemoryStateStore()
+    s.slotSince = async () => { throw new Error('boom') }
+    const { routes } = await build({ state: s })
+    await expect(routes.COMMENTS_FEED(feed('2026-09-28T10:00:00Z'))).rejects.toThrow('boom')
+  })
+
+  it('HEALTH reports the missing index with 503, and needs no key', async () => {
+    const { routes } = await build({ state: refusing() })
+    const res = await routes.HEALTH(new NextRequest('https://artifacts.example.com/api/health'))
+    expect(res.status).toBe(503)
+    const body = await res.json()
+    expect(body.ok).toBe(false)
+    expect(body.checks).toEqual([{ name: 'comments-feed-index', ok: false, error: 'missing_firestore_index', index: expect.stringMatching(/slot ASC, at ASC/), create: LINK }])
+  })
+
+  it('HEALTH is 200 when the feed query runs', async () => {
+    const { routes } = await build()
+    const res = await routes.HEALTH(new NextRequest('https://artifacts.example.com/api/health'))
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ ok: true, checks: [{ name: 'comments-feed-index', ok: true }] })
+  })
+
+  it('HEALTH reports another query failure without its message', async () => {
+    const s = createMemoryStateStore()
+    s.slotSince = async () => { throw new Error('secret internals') }
+    const { routes } = await build({ state: s })
+    const res = await routes.HEALTH(new NextRequest('https://artifacts.example.com/api/health'))
+    expect(res.status).toBe(503)
+    const text = await res.text()
+    expect(text).not.toContain('secret internals')
+    expect(JSON.parse(text).checks[0]).toEqual({ name: 'comments-feed-index', ok: false, error: 'query_failed' })
+  })
+
+  it('HEALTH skips the probe on a host with no state store or no slotSince', async () => {
+    const { routes } = await build({ state: null })
+    const res = await routes.HEALTH(new NextRequest('https://artifacts.example.com/api/health'))
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ ok: true, checks: [] })
+  })
+})

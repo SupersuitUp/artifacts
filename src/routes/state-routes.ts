@@ -31,6 +31,7 @@ import { COMMENTS_SLOT, FEEDBACK_CLOSED, MAX_COMMENT_CHARS, MAX_COMMENT_NAME_CHA
 import { MAX_QUOTE_CHARS } from '../artifacts/anchor.js'
 import { isCommentAudioPath } from '../artifacts/audio.js'
 import { readerKeyFor, type StateEntry, type StateStore, type Writer } from '../artifacts/state-store.js'
+import { COMMENTS_FEED_INDEX, missingIndexOf } from '../artifacts/firestore-indexes.js'
 import { NOTES_SLOT, checkNoteValue, checklistAnswerIds, hasNotesWidget } from '../artifacts/widgets.js'
 import { CHECKLIST_SLOT, checkChecklistValue } from '../artifacts/checklist.js'
 import { responsesCsv, responsesOf, stateView } from '../artifacts/state-view.js'
@@ -431,9 +432,18 @@ export function createStateRoutes(ctx: StateRoutesContext) {
     if (only !== null && !ARTIFACT_ID_RE.test(only)) return json({ error: 'artifact must be a page id, like abcd2345' }, 400)
     if (only === null && !ctx.state.slotSince) return json({ error: 'this host cannot list comments by time' }, 501)
     const now = new Date().toISOString()
-    const entries = only !== null
-      ? (await ctx.state.entries(only)).filter((e) => e.slot === COMMENTS_SLOT && e.at > since).sort((x, y) => x.at.localeCompare(y.at) || x.id.localeCompare(y.id)).slice(0, FEED_MAX)
-      : await ctx.state.slotSince!(COMMENTS_SLOT, since, FEED_MAX)
+    let entries: StateEntry[]
+    try {
+      entries = only !== null
+        ? (await ctx.state.entries(only)).filter((e) => e.slot === COMMENTS_SLOT && e.at > since).sort((x, y) => x.at.localeCompare(y.at) || x.id.localeCompare(y.id)).slice(0, FEED_MAX)
+        : await ctx.state.slotSince!(COMMENTS_SLOT, since, FEED_MAX)
+    } catch (err) {
+      // Firestore refuses the cross-page query until its composite index exists. Say which index,
+      // rather than a bare 500 the publisher's notifier cannot act on (October 2026).
+      const missing = missingIndexOf(err)
+      if (!missing) throw err
+      return json({ error: 'missing_firestore_index', index: COMMENTS_FEED_INDEX, create: missing.create }, 503)
+    }
     const pages = new Map<string, Promise<ArtifactRecord | null>>()
     const pageOf = (id: string) => { if (!pages.has(id)) pages.set(id, ctx.store.get(id)); return pages.get(id)! }
     // A reply's thread is resolved on its parent, which may sit outside this window: read the page's
@@ -594,5 +604,26 @@ export function createStateRoutes(ctx: StateRoutesContext) {
     return json({ id, entry: r.id, parent: root.id, existing: false })
   }
 
-  return { STATE_GET, STATE_POST, RESPONSES, COMMENTS_FEED, RESOLVE, REPLY }
+  /** GET /api/health: whether the queries this host's routes run will be served, today the
+   *  comments feed's composite index. 200 with `ok: true`, or 503 naming what is missing. No key:
+   *  it reveals nothing a public package does not already say, and a deploy check can call it. The
+   *  probe asks for one comment after now, so it reads at most one document. */
+  async function HEALTH(_req: NextRequest) {
+    const checks: Record<string, unknown>[] = []
+    if (ctx.state?.slotSince) {
+      try {
+        await ctx.state.slotSince(COMMENTS_SLOT, new Date().toISOString(), 1)
+        checks.push({ name: 'comments-feed-index', ok: true })
+      } catch (err) {
+        const missing = missingIndexOf(err)
+        checks.push(missing
+          ? { name: 'comments-feed-index', ok: false, error: 'missing_firestore_index', index: COMMENTS_FEED_INDEX, create: missing.create }
+          : { name: 'comments-feed-index', ok: false, error: 'query_failed' })
+      }
+    }
+    const ok = checks.every((c) => c.ok === true)
+    return json({ ok, checks }, ok ? 200 : 503)
+  }
+
+  return { STATE_GET, STATE_POST, RESPONSES, COMMENTS_FEED, RESOLVE, REPLY, HEALTH }
 }
