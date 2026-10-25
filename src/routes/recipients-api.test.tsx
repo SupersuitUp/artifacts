@@ -115,6 +115,35 @@ describe('recipients API', () => {
     const made = await (await call('POST', 'RECIPIENTS', { add: [{ label: 'Robin', owner: true, closes: past }, { label: 'Reader A', closes: past }] })).json()
     expect(made.recipients.map((x: { owner: boolean; closesAt: string | null }) => [x.owner, x.closesAt])).toEqual([[true, null], [false, past]])
   })
+  // SUPERLINKS (2026-10-25): every link records who minted it, on whose authority and when, and
+  // may carry the funnel and stage it was sent for, so a funnel move citing the link's opens has
+  // provenance. The host keeps it on the reader's row and answers it back in the listing and views.
+  it('a reader added with provenance keeps who minted it, on whose authority, when, and its funnel and stage', async () => {
+    const { call } = setup()
+    const provenance = { actor: "Ada's Pluma", authority: 'approved by Ada on the send card', at: '2026-10-25T20:33:35.000Z', link: 'https://example.com/session/1', funnel: 'hardware-makers', stage: 'first-call' }
+    const res = await (await call('POST', 'RECIPIENTS', { add: [{ label: 'Reader A', provenance }, { label: 'Reader B' }] })).json()
+    expect(res.added[0].provenance).toEqual(provenance)
+    expect(res.recipients.find((x: { label: string }) => x.label === 'Reader A').provenance).toEqual(provenance)
+    expect(res.recipients.find((x: { label: string }) => x.label === 'Reader B').provenance).toBeNull()
+    const v = await (await call('GET', 'VIEWS')).json()
+    expect(v.recipients.find((x: { label: string }) => x.label === 'Reader A').provenance).toEqual(provenance)
+  })
+  it('provenance with no time is stamped now; one with no actor or authority, a bad time, link, funnel or a stage with no funnel is refused', async () => {
+    const { call } = setup()
+    const before = Date.now()
+    const res = await (await call('POST', 'RECIPIENTS', { add: [{ label: 'A', provenance: { actor: "Ada's Pluma", authority: 'on Ada\'s explicit request' } }] })).json()
+    const at = Date.parse(res.recipients[0].provenance.at)
+    expect(at).toBeGreaterThanOrEqual(before - 1000)
+    for (const provenance of [
+      { authority: 'x' }, { actor: 'x' }, { actor: ' ', authority: 'x' }, 'Ada',
+      { actor: 'x', authority: 'x', at: 'yesterday' }, { actor: 'x', authority: 'x', link: 'javascript:alert(1)' },
+      { actor: 'x', authority: 'x', funnel: 'Not A Slug!' }, { actor: 'x', authority: 'x', stage: 'first-call' },
+    ]) {
+      const r = await call('POST', 'RECIPIENTS', { add: [{ label: 'B', provenance }] })
+      expect(r.status, JSON.stringify(provenance)).toBe(400)
+      expect((await r.json()).error).toMatch(/provenance/)
+    }
+  })
   it('refuses a window that is not a time, in words', async () => {
     const { call } = setup()
     expect((await call('POST', 'RECIPIENTS', { add: [{ label: 'C', closes: 'friday' }] })).status).toBe(400)

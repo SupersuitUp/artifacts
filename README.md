@@ -1037,8 +1037,8 @@ Routes (spread into your route files by `createArtifactRoutes`): `RECIPIENTS`, `
 | Route | Who | What |
 |---|---|---|
 | `GET /api/artifacts/<id>/recipients` | publish key | Every reader, with the working link for each |
-| `POST /api/artifacts/<id>/recipients` | publish key | Body `{ add?: [{ label, note?, group?, closes? }], revoke?: [rid] or '*', expires?: ISO time or null, closes?: { rids: [rid] or '*', at: ISO time or null }, sent?: { rids: [rid] or '*', at?: ISO time } }`. `add` answers each new reader's link; `expires: null` is Keep; `closes` sets, moves or clears a reader's feedback window; `sent` records when links reached their readers (see A render before the send) |
-| `GET /api/artifacts/<id>/views` | publish key | One line per reader: opened, came back, active seconds, plays, devices, comments, `sentAt` and `beforeSend`. Each comment is `{ id, parent, at, text }` (see Comment ids in /views). A page with no readers yet answers 200 with an empty list; a missing page answers 404 |
+| `POST /api/artifacts/<id>/recipients` | publish key | Body `{ add?: [{ label, note?, group?, closes?, provenance? }], revoke?: [rid] or '*', expires?: ISO time or null, closes?: { rids: [rid] or '*', at: ISO time or null }, sent?: { rids: [rid] or '*', at?: ISO time } }`. `add` answers each new reader's link and its `provenance` (see Who minted a link); `expires: null` is Keep; `closes` sets, moves or clears a reader's feedback window; `sent` records when links reached their readers (see A render before the send) |
+| `GET /api/artifacts/<id>/views` | publish key | One line per reader: opened, came back, active seconds, plays, devices, comments, `sentAt`, `beforeSend` and `provenance`. Each comment is `{ id, parent, at, text }` (see Comment ids in /views). A page with no readers yet answers 200 with an empty list; a missing page answers 404 |
 | `POST /api/artifacts/<id>/seen` | the page itself (public) | The reader's own signal, below |
 
 Config, both on `createArtifactRoutes`: `recipients` (a store from `createRecipientsStore(db, '<collection path>')`, or `memoryRecipientsStore()` in tests) and `recipientSecret`, a function returning the signing secret, read on every request. A secret shorter than 32 characters is treated as unset: per-reader pages stay shut and the routes answer 404 or 501. Signing with an empty secret throws.
@@ -1069,6 +1069,20 @@ same device. Those are reported apart as `beforeSend: { sessions, devices, activ
 fact reclassifies what is already there. A link with no `sentAt` is read exactly as before. The
 cost, stated: a reader who opens the link within the seconds between delivery and the sender's
 mark is counted as before-send; senders mark as soon as delivery is confirmed.
+
+### Who minted a link (0.53.0)
+
+Every link can say who made it, on whose authority, and when: `add: [{ label, provenance: { actor,
+authority, at?, link?, funnel?, stage? } }]`. `actor` is a person acting by hand or "<person>'s
+Pluma"; `authority` names what they acted under ("approved by <person> on the send card", "on
+<person>'s explicit request", "under the recurrent <name>"), with `link` to the session or message
+where one exists (https only); `at` defaults to now. `funnel` (a slug) and `stage` (an id, only with
+its funnel) name the funnel step the link was sent for, so a funnel move that cites the link's opens
+has provenance. A provenance with no actor or no authority, or a malformed time, link, funnel or
+stage, is refused (400) and nothing is added. It is kept on the reader's row and answered back by
+`add`, `GET /recipients` and `GET /views` (`null` for a link made without one). A host on 0.52.x
+ignores the field, so a sender that needs it reads it back from `added` and treats `null` as an old
+host.
 
 ### Expiry
 
