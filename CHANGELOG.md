@@ -3,6 +3,25 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.53.0 (2026-10-25)
+
+**Every per-reader link can record who minted it, on whose authority, when, and the funnel step it
+was sent for.** Superlinks: when an operator's agent sends a page, the link it makes names the
+person it is for, and the founders asked that it also name who made it ("<person>'s Pluma, on
+<person>'s explicit request, <time>"), so that a funnel move citing the link's opens has
+provenance rather than a typed claim.
+
+- `POST /recipients` `add` entries take `provenance: { actor, authority, at?, link?, funnel?, stage? }`.
+  `at` defaults to now; a missing actor or authority, a malformed time, a non-https link, a funnel
+  that is not a slug, or a stage without its funnel is refused (400) and nothing is added.
+- `add`'s `added`, `GET /recipients` and `GET /views` carry `provenance` per reader (`null` when
+  none). Stored on the reader's row by both stores; `Provenance` is exported with the store types.
+- DETECTOR: a sender that posts `provenance` and reads `added[i].provenance` back as missing or
+  `undefined` is talking to a host on 0.52.x or older, which drops the field.
+- REMEDY: bump. Links made before this carry `provenance: null`; nothing is migrated.
+- Tests: recipients-api.test.tsx (provenance kept and answered by add, the listing and views;
+  stamped now when no time is given; each malformed shape refused with 400).
+
 ## 0.52.0 (2026-10-25)
 
 **A render before the send is never counted as the reader opening the page.** A per-reader page

@@ -1,7 +1,7 @@
 // The per-reader routes. SEEN is public (the page calls it); everything else needs the publish key.
 import { NextResponse, type NextRequest } from 'next/server'
 import { RID_RE, usableSecret, beatKey, isUnfurlAgent, ridLink, verifyRenderToken, verifyRid } from '../artifacts/recipients.js'
-import { summarizeViews, type RecipientsStore } from '../artifacts/recipients-store.js'
+import { summarizeViews, type Provenance, type RecipientsStore } from '../artifacts/recipients-store.js'
 import { COMMENTS_SLOT } from '../artifacts/comments.js'
 import type { ArtifactStore } from '../artifacts/store.js'
 import type { StateStore } from '../artifacts/state-store.js'
@@ -25,6 +25,25 @@ export type RecipientsRoutesCtx = {
 const SESSION = /^[a-z0-9]{1,32}$/
 const MEDIA = /^[A-Za-z0-9][A-Za-z0-9._-]{0,140}$/
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/
+const SLUG = /^[a-z0-9][a-z0-9_-]{0,63}$/
+/** A reader's provenance as sent, checked: who minted the link, on whose authority, when (default
+ *  now), and the funnel step it serves. -> the clean record, or the reason it is refused. */
+export function readProvenance(v: unknown, now: Date = new Date()): { ok: true; value: Provenance } | { ok: false; why: string } {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return { ok: false, why: 'provenance is { actor, authority, at?, link?, funnel?, stage? }' }
+  const p = v as Record<string, unknown>
+  const text = (x: unknown, max: number) => (typeof x === 'string' && x.trim() ? x.trim().slice(0, max) : '')
+  const actor = text(p.actor, 120), authority = text(p.authority, 300)
+  if (!actor || !authority) return { ok: false, why: 'provenance needs who minted the link (actor) and on whose authority (authority)' }
+  if (p.at !== undefined && (typeof p.at !== 'string' || !ISO.test(p.at))) return { ok: false, why: 'provenance.at must be an ISO time' }
+  let link: string | undefined
+  if (p.link !== undefined) {
+    try { const u = new URL(String(p.link)); if (u.protocol !== 'https:') throw new Error('not https'); link = u.toString() } catch { return { ok: false, why: 'provenance.link must be an https address' } }
+  }
+  if (p.funnel !== undefined && (typeof p.funnel !== 'string' || !SLUG.test(p.funnel))) return { ok: false, why: 'provenance.funnel must be a funnel slug' }
+  if (p.stage !== undefined && (typeof p.stage !== 'string' || !SLUG.test(p.stage) || p.funnel === undefined)) return { ok: false, why: 'provenance.stage must be a stage id, with its funnel' }
+  const at = typeof p.at === 'string' ? new Date(p.at).toISOString() : now.toISOString()
+  return { ok: true, value: { actor, authority, at, ...(link ? { link } : {}), ...(p.funnel ? { funnel: p.funnel as string } : {}), ...(p.stage ? { stage: p.stage as string } : {}) } }
+}
 const none = () => new NextResponse(null, { status: 204, headers: { 'cache-control': 'no-store' } })
 const json = (b: unknown, status = 200) => NextResponse.json(b, { status, headers: { 'cache-control': 'no-store' } })
 
@@ -75,7 +94,7 @@ export function createRecipientsRoutes(given: RecipientsRoutesCtx) {
     const rec = (await ctx.recipients!.get(id)) ?? { recipients: {}, expireAt: null, keep: false }
     return {
       id, expireAt: rec.expireAt, keep: rec.keep,
-      recipients: Object.values(rec.recipients).map((r) => ({ rid: r.rid, label: r.label, group: r.group === true, owner: r.owner === true, revoked: !!r.revokedAt, closesAt: r.closesAt ?? null, sentAt: r.sentAt ?? null, url: ridLink(ctx.pageUrl(id), id, r.rid, secret) })),
+      recipients: Object.values(rec.recipients).map((r) => ({ rid: r.rid, label: r.label, group: r.group === true, owner: r.owner === true, revoked: !!r.revokedAt, closesAt: r.closesAt ?? null, sentAt: r.sentAt ?? null, provenance: r.provenance ?? null, url: ridLink(ctx.pageUrl(id), id, r.rid, secret) })),
     }
   }
   /** GET and POST /api/artifacts/<id>/recipients: who a per-reader page was sent to (publish key). */
@@ -90,13 +109,20 @@ export function createRecipientsRoutes(given: RecipientsRoutesCtx) {
     const b = (await req.json().catch(() => null)) as { add?: unknown; revoke?: unknown; expires?: unknown; closes?: unknown; sent?: unknown } | null
     if (!b) return json({ error: 'body must be JSON' }, 400)
     const secret = ctx.recipientSecret()!
-    let added: { rid: string; label: string; url: string }[] = []
+    let added: { rid: string; label: string; url: string; provenance: Provenance | null }[] = []
     if (Array.isArray(b.add) && b.add.some((x) => !x || typeof x !== 'object' || typeof (x as { label?: unknown }).label !== 'string' || !(x as { label: string }).label.trim()))
       return json({ error: 'each reader to add needs a label' }, 400)
     if (typeof b.expires === 'string' && Number.isNaN(Date.parse(b.expires))) return json({ error: 'expires must be an ISO time or null' }, 400)
     if (typeof b.expires === 'string' && Date.parse(b.expires) <= Date.now()) return json({ error: 'expires must be in the future' }, 400)
     const adds = Array.isArray(b.add) ? (b.add as Record<string, unknown>[]) : []
     if (adds.some((x) => x.closes !== undefined && (typeof x.closes !== 'string' || Number.isNaN(Date.parse(x.closes))))) return json({ error: 'closes must be an ISO time' }, 400)
+    const provenances: (Provenance | undefined)[] = []
+    for (const x of adds) {
+      if (x.provenance === undefined) { provenances.push(undefined); continue }
+      const p = readProvenance(x.provenance)
+      if (!p.ok) return json({ error: p.why }, 400)
+      provenances.push(p.value)
+    }
     const win = b.closes as { rids?: unknown; at?: unknown } | null | undefined
     if (win !== undefined) {
       const ridsOk = !!win && (win.rids === '*' || (Array.isArray(win.rids) && win.rids.every((x) => typeof x === 'string' && RID_RE.test(x))))
@@ -118,13 +144,14 @@ export function createRecipientsRoutes(given: RecipientsRoutesCtx) {
       sentAt = new Date(atMs).toISOString()
     }
     if (adds.length) {
-      const made = await ctx.recipients.add(id, adds.map((x) => ({
+      const made = await ctx.recipients.add(id, adds.map((x, i) => ({
         label: x.label as string,
         ...(typeof x.note === 'string' ? { note: x.note } : {}), ...(x.owner === true ? { owner: true } : {}), ...(x.group === true ? { group: true } : {}),
         // Never for the owner, whatever store the host brought: their link has no window.
         ...(typeof x.closes === 'string' && x.owner !== true ? { closesAt: new Date(x.closes).toISOString() } : {}),
+        ...(provenances[i] ? { provenance: provenances[i] } : {}),
       })))
-      added = made.map((r) => ({ rid: r.rid, label: r.label, url: ridLink(ctx.pageUrl(id), id, r.rid, secret) }))
+      added = made.map((r) => ({ rid: r.rid, label: r.label, url: ridLink(ctx.pageUrl(id), id, r.rid, secret), provenance: r.provenance ?? null }))
     }
     const revoked = b.revoke === '*' || Array.isArray(b.revoke)
       ? await ctx.recipients.revoke(id, b.revoke === '*' ? '*' : (b.revoke as unknown[]).filter((x): x is string => typeof x === 'string' && RID_RE.test(x)))

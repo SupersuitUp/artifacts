@@ -27,6 +27,6 @@ export { settleOnPublish, applySettingsPatch, withComments, declaredOf, password
 export type { PageSettings, SettingsFact, AccessLevel } from '../reader/settings-sheet.js'
 // Per-reader links: the host-facing surface only. The signing and token primitives stay internal.
 export { ridLink, parseRidParam, verifyRid, isUnfurlAgent, usableSecret, RECIPIENT_SECRET_MIN, ridOfReaderKey } from './recipients.js'
-export { createRecipientsStore, memoryRecipientsStore, summarizeViews, type RecipientsStore, type Recipient, type RecipientsRecord, type ViewDoc, type RecipientSummary } from './recipients-store.js'
+export { createRecipientsStore, memoryRecipientsStore, summarizeViews, type RecipientsStore, type Recipient, type RecipientsRecord, type ViewDoc, type RecipientSummary, type Provenance } from './recipients-store.js'
 export { migrateMemosToPrivate, MEMO_KEY, type MemoMigration } from './migrate-memos.js'
 export { parseTranscriptFence, scanVoiceNotes, transcriptFenceFromWords, wordsFromWhisperJson, isAudioSrc, TRANSCRIPT_LANG, MAX_TRANSCRIPT_WORDS, type TranscriptParagraphs, type TimedWord, type VoiceNoteBlock } from './voice-note.js'
