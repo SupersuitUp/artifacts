@@ -6,10 +6,15 @@
 import type { Firestore } from 'firebase-admin/firestore'
 import { newRid, ridOfReaderKey } from './recipients.js'
 
-export type Recipient = { rid: string; label: string; note?: string; owner?: true; group?: true; addedAt: string; revokedAt?: string; closesAt?: string | null }
+/** `sentAt`: when the sender says the link reached the reader (the publish key marks it). A view
+ *  that began before then was not the reader's, whoever rendered it. */
+export type Recipient = { rid: string; label: string; note?: string; owner?: true; group?: true; addedAt: string; revokedAt?: string; closesAt?: string | null; sentAt?: string }
 export type RecipientsRecord = { recipients: Record<string, Recipient>; expireAt: string | null; keep: boolean; revokedAll?: string }
 export type ViewDoc = { artifactId: string; rid: string; session: string; device: string; firstAt: string; lastAt: string; activeSeconds: number; plays: Record<string, number> }
-export type RecipientSummary = { rid: string; label: string; group: boolean; revoked: boolean; closesAt: string | null; opened: boolean; firstOpenAt: string | null; cameBack: boolean; activeSeconds: number; plays: number; devices: number; comments: { id: string | null; parent: string | null; at: string; text: string }[] }
+/** What rendered the link before it was sent: never counted as the reader, shown so a publisher
+ *  can see it happened (usually themselves, checking the page). Null when no send was recorded. */
+export type BeforeSend = { sessions: number; devices: number; activeSeconds: number; firstAt: string | null } | null
+export type RecipientSummary = { rid: string; label: string; group: boolean; revoked: boolean; closesAt: string | null; sentAt: string | null; beforeSend: BeforeSend; opened: boolean; firstOpenAt: string | null; cameBack: boolean; activeSeconds: number; plays: number; devices: number; comments: { id: string | null; parent: string | null; at: string; text: string }[] }
 type NewRecipient = { label: string; note?: string; owner?: boolean; group?: boolean; closesAt?: string }
 export interface RecipientsStore {
   get(artifactId: string): Promise<RecipientsRecord | null>
@@ -19,6 +24,10 @@ export interface RecipientsStore {
    *  with '*'. Never the owner's. Returns the rids changed. Optional so a host's own store keeps
    *  working; without it the recipients route answers 501 to a `closes` change. */
   setCloses?(artifactId: string, rids: string[] | '*', closesAt: string | null): Promise<string[]>
+  /** Mark the named readers' links (or every non-owner's, with '*') as sent at `sentAt`. The
+   *  earliest mark stands: a resend never moves it later. Returns the rids changed. Optional so a
+   *  host's own store keeps working; without it the recipients route answers 501 to a `sent` mark. */
+  setSent?(artifactId: string, rids: string[] | '*', sentAt: string): Promise<string[]>
   setExpiry(artifactId: string, expireAt: string | null): Promise<void>
   useToken(key: string, expiresAt: number): Promise<boolean>
   recordView(v: { artifactId: string; rid: string; session: string; device: string; at: string; addSeconds: number; play?: string }): Promise<void>
@@ -68,6 +77,19 @@ function closeIn(rec: RecipientsRecord, rids: string[] | '*', closesAt: string |
   return hit
 }
 
+function sentIn(rec: RecipientsRecord, rids: string[] | '*', sentAt: string): string[] {
+  const hit: string[] = []
+  for (const r of Object.values(rec.recipients)) {
+    if (r.owner || (rids !== '*' && !rids.includes(r.rid))) continue
+    // Earliest wins. A later resend cannot hide opens that happened after the first send, and an
+    // earlier time corrects a mark written late.
+    if (r.sentAt && Date.parse(r.sentAt) <= Date.parse(sentAt)) continue
+    r.sentAt = sentAt
+    hit.push(r.rid)
+  }
+  return hit
+}
+
 function addView(prev: ViewDoc | undefined, v: Parameters<RecipientsStore['recordView']>[0]): ViewDoc {
   const doc: ViewDoc = prev ? { ...prev, plays: { ...prev.plays } } : { artifactId: v.artifactId, rid: v.rid, session: v.session, device: v.device, firstAt: v.at, lastAt: v.at, activeSeconds: 0, plays: {} }
   doc.activeSeconds += Math.max(0, Math.min(60, v.addSeconds))
@@ -93,6 +115,7 @@ export function memoryRecipientsStore(): RecipientsStore {
     },
     async revoke(id, rids) { const rec = recs.get(id); return rec ? revokeIn(rec, rids) : [] },
     async setCloses(id, rids, closesAt) { const rec = recs.get(id); return rec ? closeIn(rec, rids, closesAt) : [] },
+    async setSent(id, rids, sentAt) { const rec = recs.get(id); return rec ? sentIn(rec, rids, sentAt) : [] },
     async setExpiry(id, expireAt) {
       const rec = recs.get(id) ?? { recipients: {}, expireAt: null, keep: false }
       rec.expireAt = expireAt
@@ -148,6 +171,14 @@ export function createRecipientsStore(db: Firestore, base: string): RecipientsSt
       await recsCol().doc(id).set({ recipients: Object.fromEntries(hit.map((rid) => [rid, { closesAt }])) }, { merge: true })
       return hit
     },
+    async setSent(id, rids, sentAt) {
+      const rec = await read(id)
+      if (!rec) return []
+      const hit = sentIn(rec, rids, sentAt)
+      if (!hit.length) return hit
+      await recsCol().doc(id).set({ recipients: Object.fromEntries(hit.map((rid) => [rid, { sentAt }])) }, { merge: true })
+      return hit
+    },
     async setExpiry(id, expireAt) {
       await recsCol().doc(id).set({ expireAt, keep: expireAt === null }, { merge: true })
     },
@@ -180,10 +211,25 @@ export function createRecipientsStore(db: Firestore, base: string): RecipientsSt
 /** One line per reader (never the owner), in the order they were added. */
 export function summarizeViews(rec: RecipientsRecord, views: ViewDoc[], comments: { readerKey: string; id?: string | null; parent?: string | null; at: string; text: string }[]): RecipientSummary[] {
   return Object.values(rec.recipients).filter((r) => !r.owner).sort((a, b) => a.addedAt.localeCompare(b.addedAt)).map((r) => {
-    const mine = views.filter((v) => v.rid === r.rid).sort((a, b) => a.firstAt.localeCompare(b.firstAt))
+    const all = views.filter((v) => v.rid === r.rid).sort((a, b) => a.firstAt.localeCompare(b.firstAt))
+    // A RENDER BEFORE THE SEND IS NEVER THE READER (2026-10-25). The link was opened on the
+    // sender's side while the text waited on approval, and the reader was reported as having
+    // read a page that had not reached them. Nobody can have received a link before it was sent,
+    // so a session that began earlier is someone else's, and so is every session on that same
+    // device: the device had the link before the reader did. This decides by the send, not by
+    // guessing at user agents, so it holds for any renderer (a person checking the page, a
+    // preview that runs scripts) and costs a real reader nothing: their opens come after.
+    // Kept at read time, never by refusing to record, so a send marked late reclassifies.
+    const sentMs = r.sentAt ? Date.parse(r.sentAt) : NaN
+    const pre = Number.isFinite(sentMs) ? all.filter((v) => Date.parse(v.firstAt) < sentMs) : []
+    const preDevices = new Set(pre.map((v) => v.device))
+    const early = all.filter((v) => preDevices.has(v.device))
+    const mine = all.filter((v) => !preDevices.has(v.device))
     const firsts = mine.map((v) => Date.parse(v.firstAt))
     return {
       rid: r.rid, label: r.label, group: r.group === true, revoked: !!r.revokedAt, closesAt: r.closesAt ?? null,
+      sentAt: r.sentAt ?? null,
+      beforeSend: Number.isFinite(sentMs) ? { sessions: early.length, devices: preDevices.size, activeSeconds: early.reduce((n, v) => n + v.activeSeconds, 0), firstAt: early[0]?.firstAt ?? null } : null,
       opened: mine.length > 0,
       firstOpenAt: mine[0]?.firstAt ?? null,
       cameBack: firsts.length > 1 && firsts[firsts.length - 1] - firsts[0] >= CAME_BACK_MS,

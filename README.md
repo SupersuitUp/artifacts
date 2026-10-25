@@ -1037,8 +1037,8 @@ Routes (spread into your route files by `createArtifactRoutes`): `RECIPIENTS`, `
 | Route | Who | What |
 |---|---|---|
 | `GET /api/artifacts/<id>/recipients` | publish key | Every reader, with the working link for each |
-| `POST /api/artifacts/<id>/recipients` | publish key | Body `{ add?: [{ label, note?, group?, closes? }], revoke?: [rid] or '*', expires?: ISO time or null, closes?: { rids: [rid] or '*', at: ISO time or null } }`. `add` answers each new reader's link; `expires: null` is Keep; `closes` sets, moves or clears a reader's feedback window |
-| `GET /api/artifacts/<id>/views` | publish key | One line per reader: opened, came back, active seconds, plays, devices, comments. Each comment is `{ id, parent, at, text }` (see Comment ids in /views). A page with no readers yet answers 200 with an empty list; a missing page answers 404 |
+| `POST /api/artifacts/<id>/recipients` | publish key | Body `{ add?: [{ label, note?, group?, closes? }], revoke?: [rid] or '*', expires?: ISO time or null, closes?: { rids: [rid] or '*', at: ISO time or null }, sent?: { rids: [rid] or '*', at?: ISO time } }`. `add` answers each new reader's link; `expires: null` is Keep; `closes` sets, moves or clears a reader's feedback window; `sent` records when links reached their readers (see A render before the send) |
+| `GET /api/artifacts/<id>/views` | publish key | One line per reader: opened, came back, active seconds, plays, devices, comments, `sentAt` and `beforeSend`. Each comment is `{ id, parent, at, text }` (see Comment ids in /views). A page with no readers yet answers 200 with an empty list; a missing page answers 404 |
 | `POST /api/artifacts/<id>/seen` | the page itself (public) | The reader's own signal, below |
 
 Config, both on `createArtifactRoutes`: `recipients` (a store from `createRecipientsStore(db, '<collection path>')`, or `memoryRecipientsStore()` in tests) and `recipientSecret`, a function returning the signing secret, read on every request. A secret shorter than 32 characters is treated as unset: per-reader pages stay shut and the routes answer 404 or 501. Signing with an empty secret throws.
@@ -1048,6 +1048,27 @@ The `Page` route must stay `force-dynamic` (the package's `dynamic` export says 
 ### What counts as a view
 
 A view is the page rendered in a real browser, visible, for at least 2 seconds. The page then sends one signal carrying a single-use render token minted for that render; the token is spent on first use and expires after a day. Known unfurl fetchers (and any request with no user agent) are ignored, and so is a signal for a revoked or expired reader. The owner's own opens record zero. After the first signal the page sends a beat every few seconds while it stays visible (and a final one on hide, by `sendBeacon`), and a play signal when a clip starts. A signed-in owner or admin opens the page with no link and no tracking, so test a reader's link in a signed-out browser, never in the browser you are signed in to.
+
+### A render before the send (0.52.0)
+
+A view proves a browser rendered the link, not that the reader did. On 2026-10-25 a reader was
+reported as having opened a page a minute before the text carrying his link was sent: the link had
+been opened on the sender's side while the send waited on approval, in a real browser that ran the
+page, so no user-agent rule could have told it apart.
+
+So the sender records the send: `POST /recipients` with `sent: { rids, at }` (`rids` a list or
+`'*'` for every reader but the owner; `at` an ISO time, default now on the host's clock, never in
+the future). The earliest mark stands, so a resend never hides opens between the two sends, and an
+earlier time corrects a mark written late. `sent` answers the reader ids it changed. A host with
+its own `RecipientsStore` needs `setSent`; without it the route answers 501 to a `sent` mark.
+
+`GET /views` then counts, for that reader, only sessions on devices that had not rendered the link
+before `sentAt`: a session that began earlier was not the reader's, nor is any later session on the
+same device. Those are reported apart as `beforeSend: { sessions, devices, activeSeconds, firstAt }`
+(null when no send was recorded). Nothing is refused at record time, so marking a send after the
+fact reclassifies what is already there. A link with no `sentAt` is read exactly as before. The
+cost, stated: a reader who opens the link within the seconds between delivery and the sender's
+mark is counted as before-send; senders mark as soon as delivery is confirmed.
 
 ### Expiry
 

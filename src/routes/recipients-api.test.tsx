@@ -68,6 +68,27 @@ describe('recipients API', () => {
     const v = await (await call('GET', 'VIEWS')).json()
     expect(v.recipients[0]).toMatchObject({ label: 'Reader A', opened: true, comments: [{ text: 'Beautiful' }] })
   })
+  it('marks a link sent, so a render before the send is never counted as the reader opening it', async () => {
+    const { call, recipients } = setup()
+    const { added } = await (await call('POST', 'RECIPIENTS', { add: [{ label: 'Reader A' }, { label: 'Me', owner: true }] })).json()
+    const rid = added[0].rid
+    await recipients.recordView({ artifactId: 'abcd2345', rid, session: 'pre', device: 'd1', at: new Date(Date.now() - 60_000).toISOString(), addSeconds: 2 })
+    const sentAt = new Date(Date.now() - 1000).toISOString()
+    const res = await (await call('POST', 'RECIPIENTS', { sent: { rids: [rid], at: sentAt } })).json()
+    expect(res.sent).toEqual([rid])
+    expect(res.recipients.find((x: { rid: string }) => x.rid === rid).sentAt).toBe(sentAt)
+    const v = await (await call('GET', 'VIEWS')).json()
+    expect(v.recipients[0]).toMatchObject({ sentAt, opened: false, beforeSend: { sessions: 1 } })
+    // No time means now, on the host's clock.
+    const now = await (await call('POST', 'RECIPIENTS', { sent: { rids: '*' } })).json()
+    expect(now.sent).toEqual([])
+  })
+  it('refuses a malformed sent mark, and a send time in the future', async () => {
+    const { call } = setup()
+    expect((await call('POST', 'RECIPIENTS', { sent: { rids: ['nope'] } })).status).toBe(400)
+    expect((await call('POST', 'RECIPIENTS', { sent: { rids: '*', at: 'nonsense' } })).status).toBe(400)
+    expect((await call('POST', 'RECIPIENTS', { sent: { rids: '*', at: new Date(Date.now() + 3_600_000).toISOString() } })).status).toBe(400)
+  })
   it('refuses an empty label or a null element with 400, and an expiry in the past', async () => {
     const { call } = setup()
     expect((await call('POST', 'RECIPIENTS', { add: [{ label: '  ' }] })).status).toBe(400)

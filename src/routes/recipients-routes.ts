@@ -75,7 +75,7 @@ export function createRecipientsRoutes(given: RecipientsRoutesCtx) {
     const rec = (await ctx.recipients!.get(id)) ?? { recipients: {}, expireAt: null, keep: false }
     return {
       id, expireAt: rec.expireAt, keep: rec.keep,
-      recipients: Object.values(rec.recipients).map((r) => ({ rid: r.rid, label: r.label, group: r.group === true, owner: r.owner === true, revoked: !!r.revokedAt, closesAt: r.closesAt ?? null, url: ridLink(ctx.pageUrl(id), id, r.rid, secret) })),
+      recipients: Object.values(rec.recipients).map((r) => ({ rid: r.rid, label: r.label, group: r.group === true, owner: r.owner === true, revoked: !!r.revokedAt, closesAt: r.closesAt ?? null, sentAt: r.sentAt ?? null, url: ridLink(ctx.pageUrl(id), id, r.rid, secret) })),
     }
   }
   /** GET and POST /api/artifacts/<id>/recipients: who a per-reader page was sent to (publish key). */
@@ -87,7 +87,7 @@ export function createRecipientsRoutes(given: RecipientsRoutesCtx) {
     if (!a) return json({ error: `no artifact with id ${id}` }, 404)
     if (req.method === 'GET') return json(await listing(id))
     if (a.links !== 'per-reader') return json({ error: 'this page is not links: per-reader' }, 409)
-    const b = (await req.json().catch(() => null)) as { add?: unknown; revoke?: unknown; expires?: unknown; closes?: unknown } | null
+    const b = (await req.json().catch(() => null)) as { add?: unknown; revoke?: unknown; expires?: unknown; closes?: unknown; sent?: unknown } | null
     if (!b) return json({ error: 'body must be JSON' }, 400)
     const secret = ctx.recipientSecret()!
     let added: { rid: string; label: string; url: string }[] = []
@@ -104,6 +104,19 @@ export function createRecipientsRoutes(given: RecipientsRoutesCtx) {
       if (!ridsOk || !atOk) return json({ error: 'closes is { rids: [rid] or "*", at: an ISO time or null }' }, 400)
       if (!ctx.recipients.setCloses) return json({ error: 'this host cannot set a feedback window' }, 501)
     }
+    // `sent`: the sender's word that these links reached their readers, at `at` (default: now, on
+    // this host's clock). Views that began earlier are then not the reader's (summarizeViews). A
+    // time in the future is refused: it would hide a real reader's open.
+    const sent = b.sent as { rids?: unknown; at?: unknown } | undefined
+    let sentAt: string | null = null
+    if (sent !== undefined) {
+      const ridsOk = !!sent && typeof sent === 'object' && (sent.rids === '*' || (Array.isArray(sent.rids) && sent.rids.every((x) => typeof x === 'string' && RID_RE.test(x))))
+      const atMs = sent && typeof sent === 'object' && sent.at !== undefined ? (typeof sent.at === 'string' && ISO.test(sent.at) ? Date.parse(sent.at) : NaN) : Date.now()
+      if (!ridsOk || !Number.isFinite(atMs)) return json({ error: 'sent is { rids: [rid] or "*", at: an ISO time (default now) }' }, 400)
+      if (atMs > Date.now() + 60_000) return json({ error: 'sent.at must not be in the future' }, 400)
+      if (!ctx.recipients.setSent) return json({ error: 'this host cannot record a send' }, 501)
+      sentAt = new Date(atMs).toISOString()
+    }
     if (adds.length) {
       const made = await ctx.recipients.add(id, adds.map((x) => ({
         label: x.label as string,
@@ -116,11 +129,12 @@ export function createRecipientsRoutes(given: RecipientsRoutesCtx) {
     const revoked = b.revoke === '*' || Array.isArray(b.revoke)
       ? await ctx.recipients.revoke(id, b.revoke === '*' ? '*' : (b.revoke as unknown[]).filter((x): x is string => typeof x === 'string' && RID_RE.test(x)))
       : []
+    const marked = sentAt ? await ctx.recipients.setSent!(id, (b.sent as { rids: string[] | '*' }).rids, sentAt) : []
     const windowed = win ? await ctx.recipients.setCloses!(id, win.rids as string[] | '*', win.at === null ? null : new Date(win.at as string).toISOString()) : []
     if (b.expires === null || typeof b.expires === 'string') {
       await ctx.recipients.setExpiry(id, b.expires === null ? null : new Date(b.expires as string).toISOString())
     }
-    return json({ ...(await listing(id)), added, revoked, windowed })
+    return json({ ...(await listing(id)), added, revoked, windowed, sent: marked })
   }
   /** GET /api/artifacts/<id>/views: one line per reader, with their comments (publish key). */
   async function VIEWS(req: NextRequest, { params }: Params) {

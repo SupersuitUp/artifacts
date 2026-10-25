@@ -3,6 +3,29 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.52.0 (2026-10-25)
+
+**A render before the send is never counted as the reader opening the page.** A per-reader page
+reported its reader as having opened it (first open 20:32:34Z, 647 active seconds) a minute before
+the text carrying his link was sent (20:33:35Z). The page had been rendered from his link on the
+sender's side while the send waited on approval, in a real browser, so the unfurl filter could not
+see it and the render token treated it as a reader.
+
+- `POST /recipients` takes `sent: { rids: [rid] or '*', at?: ISO }` and answers `sent`, the rids
+  marked. Earliest mark wins; never the owner; a future time is refused (400).
+- `GET /views` counts only sessions on devices that had not rendered the link before `sentAt`, and
+  reports the rest as `beforeSend: { sessions, devices, activeSeconds, firstAt }`; both lines and
+  `GET /recipients` carry `sentAt`. A reader with no `sentAt` reads exactly as before.
+- `RecipientsStore.setSent` (optional; the memory and Firestore stores have it).
+- DETECTOR: a reader whose `firstOpenAt` is earlier than the time the text carrying their link was
+  sent. Any host on 0.51.x has no way to tell such a render from the reader.
+- REMEDY: bump, then have the sender mark each per-reader link sent once delivery is confirmed
+  (Supersuit's send-message does this from the next release). For a page already wrong, mark the
+  link with the true send time: the views reclassify, nothing is deleted.
+- Tests: recipients-store.test.ts (setSent on both stores; summarizeViews leaves out a pre-send
+  session and every later session on its device, keeps the reader's own) and
+  recipients-api.test.tsx (the `sent` mark, its refusals, and the views it changes).
+
 ## 0.51.0 (2026-10-23)
 
 **Every page's session replay now masks all text and all inputs, not only a gated page's.** Since

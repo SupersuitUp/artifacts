@@ -73,6 +73,19 @@ for (const [name, make] of [['memory', () => memoryRecipientsStore()], ['firesto
       expect((await s.get('abcd2345'))!.recipients[a.rid].closesAt ?? null).toBeNull()
       expect(await s.setCloses!('zzzz9999', '*', null)).toEqual([])
     })
+    it('a link is marked sent once: the earliest send stands, and the owner is never marked', async () => {
+      s = make()
+      const [a, o] = await s.add('abcd2345', [{ label: 'Reader A' }, { label: 'Me', owner: true }])
+      expect(await s.setSent!('abcd2345', '*', '2026-10-25T20:33:35.000Z')).toEqual([a.rid])
+      // A resend later never moves it: views between the two sends were the reader's.
+      expect(await s.setSent!('abcd2345', [a.rid], '2026-10-26T09:00:00.000Z')).toEqual([])
+      // An earlier time does (a correction of a stamp written late).
+      expect(await s.setSent!('abcd2345', [a.rid], '2026-10-25T20:33:30.000Z')).toEqual([a.rid])
+      const rec = (await s.get('abcd2345'))!
+      expect(rec.recipients[a.rid].sentAt).toBe('2026-10-25T20:33:30.000Z')
+      expect(rec.recipients[o.rid].sentAt ?? null).toBeNull()
+      expect(await s.setSent!('zzzz9999', '*', '2026-10-25T20:33:30.000Z')).toEqual([])
+    })
     it('the owner is never given a window: one named when they are added is dropped', async () => {
       s = make()
       const [o, a] = await s.add('abcd2345', [{ label: 'Me', owner: true, closesAt: '2020-01-01T00:00:00.000Z' }, { label: 'Reader A', closesAt: '2020-01-01T00:00:00.000Z' }])
@@ -164,6 +177,26 @@ describe('summarizeViews', () => {
     ])
     expect(out[1].comments.map((c) => c.text)).toEqual(['Before the line', 'From Kit', 'From Robin'])
     expect(out[0].comments).toEqual([])
+  })
+  it('a session that began before the link was sent is never the reader, nor is any later session on its device', () => {
+    // 2026-10-25: a per-reader link was opened on the sender's side while the send was still
+    // waiting on approval, and the reader was reported as having opened it before it reached them.
+    const sent = { ...rec, recipients: { ...rec.recipients, aaaaaaaaaaaa: { ...rec.recipients.aaaaaaaaaaaa, sentAt: '2026-10-25T20:33:35.000Z' } } }
+    const out = summarizeViews(sent, [
+      v('aaaaaaaaaaaa', 'pre', 'dsender', '2026-10-25T20:32:34.000Z', 647),
+      v('aaaaaaaaaaaa', 'again', 'dsender', '2026-10-25T21:10:00.000Z', 40),
+    ], [])
+    expect(out[0]).toMatchObject({ sentAt: '2026-10-25T20:33:35.000Z', opened: false, firstOpenAt: null, activeSeconds: 0, devices: 0,
+      beforeSend: { sessions: 2, devices: 1, activeSeconds: 687, firstAt: '2026-10-25T20:32:34.000Z' } })
+    // The reader's own open, after the send, on their own device, always counts.
+    const real = summarizeViews(sent, [
+      v('aaaaaaaaaaaa', 'pre', 'dsender', '2026-10-25T20:32:34.000Z', 647),
+      v('aaaaaaaaaaaa', 'theirs', 'dreader', '2026-10-25T22:00:00.000Z', 90),
+    ], [])
+    expect(real[0]).toMatchObject({ opened: true, firstOpenAt: '2026-10-25T22:00:00.000Z', activeSeconds: 90, devices: 1, beforeSend: { sessions: 1 } })
+    // A link with no recorded send is read exactly as before.
+    const unsent = summarizeViews(rec, [v('aaaaaaaaaaaa', 's1', 'd1', '2026-10-25T20:32:34.000Z', 5)], [])
+    expect(unsent[0]).toMatchObject({ sentAt: null, opened: true, beforeSend: null })
   })
   it('marks a revoked reader as revoked', () => {
     const out = summarizeViews({ ...rec, recipients: { ...rec.recipients, aaaaaaaaaaaa: { ...rec.recipients.aaaaaaaaaaaa, revokedAt: 'y' } } }, [], [])
