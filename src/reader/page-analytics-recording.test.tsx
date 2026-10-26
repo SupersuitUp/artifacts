@@ -8,7 +8,7 @@ import { createRoot } from 'react-dom/client'
 
 const init = vi.fn()
 vi.mock('posthog-js', () => ({
-  default: { init: (...a: unknown[]) => init(...a), register: vi.fn(), identify: vi.fn(), capture: vi.fn() },
+  default: { init: (...a: unknown[]) => init(...a), register: vi.fn(), identify: vi.fn(), capture: vi.fn(), reset: vi.fn(), get_property: vi.fn(), get_distinct_id: vi.fn() },
 }))
 
 import { PageAnalytics, posthogInitOptions, RECORDING_MASK } from './page-analytics.js'

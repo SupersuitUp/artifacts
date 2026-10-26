@@ -11,6 +11,12 @@
 // than a gated one: the replay still shows where the reader went, how far and how fast, without the
 // words. Autocapture is told not to collect element text for the same reason. There is no opt-out:
 // the options come from posthogInitOptions, which a test holds to RECORDING_MASK for every kind.
+//
+// posthog-js keeps the last identity it was given on this origin, and a page that names nobody does
+// not clear it. So a browser that opened one reader's per-reader link reported every page it opened
+// after under that reader's id and label, and a per-reader page's init-time view went out under the
+// previous reader before identify switched it. The page now drops an identity it was not given
+// before it records anything, and captures its own page view once it has settled who the reader is.
 import { useEffect } from 'react'
 import type { AnalyticsPlan } from './analytics-plan.js'
 import { currentSection } from '../artifacts/toc-spy.js'
@@ -62,7 +68,8 @@ export function posthogInitOptions(plan: Pick<AnalyticsPlan, 'host'>) {
   return {
     api_host: plan.host,
     person_profiles: 'identified_only' as const,
-    capture_pageview: true,
+    // Captured by the page once it has settled who the reader is (see PageAnalytics).
+    capture_pageview: false,
     capture_pageleave: true,
     autocapture: true,
     // Autocapture records a clicked element's text; on these pages that text is the page.
@@ -82,11 +89,15 @@ export function PageAnalytics({ plan, rootId = 'artifact-narration-root' }: { pl
     void import('posthog-js').then(({ default: posthog }) => {
       if (cancelled) return
       posthog.init(key, posthogInitOptions({ host }))
+      const who = identity ? JSON.parse(identity) as NonNullable<AnalyticsPlan['identity']> : null
+      // A reader left on this browser by another page is dropped first: reset also clears the
+      // registered properties, so it comes before register. An anonymous browser is left alone, so
+      // its first visit still joins the reader it becomes.
+      const left = posthog.get_property('$user_state') === 'identified' ? posthog.get_distinct_id() : null
+      if (left && left !== who?.distinctId) posthog.reset()
       posthog.register({ artifact_id: pageId, page_kind: kind, ...(tenant ? { tenant } : {}) })
-      if (identity) {
-        const who = JSON.parse(identity) as NonNullable<AnalyticsPlan['identity']>
-        posthog.identify(who.distinctId, { ...(who.email ? { email: who.email } : {}), ...(who.name ? { name: who.name } : {}) })
-      }
+      if (who) posthog.identify(who.distinctId, { ...(who.email ? { email: who.email } : {}), ...(who.name ? { name: who.name } : {}) })
+      posthog.capture('$pageview')
       const capture: Capture = (e, p) => posthog.capture(e, p)
 
       const root = document.getElementById(rootId)

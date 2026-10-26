@@ -3,6 +3,26 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## Unreleased
+
+**A page no longer records under a reader left on the browser by another page.** posthog-js keeps
+the last identity it was given on an origin, and `PageAnalytics` never cleared it, so a browser that
+opened one per-reader link sent every password or public page it opened afterward under that
+reader's recipient id and label, and a per-reader page's init-time `$pageview` went out under the
+previous reader before `identify()` switched it.
+
+- `PageAnalytics` calls `posthog.reset()` when the browser is identified as anyone other than the
+  page's own reader, before `register` (reset clears registered properties). An anonymous browser
+  is not reset, so its first visit still joins the reader it becomes; the device id survives.
+- `capture_pageview` is now `false`; the page captures `$pageview` itself once the reader is settled.
+- DETECTOR: in PostHog, a `password` or `public` `page_kind` event whose `distinct_id` starts with
+  `recipient:`, or whose person has a `name`, came from a host on an older version.
+- REMEDY: update the host. Events already recorded keep the leftover identity; a dashboard should
+  name a reader only by an id of the page's own kind (a recipient id on `per-reader`, an email on
+  `gated`) and count everything else by device.
+- Tests: `page-analytics-identity.test.tsx` mounts the component against a stand-in posthog-js
+  holding a leftover identity and checks the call order on every page kind.
+
 ## 0.53.0 (2026-10-25)
 
 **Every per-reader link can record who minted it, on whose authority, when, and the funnel step it
