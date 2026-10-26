@@ -248,6 +248,12 @@ createArtifactRoutes({ ..., ownerEmail: 'owner@example.com', admins: ['editor@ex
 - `GET /api/artifacts/<id>/versions` lists the history; `POST` it `{ "version": 2, "note": "..." }`
   (or `"note": null`) to write a note onto a version after the fact.
 
+**Reading a page as its owner.** `GET /api/artifacts/<id>` with the publish key answers
+`{ id, title, subtitle?, summary, to?, markdown, version, updatedAt, text }`. `markdown` is the
+body as written, lists included, and is what an agent should read; `text` is the narration, which
+drops list items. Neither ever carries the page's password or anything about its readers. A page
+behind a sign-in door, a password or per-reader links is readable this way by whoever holds the key.
+
 ## Front matter
 
 ```markdown

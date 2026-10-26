@@ -48,9 +48,12 @@ describe('createArtifactRoutes', () => {
     const r = createArtifactRoutes({ store, brand: freedomDefault, siteUrl: 'https://example.com', publishKey: () => undefined })
     expect((await r.POST(post(GOOD, 'k'))).status).toBe(401)
   })
-  it('GET returns the narration text; DELETE reports unknown ids', async () => {
+  it('GET returns the narration text and the markdown; DELETE reports unknown ids', async () => {
     const g = await routes.GET(new NextRequest('http://x/api/artifacts/abc23456', { headers: { authorization: 'Bearer k' } }), params('abc23456'))
-    expect((await g.json()).text).toBe('T\nS\nhi')
+    const body = await g.json()
+    expect(body.text).toBe('T\nS\nhi')
+    // An agent reading a page needs what was written, lists and all, not the narration.
+    expect(body).toMatchObject({ title: 'T', summary: 'S', markdown: '# hi', version: expect.any(Number) })
     store.delete = vi.fn(async () => false)
     const d = await routes.DELETE(new NextRequest('http://x/api/artifacts/zz', { method: 'DELETE', headers: { authorization: 'Bearer k' } }), params('zz'))
     expect(d.status).toBe(404)

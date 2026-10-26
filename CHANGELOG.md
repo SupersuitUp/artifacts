@@ -3,6 +3,20 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.55.0 (2026-10-26)
+
+**`GET /api/artifacts/<id>` now returns the page as written, not only its narration.** It answered
+`{ id, text }`, and `text` is the narration, which drops every list item, so an agent reading a
+prep sheet through the key got its headings ("Questions for him", "About him, first:") with the
+questions missing.
+
+- The response adds `title`, `subtitle` (when set), `summary`, `to` (when set), `markdown`,
+  `version` and `updatedAt`. `text` is unchanged, so existing callers keep working.
+- Never the password, the access list or reader data.
+- DETECTOR: `GET /api/artifacts/<id>` with the publish key answers no `markdown` field.
+- REMEDY: update the host.
+- Tests: `src/routes/artifacts.test.tsx` "GET returns the narration text and the markdown".
+
 ## 0.54.0 (2026-10-25)
 
 **A page no longer records under a reader left on the browser by another page.** posthog-js keeps

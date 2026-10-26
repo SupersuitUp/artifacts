@@ -1274,7 +1274,15 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     const { id } = await params
     const a = await kept.get(id)
     if (!a) return NextResponse.json({ error: `no artifact with id ${id}` }, { status: 404 })
-    return NextResponse.json({ id, text: narrationText({ title: a.title, subtitle: a.subtitle, summary: a.summary, markdown: a.markdown }) })
+    // `text` is the narration (lists and headings without their items read badly aloud, so it
+    // drops them); `markdown` is the page as written, which is what an agent reading the page
+    // needs. Never the password or any reader data.
+    return NextResponse.json({
+      id,
+      text: narrationText({ title: a.title, subtitle: a.subtitle, summary: a.summary, markdown: a.markdown }),
+      title: a.title, ...(a.subtitle ? { subtitle: a.subtitle } : {}), summary: a.summary, ...(a.to ? { to: a.to } : {}),
+      markdown: a.markdown, version: a.version ?? 1, updatedAt: a.updatedAt,
+    })
   }
 
   /** PUT /api/artifacts/<id>/assets/<name>: raw bytes in, public URL out. 16 MiB cap. */
