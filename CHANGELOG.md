@@ -3,7 +3,7 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
-## Unreleased
+## 0.54.0 (2026-10-25)
 
 **A page no longer records under a reader left on the browser by another page.** posthog-js keeps
 the last identity it was given on an origin, and `PageAnalytics` never cleared it, so a browser that
