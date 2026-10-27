@@ -3,6 +3,19 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## Unreleased
+
+**The no-link door on a per-reader page offers sign-in.** A signed-in owner or hub admin already got
+through a `links: per-reader` page without a link, but a signed-out one met "This page opens from the
+link it was sent with." and nothing else, so a co-founder opening a company page's bare address had
+no way in (2026-10-27).
+
+- DETECTOR: open a per-reader page's bare address signed out; the door has no sign-in link.
+- REMEDY: none for the host beyond taking this version. The door now carries "Sign in" (only with
+  `signInOrigin` set, only to a visitor not signed in); a signed-in reader who is not owner or admin
+  still sees the plain door, and nothing of the page is shown before the gate.
+- Tests: `src/routes/per-reader.test.tsx` (sign-in offered when signed out, not offered when signed in).
+
 ## 0.58.0 (2026-10-27)
 
 **A link's provenance can name its reader by an opaque person id.** Superlinks step 6: a funnel
