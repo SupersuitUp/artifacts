@@ -1289,6 +1289,14 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
       text: narrationText({ title: a.title, subtitle: a.subtitle, summary: a.summary, markdown: a.markdown }),
       title: a.title, ...(a.subtitle ? { subtitle: a.subtitle } : {}), summary: a.summary, ...(a.to ? { to: a.to } : {}),
       markdown: a.markdown, version: a.version ?? 1, updatedAt: a.updatedAt,
+      // What a link to this page lets its reader do (0.57.0), so a sender can say so before the
+      // reader's link exists: the send card is approved before anything is minted.
+      share: {
+        links: a.links === 'per-reader' ? 'per-reader' : 'open',
+        forward: a.forward ?? 'off',
+        comments: a.comments ?? 'off',
+        expires: a.links === 'per-reader' && config.recipients ? (await config.recipients.get(id))?.expireAt ?? null : null,
+      },
     })
   }
 

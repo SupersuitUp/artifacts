@@ -202,3 +202,20 @@ describe('acting on a thread or forward link needs sign-in; a personal link does
     expect((await off.say(off.thread.rid)).status).toBe(200)
   })
 })
+
+describe('GET /api/artifacts/<id> says what a link to the page lets its reader do (0.57.0)', () => {
+  // The send card is drafted before any reader's link is made, so the only place the operator can
+  // learn what they are about to hand someone is the page's own settings, read through the key.
+  it('reports per-reader, forward, comments and expiry; an open page says open', async () => {
+    const recipients = memoryRecipientsStore()
+    await recipients.setExpiry(ID, '2026-12-01T00:00:00.000Z')
+    const store = memoryArtifactStore([
+      { id: ID, links: 'per-reader', forward: 'signed-in', comments: 'anyone' },
+      { id: 'open2345', title: 'Open' },
+    ])
+    const routes = createArtifactRoutes(testConfig({ store, recipients: recipients as never, recipientSecret: () => S }))
+    const get = async (id: string) => (await routes.GET(new NextRequest(`${site}/api/artifacts/${id}`, { headers: { authorization: 'Bearer test-key' } }), { params: Promise.resolve({ id }) })).json()
+    expect((await get(ID)).share).toEqual({ links: 'per-reader', forward: 'signed-in', comments: 'anyone', expires: '2026-12-01T00:00:00.000Z' })
+    expect((await get('open2345')).share).toEqual({ links: 'open', forward: 'off', comments: 'off', expires: null })
+  })
+})

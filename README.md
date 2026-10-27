@@ -254,6 +254,11 @@ body as written, lists included, and is what an agent should read; `text` is the
 drops list items. Neither ever carries the page's password or anything about its readers. A page
 behind a sign-in door, a password or per-reader links is readable this way by whoever holds the key.
 
+The answer also carries `share: { links, forward, comments, expires }` (0.57.0): `links` is
+`per-reader` or `open`, `forward` the page's `forward:` (`off` when unset), `comments` its
+`comments:` (`off` when unset), and `expires` the per-reader page's expiry or null. It is what a
+sender reads to say, before a reader's link exists, what that link will let its reader do.
+
 ## Front matter
 
 ```markdown

@@ -3,6 +3,20 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.57.0 (2026-10-26)
+
+**`GET /api/artifacts/<id>` says what a link to the page lets its reader do.** A sender approves a
+message before any reader's link is minted, so the only way to tell the operator, on the send card,
+whether the person can forward the page, must sign in to comment, or has a link that expires, is the
+page's own settings. The response adds `share: { links, forward, comments, expires }`.
+
+- `links`: `per-reader` or `open`. `forward`: the page's `forward:` line, `off` when unset.
+  `comments`: the page's `comments:`, `off` when unset. `expires`: a per-reader page's expiry, or null.
+- Never anything about a reader.
+- DETECTOR: `GET /api/artifacts/<id>` with the publish key answers no `share` field.
+- REMEDY: update the host.
+- Tests: forward.test.tsx "GET /api/artifacts/<id> says what a link to the page lets its reader do".
+
 ## 0.56.0 (2026-10-26)
 
 **A reader can pass a per-reader page on, and the link they make says who made it and from which
