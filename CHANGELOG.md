@@ -3,6 +3,19 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.57.1 (2026-10-26)
+
+**Page analytics no longer send a per-reader link's label to PostHog.** A per-reader page identified its
+reader as `recipient:<rid>` with `name` set to the label the publisher gave the link, which is the
+person's name, so every reader's name sat in the analytics provider. The operator's ruling for
+superlinks (2026-10-26): analytics gets the link's id, never who it is for.
+
+- The identity is `{ distinctId: 'recipient:<rid>' }`, no `name`. A signed-in reader on a gated page is
+  unchanged.
+- DETECTOR: a PostHog person whose distinct id starts `recipient:` carries a `name` property.
+- REMEDY: update the host. Names already sent stay in PostHog until deleted there.
+- Tests: src/reader/analytics-plan.test.ts (the per-reader identity is the id alone).
+
 ## 0.57.0 (2026-10-26)
 
 **`GET /api/artifacts/<id>` says what a link to the page lets its reader do.** A sender approves a

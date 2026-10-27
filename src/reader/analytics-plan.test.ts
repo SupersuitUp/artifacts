@@ -27,9 +27,11 @@ describe('analyticsPlan', () => {
     const plan = analyticsPlan({ ...base, kind: 'gated', reader: { email: 'Ana@Example.com', name: 'Ana Ruiz' } })!
     expect(plan.identity).toEqual({ distinctId: 'ana@example.com', email: 'ana@example.com', name: 'Ana Ruiz' })
   })
-  it('a per-reader link identifies by recipient id and label, never an email', () => {
+  it('a per-reader link identifies by its opaque recipient id alone: never its label, never an email', () => {
+    // Superlinks (operator's ruling, 2026-10-26): analytics gets the link's id, never who it is for.
+    // The id-to-person map stays with the publisher, so a third-party analytics store holds no names.
     const plan = analyticsPlan({ ...base, kind: 'per-reader', recipient: { rid: 'r1x', label: 'Ana' }, reader: { email: 'ana@example.com' } })!
-    expect(plan.identity).toEqual({ distinctId: 'recipient:r1x', name: 'Ana' })
+    expect(plan.identity).toEqual({ distinctId: 'recipient:r1x' })
   })
   it('honours a host override', () => {
     expect(analyticsPlan({ ...base, config: { posthogKey: 'k', posthogHost: 'https://eu.i.posthog.com' } })!.host).toBe('https://eu.i.posthog.com')

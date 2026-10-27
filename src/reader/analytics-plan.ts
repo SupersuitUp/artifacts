@@ -6,8 +6,8 @@
 //  - The owner and the host's admins are never recorded, signed in or on their own per-reader link.
 //  - A link-preview fetcher is never handed the script.
 //  - A reader is identified only where the page already knows who they are: a gated page by the
-//    signed-in email, a per-reader link by its opaque recipient id and the label the publisher gave
-//    it (never a phone or an email, which the recipients store does not hold). A public or password
+//    signed-in email, a per-reader link by its opaque recipient id alone: never the label the
+//    publisher gave it, which names the person (2026-10-26), and never a phone or an email. A public or password
 //    page stays anonymous, even when its reader happens to be signed in.
 
 export type AnalyticsConfig = {
@@ -52,7 +52,8 @@ export function analyticsPlan(input: {
     const email = input.reader.email.trim().toLowerCase()
     identity = { distinctId: email, email, ...(input.reader.name ? { name: input.reader.name } : {}) }
   } else if (input.kind === 'per-reader' && input.recipient?.rid) {
-    identity = { distinctId: `recipient:${input.recipient.rid}`, name: input.recipient.label }
+    // The link's id alone: who it is for stays with the publisher (superlinks, 2026-10-26).
+    identity = { distinctId: `recipient:${input.recipient.rid}` }
   }
   return {
     key,

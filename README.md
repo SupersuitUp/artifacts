@@ -1279,7 +1279,7 @@ Who is recorded, and as whom (`analyticsPlan`, `src/reader/analytics-plan.ts`):
 - Never the owner or an admin (signed in, previewing `?as=reader`, or on the owner's own per-reader
   link), never a link-preview fetcher, never a past version.
 - A gated page identifies the signed-in reader by email.
-- A per-reader link identifies as `recipient:<rid>` with the label the publisher gave it.
+- A per-reader link identifies as `recipient:<rid>` and nothing more: never the label the publisher gave it, which names the person (0.57.1). The id-to-person map stays with the publisher, in the recipients store.
 - A public or password page stays anonymous.
 - Every page, whatever its kind, records replays with all text and all inputs masked
   (`RECORDING_MASK`), and autocapture collects no element text. There is no opt-out.
