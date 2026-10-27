@@ -68,13 +68,14 @@ describe('page analytics on the page', () => {
     expect(plan).toMatchObject({ kind: 'gated', identity: { distinctId: 'jordan@example.com', email: 'jordan@example.com', name: 'Jordan Lee' } })
     expect(await render({ access: 'freedom' }, {}, { who: owner })).toEqual([])
   })
-  it('a per-reader link identifies by recipient id and label; the owner\'s own link does not mount it', async () => {
+  it('a per-reader link identifies by its recipient id alone, never its label; the owner\'s own link does not mount it', async () => {
     const recipients = memoryRecipientsStore()
     const [ana, own] = await recipients.add('abcd2345', [{ label: 'Ana' }, { label: 'Owner', owner: true }])
     const link = (rid: string) => `${rid}.${ridSig(S, 'abcd2345', rid)}`
     const over = { recipients, recipientSecret: () => S }
     const [plan] = await render({ links: 'per-reader' }, over, { sp: { r: link(ana.rid) } })
-    expect(plan).toMatchObject({ kind: 'per-reader', identity: { distinctId: `recipient:${ana.rid}`, name: 'Ana' } })
+    expect(plan).toMatchObject({ kind: 'per-reader', identity: { distinctId: `recipient:${ana.rid}` } })
+    expect(plan.identity).not.toHaveProperty('name')
     expect(JSON.stringify(plan)).not.toContain('@')
     expect(await render({ links: 'per-reader' }, over, { sp: { r: link(own.rid) } })).toEqual([])
   })

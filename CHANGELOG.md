@@ -3,7 +3,14 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
-## 0.57.1 (2026-10-26)
+## 0.57.2 (2026-10-26)
+
+**0.57.1, published.** 0.57.1 was tagged but never reached npm: its publish run refused it, because
+a second test (`src/routes/page-analytics-mount.test.tsx`) still expected the label as the PostHog
+name. That test now asserts the identity carries no `name`. Everything in the 0.57.1 entry below
+ships in this version.
+
+## 0.57.1 (2026-10-26, never published: see 0.57.2)
 
 **Page analytics no longer send a per-reader link's label to PostHog.** A per-reader page identified its
 reader as `recipient:<rid>` with `name` set to the label the publisher gave the link, which is the

@@ -168,7 +168,7 @@ export type ArtifactRoutesConfig = {
    *  autocapture, scroll depth on leave, and section_viewed / narration_* events. Without a key no
    *  page loads any analytics script. Never records the owner or an admin, never a link-preview
    *  fetcher, never a past version; identifies a reader only on a gated page (their email) or a
-   *  per-reader link (its recipient id and label). See reader/analytics-plan.ts. */
+   *  per-reader link (its recipient id alone, never the label). See reader/analytics-plan.ts. */
   analytics?: AnalyticsConfig | null
 }
 
