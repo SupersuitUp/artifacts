@@ -73,7 +73,13 @@ export type ArtifactMeta = {
    *  follow from draft to draft; a page that reads as a message leaves the line out. Content, like
    *  `toc:`: a republish without the line goes back to the host's setting. */
   history?: PageHistory
+  /** `forward: off | signed-in | open` (0.56.0): whether a reader of a per-reader page may make a
+   *  link to pass it on, and whether they must sign in first. Absent is off. A door like `links:`,
+   *  so sticky: a republish that leaves the line out changes nothing. */
+  forward?: ForwardMode
 }
+export const FORWARD_MODES = ['off', 'signed-in', 'open'] as const
+export type ForwardMode = (typeof FORWARD_MODES)[number]
 
 /** Who sees a page's version number and past versions. */
 export type PageHistory = 'admins' | 'everyone'
@@ -99,7 +105,7 @@ export const PACK_NAME = /^[a-z0-9][a-z0-9-]{0,39}$/
 /** The longest `to:` a page may carry: a name or two, never a sentence. */
 export const MAX_TO_CHARS = 60
 
-const KNOWN = new Set(['title', 'summary', 'subtitle', 'to', 'template', 'audience', 'cover', 'id', 'voice', 'narration', 'timings', 'narrationHash', 'password', 'access', 'state', 'theme', 'pack', 'toc', 'definitions', 'change', 'comments', 'comments_visible', 'links', 'media', 'comment_name', 'history'])
+const KNOWN = new Set(['title', 'summary', 'subtitle', 'to', 'template', 'audience', 'cover', 'id', 'voice', 'narration', 'timings', 'narrationHash', 'password', 'access', 'state', 'theme', 'pack', 'toc', 'definitions', 'change', 'comments', 'comments_visible', 'links', 'media', 'comment_name', 'history', 'forward'])
 
 export function parseArtifactSource(
   text: string,
@@ -161,6 +167,10 @@ export function parseArtifactSource(
     if (d.comment_name !== 'required') return { ok: false, error: 'comment_name must be required' }
     meta.commentName = 'required'
   }
+  if (d.forward !== undefined && d.forward !== null) {
+    if (!FORWARD_MODES.includes(d.forward as ForwardMode)) return { ok: false, error: 'forward must be off, signed-in or open' }
+    meta.forward = d.forward as ForwardMode
+  }
   if (d.theme !== undefined) {
     if (!THEME_MODES.includes(d.theme as ThemeMode)) return { ok: false, error: `theme must be one of: ${THEME_MODES.join(', ')}` }
     meta.theme = d.theme as ThemeMode
@@ -216,6 +226,8 @@ export function parseArtifactSource(
   // /<id>/v/<n> of a per-reader page is never served, so the history list would be dead links.
   if (meta.history === 'everyone' && meta.links === 'per-reader')
     return { ok: false, error: 'a per-reader page serves no past versions: drop history: everyone' }
+  // A page anyone can open is forwarded by its own address: forward links are for per-reader pages.
+  if (meta.forward && meta.links !== 'per-reader') return { ok: false, error: 'forward needs links: per-reader' }
   if (meta.commentName && meta.links !== 'per-reader') return { ok: false, error: 'comment_name: required needs links: per-reader' }
   // Widgets declare their own slots, so a notes block (and a checklist with send) is merged into state: here, before the
   // page is stored, and the state API and the republish shape checks see it like any slot.

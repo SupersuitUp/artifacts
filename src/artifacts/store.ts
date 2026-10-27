@@ -9,7 +9,7 @@
 // first save of a page still carrying the array moves it into the subcollection.
 import { randomInt } from 'node:crypto'
 import { FieldValue, type Firestore } from 'firebase-admin/firestore'
-import type { ArtifactKind, ArtifactMeta } from './front-matter.js'
+import type { ArtifactKind, ArtifactMeta, ForwardMode } from './front-matter.js'
 import type { Access } from './reader.js'
 import type { StateConfig } from './state.js'
 import type { ThemeMode } from '../brand/theme.js'
@@ -44,6 +44,8 @@ export type ArtifactRecord = {
   pack?: string
   toc?: boolean
   commentName?: 'required'
+  /** Whether a reader may make a forward link (front-matter `forward:`); absent is off. */
+  forward?: ForwardMode
   /** The page's own `history:` line; absent, the host's setting decides. */
   history?: 'admins' | 'everyone'
   definitions?: Definition[]
@@ -274,6 +276,7 @@ async function saveArtifact(col: Col, input: SaveInput): Promise<SaveResult> {
     ...(input.meta.pack ? { pack: input.meta.pack } : {}),
     ...(input.meta.toc !== undefined ? { toc: input.meta.toc } : {}),
     ...(input.meta.commentName ? { commentName: input.meta.commentName } : {}),
+    ...(input.meta.forward ? { forward: input.meta.forward } : {}),
     ...(input.meta.history ? { history: input.meta.history } : {}),
     ...(input.meta.definitions?.length ? { definitions: input.meta.definitions } : {}),
   }

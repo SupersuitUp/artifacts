@@ -8,7 +8,10 @@ import { newRid, ridOfReaderKey } from './recipients.js'
 
 /** `sentAt`: when the sender says the link reached the reader (the publish key marks it). A view
  *  that began before then was not the reader's, whoever rendered it. */
-export type Recipient = { rid: string; label: string; note?: string; owner?: true; group?: true; addedAt: string; revokedAt?: string; closesAt?: string | null; sentAt?: string; provenance?: Provenance }
+export type Recipient = { rid: string; label: string; note?: string; owner?: true; group?: true; addedAt: string; revokedAt?: string; closesAt?: string | null; sentAt?: string; provenance?: Provenance; parent?: string; forwardedBy?: ForwardedBy }
+/** Who made a forward link (0.56.0): the signed-in reader, or on a `forward: open` page the link
+ *  they made it from. */
+export type ForwardedBy = { uid: string; email: string; name: string | null } | { rid: string; label: string }
 /** Who minted a link, on whose authority, and when (a superlink, 0.53.0): `actor` is a person by
  *  hand or "<person>'s Pluma"; `authority` is the request, recurrent or approval it acted under, with
  *  `link` to the session or message where one exists; `funnel` and `stage` name the funnel step the
@@ -19,8 +22,8 @@ export type ViewDoc = { artifactId: string; rid: string; session: string; device
 /** What rendered the link before it was sent: never counted as the reader, shown so a publisher
  *  can see it happened (usually themselves, checking the page). Null when no send was recorded. */
 export type BeforeSend = { sessions: number; devices: number; activeSeconds: number; firstAt: string | null } | null
-export type RecipientSummary = { rid: string; label: string; group: boolean; revoked: boolean; closesAt: string | null; sentAt: string | null; provenance: Provenance | null; beforeSend: BeforeSend; opened: boolean; firstOpenAt: string | null; cameBack: boolean; activeSeconds: number; plays: number; devices: number; comments: { id: string | null; parent: string | null; at: string; text: string }[] }
-type NewRecipient = { label: string; note?: string; owner?: boolean; group?: boolean; closesAt?: string; provenance?: Provenance }
+export type RecipientSummary = { rid: string; label: string; group: boolean; revoked: boolean; closesAt: string | null; sentAt: string | null; provenance: Provenance | null; parent: string | null; forwardedBy: ForwardedBy | null; beforeSend: BeforeSend; opened: boolean; firstOpenAt: string | null; cameBack: boolean; activeSeconds: number; plays: number; devices: number; comments: { id: string | null; parent: string | null; at: string; text: string }[] }
+type NewRecipient = { label: string; note?: string; owner?: boolean; group?: boolean; closesAt?: string; provenance?: Provenance; parent?: string; forwardedBy?: ForwardedBy }
 export interface RecipientsStore {
   get(artifactId: string): Promise<RecipientsRecord | null>
   add(artifactId: string, input: NewRecipient[]): Promise<Recipient[]>
@@ -56,7 +59,7 @@ function makeRecipients(input: NewRecipient[], taken: Set<string>): Recipient[] 
     const note = typeof i.note === 'string' && i.note.trim() ? i.note.trim().slice(0, NOTE_MAX) : undefined
     // The owner never carries a window: setCloses skips them and the page hides the closed state
     // from them, so one stored here would offer Share on their link and then refuse it.
-    return { rid, label, addedAt: at, ...(note ? { note } : {}), ...(i.owner ? { owner: true as const } : {}), ...(i.group ? { group: true as const } : {}), ...(typeof i.closesAt === 'string' && !i.owner ? { closesAt: i.closesAt } : {}), ...(i.provenance ? { provenance: { ...i.provenance } } : {}) }
+    return { rid, label, addedAt: at, ...(note ? { note } : {}), ...(i.owner ? { owner: true as const } : {}), ...(i.group ? { group: true as const } : {}), ...(typeof i.closesAt === 'string' && !i.owner ? { closesAt: i.closesAt } : {}), ...(i.provenance ? { provenance: { ...i.provenance } } : {}), ...(i.parent ? { parent: i.parent } : {}), ...(i.forwardedBy ? { forwardedBy: { ...i.forwardedBy } } : {}) }
   })
 }
 
@@ -235,6 +238,8 @@ export function summarizeViews(rec: RecipientsRecord, views: ViewDoc[], comments
       rid: r.rid, label: r.label, group: r.group === true, revoked: !!r.revokedAt, closesAt: r.closesAt ?? null,
       sentAt: r.sentAt ?? null,
       provenance: r.provenance ?? null,
+      parent: r.parent ?? null,
+      forwardedBy: r.forwardedBy ?? null,
       beforeSend: Number.isFinite(sentMs) ? { sessions: early.length, devices: preDevices.size, activeSeconds: early.reduce((n, v) => n + v.activeSeconds, 0), firstAt: early[0]?.firstAt ?? null } : null,
       opened: mine.length > 0,
       firstOpenAt: mine[0]?.firstAt ?? null,

@@ -288,7 +288,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
   })
   const recipientsRoutes = createRecipientsRoutes({
     store, recipients: config.recipients, recipientSecret: config.recipientSecret, publishKey: config.publishKey,
-    state: config.state, assets: config.assets, pageUrl, authed,
+    state: config.state, assets: config.assets, pageUrl, authed, readerSecret, signInOrigin, siteUrl,
   })
   const personalRoutes = createPersonalRoutes({ store, personal: config.personal, readers: config.readers, readerSecret, pageUrl, signInOrigin, siteUrl, audioUrl })
   const voiceRoutes = createVoiceRoutes({

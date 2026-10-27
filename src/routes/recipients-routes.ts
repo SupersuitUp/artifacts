@@ -1,7 +1,9 @@
 // The per-reader routes. SEEN is public (the page calls it); everything else needs the publish key.
 import { NextResponse, type NextRequest } from 'next/server'
-import { RID_RE, usableSecret, beatKey, isUnfurlAgent, ridLink, verifyRenderToken, verifyRid } from '../artifacts/recipients.js'
-import { summarizeViews, type Provenance, type RecipientsStore } from '../artifacts/recipients-store.js'
+import { RID_RE, usableSecret, beatKey, isUnfurlAgent, ridLink, ridCookieName, verifyRenderToken, verifyRid } from '../artifacts/recipients.js'
+import { GRANT_COOKIE, signInUrl, verifyGrant } from '../artifacts/reader.js'
+import { perReaderGate } from './per-reader.js'
+import { summarizeViews, type ForwardedBy, type Provenance, type RecipientsStore } from '../artifacts/recipients-store.js'
 import { COMMENTS_SLOT } from '../artifacts/comments.js'
 import type { ArtifactStore } from '../artifacts/store.js'
 import type { StateStore } from '../artifacts/state-store.js'
@@ -20,7 +22,15 @@ export type RecipientsRoutesCtx = {
   authed: (r: Request) => boolean
   /** Where the sweep reports a page it skipped or could not finish. Defaults to console.warn. */
   log?: (message: string) => void
+  /** For FORWARD: who is signed in (the grant cookie's secret), where to send someone to sign in,
+   *  and this host's own address, the only origin a forward may be asked from. */
+  readerSecret?: () => string | undefined
+  signInOrigin?: string
+  siteUrl?: string
 }
+/** How many forward links one reader may make on one page in a day. */
+export const FORWARDS_PER_DAY = 20
+const TO_MAX = 60
 // Session and device ids become part of a stored view's id, so only a short plain shape is let in.
 const SESSION = /^[a-z0-9]{1,32}$/
 const MEDIA = /^[A-Za-z0-9][A-Za-z0-9._-]{0,140}$/
@@ -94,7 +104,7 @@ export function createRecipientsRoutes(given: RecipientsRoutesCtx) {
     const rec = (await ctx.recipients!.get(id)) ?? { recipients: {}, expireAt: null, keep: false }
     return {
       id, expireAt: rec.expireAt, keep: rec.keep,
-      recipients: Object.values(rec.recipients).map((r) => ({ rid: r.rid, label: r.label, group: r.group === true, owner: r.owner === true, revoked: !!r.revokedAt, closesAt: r.closesAt ?? null, sentAt: r.sentAt ?? null, provenance: r.provenance ?? null, url: ridLink(ctx.pageUrl(id), id, r.rid, secret) })),
+      recipients: Object.values(rec.recipients).map((r) => ({ rid: r.rid, label: r.label, group: r.group === true, owner: r.owner === true, revoked: !!r.revokedAt, closesAt: r.closesAt ?? null, sentAt: r.sentAt ?? null, provenance: r.provenance ?? null, parent: r.parent ?? null, forwardedBy: r.forwardedBy ?? null, url: ridLink(ctx.pageUrl(id), id, r.rid, secret) })),
     }
   }
   /** GET and POST /api/artifacts/<id>/recipients: who a per-reader page was sent to (publish key). */
@@ -225,5 +235,44 @@ export function createRecipientsRoutes(given: RecipientsRoutesCtx) {
     }
     return out
   }
-  return { SEEN, RECIPIENTS, VIEWS, sweepExpired, forgetReaders }
+  /** POST /api/artifacts/<id>/forward (0.56.0): the page itself, for a reader passing it on.
+   *  Body `{ to?: first name }`. Mints a forward link that names who made it, from which link, and
+   *  when, and answers `{ link }`. Never mints from a page with `forward:` off, from a link that is
+   *  not valid, or (on `forward: signed-in`) for a reader who has not signed in. */
+  async function FORWARD(req: NextRequest, { params }: Params) {
+    const { id } = await params
+    const secret = ctx.recipientSecret?.()
+    if (!secret || !ctx.recipients || !ARTIFACT_ID_RE.test(id)) return json({ error: 'not found' }, 404)
+    const origin = req.headers.get('origin')
+    if (ctx.siteUrl && origin !== null && origin !== new URL(ctx.siteUrl).origin) return json({ error: 'wrong origin' }, 403)
+    const a = await ctx.store.get(id)
+    if (!a || a.links !== 'per-reader' || !a.forward || a.forward === 'off') return json({ error: 'not found' }, 404)
+    const g = await perReaderGate({ id, param: undefined, cookie: req.cookies.get(ridCookieName(id))?.value, secret, recipients: ctx.recipients })
+    if (g.state === 'shut' || g.owner) return json({ error: 'not found' }, 404)
+    let by: ForwardedBy
+    if (a.forward === 'signed-in') {
+      const reader = verifyGrant(ctx.readerSecret?.(), req.cookies.get(GRANT_COOKIE)?.value)
+      if (!reader) return json({ error: 'sign in to share this page', signIn: ctx.signInOrigin ? signInUrl(ctx.signInOrigin, ctx.pageUrl(id)) : null }, 401)
+      by = { uid: reader.uid, email: reader.email, name: reader.name }
+    } else by = { rid: g.rid, label: g.label }
+    const body = (await req.json().catch(() => ({}))) as { to?: unknown }
+    if (body.to !== undefined && (typeof body.to !== 'string' || body.to.trim().length > TO_MAX || /[\r\n]/.test(body.to)))
+      return json({ error: `to must be a first name, up to ${TO_MAX} characters` }, 400)
+    const to = typeof body.to === 'string' ? body.to.trim() : ''
+    const rec = await ctx.recipients.get(id)
+    const dayAgo = new Date(Date.now() - 86_400_000).toISOString()
+    const same = (f: ForwardedBy | undefined) => !!f && ('uid' in by ? 'uid' in f && f.uid === by.uid : 'rid' in f && f.rid === by.rid)
+    const made = Object.values(rec?.recipients ?? {}).filter((r) => same(r.forwardedBy) && r.addedAt > dayAgo).length
+    if (made >= FORWARDS_PER_DAY) return json({ error: 'too many links today; try again tomorrow' }, 429)
+    const who = 'uid' in by ? by.name?.trim() || by.email : by.label
+    const provenance: Provenance = { actor: 'uid' in by ? `${who} (signed in as ${by.email})` : `${who}'s link`, authority: `forwarded from ${g.label}'s link`, at: new Date().toISOString() }
+    try {
+      const [row] = await ctx.recipients.add(id, [{ label: to ? `${to} (from ${who})` : `From ${who}`, group: true, parent: g.rid, forwardedBy: by, provenance }])
+      return json({ link: ridLink(ctx.pageUrl(id), id, row.rid, secret) })
+    } catch {
+      return json({ error: "Couldn't make a link. Try again." }, 502)
+    }
+  }
+
+  return { SEEN, RECIPIENTS, VIEWS, FORWARD, sweepExpired, forgetReaders }
 }

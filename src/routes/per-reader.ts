@@ -20,7 +20,12 @@ export async function perReaderGate(o: { id: string; param: string | undefined; 
   const rec = await o.recipients.get(o.id)
   const r = rec?.recipients[pick.rid]
   if (!rec || !r) return { state: 'shut', why: 'no-link' }
-  if (r.revokedAt) return { state: 'shut', why: 'revoked' }
+  // A forward never outlives the link it came from: any revoked link up its chain shuts it.
+  const seen = new Set<string>()
+  for (let at: typeof r | undefined = r; at; at = at.parent ? rec.recipients[at.parent] : undefined) {
+    if (at.revokedAt || seen.has(at.rid)) return { state: 'shut', why: 'revoked' }
+    seen.add(at.rid)
+  }
   // A malformed expireAt parses to NaN: treat it as expired, never as no expiry.
   if (rec.expireAt && !(Date.parse(rec.expireAt) > (o.now ?? Date.now()))) return { state: 'shut', why: 'expired' }
   return { state: 'open', rid: pick.rid, sig: pick.sig, label: r.label, note: r.note ?? null, owner: r.owner === true, group: r.group === true, closesAt: r.closesAt ?? null, fromLink: pick.fromLink }
