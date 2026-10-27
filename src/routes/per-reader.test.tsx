@@ -160,6 +160,22 @@ describe('owner bypass and settings', () => {
     const dana = { uid: 'u3', email: 'dana@example.com', name: 'Dana', member: true }
     expect(renderToStaticMarkup(await createArtifactRoutes(cfg(dana, recipients)).Page(props))).toContain(NO_LINK)
   })
+  // Wilson, a hub admin, opened a per-reader page's bare address signed out and met a door with
+  // no way in, though the host lets an admin through once signed in (2026-10-27).
+  it('the no-link door offers sign-in to a signed-out visitor, so an owner or admin can get in', async () => {
+    const { recipients } = await seeded()
+    const html = renderToStaticMarkup(await createArtifactRoutes(cfg(null, recipients, { signInOrigin: 'https://signin.example.com' })).Page(props))
+    expect(html).toContain(NO_LINK)
+    expect(html).toContain('data-per-reader-sign-in')
+    expect(html).toContain('https://signin.example.com')
+  })
+  it('a signed-in reader who is not owner or admin is not offered sign-in again', async () => {
+    const { recipients } = await seeded()
+    const dana = { uid: 'u3', email: 'dana@example.com', name: 'Dana', member: true }
+    const html = renderToStaticMarkup(await createArtifactRoutes(cfg(dana, recipients, { signInOrigin: 'https://signin.example.com' })).Page(props))
+    expect(html).toContain(NO_LINK)
+    expect(html).not.toContain('data-per-reader-sign-in')
+  })
   it('a revoked rid opened by cookie only is refused on the page', async () => {
     const { recipients, ada, link } = await seeded()
     await recipients.revoke('abcd2345', [ada.rid])

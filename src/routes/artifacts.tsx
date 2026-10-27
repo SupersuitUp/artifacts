@@ -524,6 +524,11 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
         return (
           <BrandGround pack={pack} mode={a.theme}>
             <p data-per-reader-shut className="mx-auto max-w-xl px-6 pt-32 text-center text-lg opacity-80">{g.why === 'no-link' ? NO_LINK : UNAVAILABLE}</p>
+            {/* The owner and this hub's admins get through once signed in, so a signed-out visitor
+                at the no-link door is offered the way in rather than a dead end. */}
+            {g.why === 'no-link' && !me && signInOrigin
+              ? <p data-per-reader-sign-in className="mx-auto max-w-xl px-6 pt-4 text-center text-base opacity-70">Published this page or help run this site? <a className="underline" href={signInUrl(signInOrigin, pageUrl(id))}>Sign in</a></p>
+              : null}
           </BrandGround>
         )
       }
