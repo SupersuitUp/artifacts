@@ -283,6 +283,7 @@ summary: Three bets, what each costs, and what we stop doing to afford them.
 | `links` | `per-reader`: the page opens only through a link made for one reader (see Per-reader links). Sticky: a republish whose file leaves the line out changes nothing |
 | `media` | `private`: the page's body media is kept private and served through short-lived signed URLs. Needs `links: per-reader`. Sticky like `links` |
 | `comment_name` | `required`: on a per-reader page, a comment through a group link needs a typed first name, and each browser on a group link is its own reader (see Per-reader links). Needs `links: per-reader` |
+| `forward` | `off`, `signed-in` or `open`: whether a reader of a per-reader page may make a link to pass it on (see Forward links). Absent is `off`. Needs `links: per-reader`. Sticky like `links` |
 | `history` | `everyone` or `admins`: who sees this page's version number and past versions, overriding the host's `history` for this one page (see Version history). Absent, the host decides. Refused as `everyone` on a per-reader page |
 | `change` | One line saying what this version changed (see Version history) |
 | `template` | `document` (the default, the read-along reader) or `broadcast` (one message card sent to several people; see Broadcasts) |
@@ -1089,6 +1090,37 @@ stage, is refused (400) and nothing is added. It is kept on the reader's row and
 `add`, `GET /recipients` and `GET /views` (`null` for a link made without one). A host on 0.52.x
 ignores the field, so a sender that needs it reads it back from `added` and treats `null` as an old
 host.
+
+### Forward links (0.56.0)
+
+A reader passes a per-reader page on through a link of its own, never the page's address, which
+opens for nobody. The page's `forward:` line decides who may:
+
+| `forward:` | Share in the page menu | Who can make a forward link |
+|---|---|---|
+| `off` (or absent) | absent | nobody; the route answers 404 |
+| `signed-in` | present, "Your name goes with this link." | a reader signed in through `signInOrigin` |
+| `open` | present | anyone holding a valid link; the forwarder is recorded as that link |
+
+`POST /api/artifacts/<id>/forward` is called by the page (same origin, the reader's link cookie).
+Body `{ to?: first name }`, up to 60 characters. It answers `{ link }`, a new reader row with
+`group: true`, `parent` (the rid it was made from), `forwardedBy` (`{ uid, email, name }` from the
+pass, or `{ rid, label }` on an `open` page) and `provenance` (`actor` "<name> (signed in as
+<email>)", `authority` "forwarded from <label>'s link"). Labelled "<to> (from <name>)", or "From
+<name>". Refusals: 404 for `forward: off`, no valid link, a revoked parent, or the owner; 401
+`{ signIn }` signed out on a `signed-in` page; 400 for a bad `to`; 429 past 20 forwards by one
+reader on one page in a day; 502 when the store fails, and the page says so rather than copying
+anything else. **A forward never outlives the link it came from**: revoking a link shuts every
+forward made from it, and their forwards. `GET /recipients` and `GET /views` carry `parent` and
+`forwardedBy` on every row (`null` on the publisher's own sends), so the page's travel is a tree.
+
+**Acting through a thread or forward link needs sign-in.** On a group link of a page whose
+`forward:` is on, and on any forward link, a comment asks the reader to sign in at the moment of
+commenting (401 `{ signIn }` from the state API; the comment card offers the sign-in). The note is
+stored under `r:<rid>.<24 hex>`, derived from the link and the signed-in uid, so it still counts for
+that link, and it carries the name they signed in with. A named (personal) link comments without
+sign-in, under its label, as before. A page without the line, and a page with
+`comment_name: required`, keep their old rules.
 
 ### Expiry
 

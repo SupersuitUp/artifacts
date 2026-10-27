@@ -3,6 +3,32 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.56.0 (2026-10-26)
+
+**A reader can pass a per-reader page on, and the link they make says who made it and from which
+link.** Superlinks step 3. Before this, Share on a per-reader page copied the page's bare address,
+which opens for nobody, so the only way to pass one on was the address bar, and every new reader
+counted as the first.
+
+- Front matter `forward: off | signed-in | open` (absent is off; needs `links: per-reader`; sticky).
+- `POST /api/artifacts/<id>/forward`: mints a forward reader with `parent`, `forwardedBy` and
+  `provenance`, and answers `{ link }`. 20 a day per reader per page. See Forward links.
+- A revoked link shuts every forward made from it (`perReaderGate` walks the parent chain).
+- Share on a per-reader page asks the route for a link (sending a signed-out reader to sign in on a
+  `signed-in` page), and is absent where forwarding is off. The owner and admins keep the address.
+- Acting through a group link on a page with `forward:` on, or through any forward link, needs
+  sign-in; the note is filed under the link with the signed-in name. Personal links are unchanged.
+- `GET /recipients` and `GET /views` carry `parent` and `forwardedBy` per reader.
+- DETECTOR: a per-reader page whose menu Share copies `https://<host>/<id>` with no `?r=`; or a
+  host whose `POST /api/artifacts/<id>/forward` answers 404 on a page with `forward: signed-in`
+  (no route file).
+- REMEDY: bump, and add the route file `app/api/artifacts/[id]/forward/route.ts` exporting
+  `POST = routes.FORWARD`. Pages without `forward:` behave as before, except that Share no longer
+  offers their dead address to a reader.
+- Tests: forward.test.tsx (each `forward:` value against signed in, signed out, revoked parent, no
+  link; the row's fields; the daily limit; the parent chain; the listing and views; Share present
+  exactly where forwarding is on; sign-in to act on thread and forward links, never on a personal one).
+
 ## 0.55.0 (2026-10-26)
 
 **`GET /api/artifacts/<id>` now returns the page as written, not only its narration.** It answered
