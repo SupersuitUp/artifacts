@@ -3,7 +3,7 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
-## Unreleased
+## 0.58.1 (2026-10-27)
 
 **The no-link door on a per-reader page offers sign-in.** A signed-in owner or hub admin already got
 through a `links: per-reader` page without a link, but a signed-out one met "This page opens from the
