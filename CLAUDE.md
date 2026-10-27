@@ -42,6 +42,13 @@ result (the push deploys). The hosts are the repos named in this repo's `CONSUMI
 (`gh variable get CONSUMING_HOSTS`), kept out of the source so this public repo does not list
 them. A release that stops at the tag is published and reaches nobody's site.
 
+**The hosts include the hubs.** An operator's own artifacts domain can run on Firebase App Hosting
+rather than on a host's Vercel project, and a push deploys nothing there. A host's
+`update-artifacts` ends by redeploying every hub that machine deploys (the Supersuit hub skill's
+`hub.mjs update`, which redeploys each hub with its own remembered settings), and fails when one
+did not take. Until that step existed a release reached the Vercel host and left a hub on the old
+code, unnoticed until a route it shipped answered 404 there.
+
 Hosts used to update themselves through a GitHub Action, triggered by the publish workflow's
 `repository_dispatch` (still sent, and harmless) and an hourly schedule. That stopped on
 2026-10-15 when a host's org could no longer start Actions jobs, and nothing reported it: releases
