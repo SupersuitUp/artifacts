@@ -30,8 +30,10 @@ export type PageMenuProps = {
   name: string | null
   /** The page is gated and this reader is not let in (they see its door). */
   shutOut?: boolean
-  /** The link to share, or null when this reader cannot share this page. `note` sits under it. */
-  share: { url: string; title: string; note?: string } | null
+  /** The link to share, or null when this reader cannot share this page. `note` sits under it.
+   *  `forward` (0.56.0): on a per-reader page, the route that makes a forward link for this reader;
+   *  Share asks it for the link (signing the reader in first when it says to) instead of `url`. */
+  share: { url: string; title: string; note?: string; forward?: string } | null
   /** Shared comments are on here, so the pins can be shown or hidden. */
   comments: boolean
   /** The sign-in authority's link for this page, when signed out on a host that signs readers in. */
@@ -160,10 +162,22 @@ export function PageMenu(props: PageMenuProps) {
 
   const onShare = async () => {
     if (!share) return
+    let url = share.url
+    if (share.forward) {
+      // A per-reader page is passed on through a link of its own, never its bare address, which
+      // opens for nobody. Signed out on a page that needs sign-in, the route says where to go.
+      try {
+        const res = await fetch(share.forward, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}', credentials: 'same-origin' })
+        const body = (await res.json().catch(() => ({}))) as { link?: string; signIn?: string | null; error?: string }
+        if (res.status === 401 && body.signIn) { window.location.href = body.signIn; return }
+        if (!res.ok || !body.link) { setSaid(body.error ?? "Couldn't make a link. Try again."); return }
+        url = body.link
+      } catch { setSaid("Couldn't make a link. Try again."); return }
+    }
     // A phone hands the link to its own share sheet (Messages, Mail, AirDrop); a desk copies it.
     if (coarse() && typeof navigator.share === 'function') {
       try {
-        await navigator.share({ title: share.title, url: share.url })
+        await navigator.share({ title: share.title, url })
         close()
         return
       } catch (e) {
@@ -172,7 +186,7 @@ export function PageMenu(props: PageMenuProps) {
         if ((e as { name?: string })?.name === 'AbortError') return
       }
     }
-    setSaid((await copyText(share.url)) ? 'Link copied' : 'Could not copy the link')
+    setSaid((await copyText(url)) ? 'Link copied' : 'Could not copy the link')
   }
   const onMarkdown = async () => {
     if (markdown === null) return
@@ -298,7 +312,7 @@ export function PageMenu(props: PageMenuProps) {
     <>
       {/* What the server decided, drawn identically on both sides so the markup hydrates. The
           hidden version list keeps every past version reachable with scripts off. */}
-      <span ref={marker} hidden data-page-menu-for={role} data-page-menu-items={items.join(' ')}>
+      <span ref={marker} hidden data-page-menu-for={role} data-page-menu-items={items.join(' ')} data-page-menu-forward={share?.forward ? share.note ?? '' : undefined}>
         {history ? <VersionList items={history.items} base={history.base} marker /> : null}
       </span>
       {ui ? createPortal(ui, document.body) : null}

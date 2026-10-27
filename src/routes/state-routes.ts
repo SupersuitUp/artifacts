@@ -25,7 +25,7 @@ import { GRANT_COOKIE, decide, firstName, signInUrl, verifyGrant, type Reader } 
 import { isUnlocked, unlockCookieName } from '../artifacts/unlock.js'
 import { browserIdFor, ridCookieName, ridOfReaderKey, usableSecret } from '../artifacts/recipients.js'
 import type { RecipientsStore } from '../artifacts/recipients-store.js'
-import { perReaderGate } from './per-reader.js'
+import { perReaderGate, signInToAct } from './per-reader.js'
 import { ANON_WRITES_PER_MINUTE, MAX_ENTRIES_PER_SLOT, checkValue, effectiveWriters, slotVisibility } from '../artifacts/state.js'
 import { COMMENTS_SLOT, FEEDBACK_CLOSED, MAX_COMMENT_CHARS, MAX_COMMENT_NAME_CHARS, NAME_NEEDED, cleanResolveNote, resolutionOf, validateComment, type CommentResolution, type CommentValue } from '../artifacts/comments.js'
 import { MAX_QUOTE_CHARS } from '../artifacts/anchor.js'
@@ -103,7 +103,7 @@ export type StateRoutesContext = {
 type Params = { params: Promise<{ id: string }> }
 /** Whoever came through a per-reader link. `perBrowser`: a group link on a page with
  *  `comment_name: required`, where each browser is its own reader. */
-type Recipient = { rid: string; label: string; group: boolean; closesAt: string | null; perBrowser: boolean; secret: string }
+type Recipient = { rid: string; label: string; group: boolean; closesAt: string | null; perBrowser: boolean; signInToAct: boolean; secret: string }
 
 export function createStateRoutes(ctx: StateRoutesContext) {
   const anonCookie = (v: string, maxAge: number) => `${ANON_COOKIE}=${v}; Path=/; Max-Age=${maxAge}; HttpOnly; Secure; SameSite=Lax`
@@ -139,7 +139,9 @@ export function createStateRoutes(ctx: StateRoutesContext) {
       const g = await perReaderGate({ id, param: undefined, cookie: req.cookies.get(ridCookieName(id))?.value, secret, recipients: ctx.recipients })
       if (g.state === 'shut') return { error: json({ error: 'this page is locked' }, 403) }
       // The gate opened, so the secret is usable: it is what the browser id below is derived with.
-      recipient = { rid: g.rid, label: g.label, group: g.group, closesAt: g.closesAt, perBrowser: g.group && a.commentName === 'required', secret: secret! }
+      recipient = { rid: g.rid, label: g.label, group: g.group, closesAt: g.closesAt, perBrowser: g.group && a.commentName === 'required',
+        signInToAct: signInToAct(a, g),
+        secret: secret! }
     }
     const rawAnon = req.cookies.get(ANON_COOKIE)?.value
     const anonId = rawAnon && ANON_ID.test(rawAnon) ? rawAnon : null
@@ -151,8 +153,9 @@ export function createStateRoutes(ctx: StateRoutesContext) {
    *  the link's verified rid and an id derived from the anonymous cookie this server set. Null for
    *  such a browser before its first write, when it has no cookie and nothing is its own. The
    *  client never names the key and cannot work out another browser's. */
-  const recipientKey = (id: string, r: Recipient, anonId: string | null): string | null =>
-    !r.perBrowser ? readerKeyFor.recipient(r.rid) : anonId ? readerKeyFor.groupBrowser(r.rid, browserIdFor(r.secret, id, r.rid, anonId)) : null
+  const recipientKey = (id: string, r: Recipient, anonId: string | null, reader: Reader | null = null): string | null =>
+    r.signInToAct ? (reader ? readerKeyFor.groupBrowser(r.rid, browserIdFor(r.secret, id, r.rid, `u.${reader.uid}`)) : null)
+      : !r.perBrowser ? readerKeyFor.recipient(r.rid) : anonId ? readerKeyFor.groupBrowser(r.rid, browserIdFor(r.secret, id, r.rid, anonId)) : null
 
   const ownerEmail = ctx.ownerEmail?.trim().toLowerCase()
   const admins = new Set((ctx.admins ?? []).map((e) => e.trim().toLowerCase()))
@@ -239,7 +242,7 @@ export function createStateRoutes(ctx: StateRoutesContext) {
       await ctx.state!.moveReader(readerKeyFor.anonymous(anonId), writerFor(reader))
       clearAnon = true
     }
-    const key = recipient ? recipientKey(id, recipient, anonId) : reader ? readerKeyFor.signedIn(reader.uid) : anonId ? readerKeyFor.anonymous(anonId) : null
+    const key = recipient ? recipientKey(id, recipient, anonId, reader) : reader ? readerKeyFor.signedIn(reader.uid) : anonId ? readerKeyFor.anonymous(anonId) : null
     const feedback = recipient?.closesAt ? { feedback: { closesAt: recipient.closesAt, closed: windowClosed(recipient) } } : {}
     const res = json({ ...(await viewBody(a, reader, key, !!recipient)), ...feedback, ...(reader || recipient ? {} : { signIn }) })
     if (clearAnon) res.headers.append('set-cookie', anonCookie('', 0))
@@ -290,7 +293,16 @@ export function createStateRoutes(ctx: StateRoutesContext) {
     if (isComments && recipient && op !== 'remove' && windowClosed(recipient)) return json({ error: FEEDBACK_CLOSED, closed: true }, 403)
     let setCookie: string | null = null
     let writer: Writer
-    if (recipient) {
+    if (recipient?.signInToAct) {
+      // Signed in, the note is the reader's own under the link: still counted for the link, and
+      // carrying the name they signed in with rather than one anybody could type.
+      const key = recipientKey(id, recipient, anonId, reader)
+      if (!key || !reader) {
+        if (op === 'remove') return isComments && entryId ? json({ error: 'no comment of yours with that id' }, 404) : json(await viewBody(a, reader, null, true))
+        return json({ error: 'sign in to comment', signIn }, 401)
+      }
+      writer = { ...writerFor(reader), key }
+    } else if (recipient) {
       let key = recipientKey(id, recipient, anonId)
       if (!key) {
         // A browser on a group link that has written nothing: there is nothing of its own to delete

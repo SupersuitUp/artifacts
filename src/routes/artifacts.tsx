@@ -28,7 +28,7 @@ import { CommentLayer } from '../reader/comment-layer.js'
 import { ReaderWatch } from '../reader/reader-watch.js'
 import { UpdatedTime } from '../reader/updated-time.js'
 import { FeedbackWindow } from '../reader/feedback-window.js'
-import { perReaderGate, withPrivateUrls, NO_LINK, UNAVAILABLE } from './per-reader.js'
+import { perReaderGate, signInToAct, withPrivateUrls, NO_LINK, UNAVAILABLE } from './per-reader.js'
 import { ridCookieName, mintRenderToken, usableSecret, isUnfurlAgent, RID_COOKIE_MAX_AGE } from '../artifacts/recipients.js'
 import type { RecipientsStore } from '../artifacts/recipients-store.js'
 import { PageMenu, type PageRole } from '../reader/page-menu.js'
@@ -391,15 +391,22 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
    *    link, since only they hold it.
    *  - Version history: whoever `history` lets see past versions (admins by default).
    *  - Copy the markdown: the owner and admins. */
-  function Menu({ a, reader, shutOut, allow, comments, history, viewing, source, settings }: {
-    a: Rec; reader: Reader | null; shutOut?: boolean; allow?: AllowEntry[]
+  function Menu({ a, reader, shutOut, allow, comments, history, viewing, source, settings, perReader }: {
+    a: Rec; reader: Reader | null; shutOut?: boolean; allow?: AllowEntry[]; perReader?: { owner: boolean }
     comments?: boolean; history?: VersionEntry[] | null; viewing?: number; source?: string | null
     settings?: PageSettings | null
   }) {
     const role = roleOf(reader)
     const admin = isAdmin(reader)
     const name = reader ? (firstName(reader, allow ?? []) ?? reader.email) : null
-    const share = a.access
+    // A per-reader page opens only from a reader's own link, so its address is useless to pass on:
+    // a reader shares through a forward link, where the page allows one, and otherwise not at all.
+    const forwardNote = a.forward === 'open' ? 'This link says it came from yours.' : 'Your name goes with this link.'
+    const share = a.links === 'per-reader' && !admin
+      ? (perReader && !perReader.owner && (a.forward === 'signed-in' || a.forward === 'open')
+        ? { url: pageUrl(a.id), title: a.title, note: forwardNote, forward: `/api/artifacts/${a.id}/forward` }
+        : null)
+      : a.access
       ? { url: pageUrl(a.id), title: a.title, ...(a.access === 'invite' ? { note: 'Only people on the list can open it.' } : {}) }
       : a.password
         ? (admin ? { url: `${pageUrl(a.id)}?key=${encodeURIComponent(a.password)}`, title: a.title, note: 'The link carries the password.' } : null)
@@ -524,7 +531,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
       const remember = g.fromLink && !bot
         ? [pagePath(id), `/api/artifacts/${id}`].map((p) => `document.cookie=${JSON.stringify(`${ridCookieName(id)}=${g.rid}.${g.sig}; Path=${p}; Max-Age=${RID_COOKIE_MAX_AGE}; SameSite=Lax; Secure`)}`).join(';')
         : null
-      const perReader = bot ? undefined : { rid: g.rid, sig: g.sig, label: g.label, note: g.note, owner: g.owner, group: g.group, closesAt: g.closesAt, token: mintRenderToken(secret!, id, g.rid) }
+      const perReader = bot ? undefined : { rid: g.rid, sig: g.sig, label: g.label, note: g.note, owner: g.owner, group: g.group, forwarded: g.forwarded, closesAt: g.closesAt, token: mintRenderToken(secret!, id, g.rid) }
       const markdown = await media(a.markdown)
       const body = broadcast
         ? await BroadcastCard({ ...a, markdown }, { reader: null, perReader, bot })
@@ -769,7 +776,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
    *  them, then this reader's own note. None of the document's furniture: no table of contents, no
    *  version line, no read-along (a voice note is its own audio), and no page menu for a reader.
    *  Comments only when the file turned them on; the quiet view beacon always, for a reader. */
-  async function BroadcastCard(a: Rec, { reader, perReader, bot, untracked = false }: { reader: Reader | null; bot: boolean; untracked?: boolean; perReader?: { rid: string; sig: string; label: string; note: string | null; owner: boolean; group: boolean; closesAt: string | null; token: string } }) {
+  async function BroadcastCard(a: Rec, { reader, perReader, bot, untracked = false }: { reader: Reader | null; bot: boolean; untracked?: boolean; perReader?: { rid: string; sig: string; label: string; note: string | null; owner: boolean; group: boolean; forwarded?: boolean; closesAt: string | null; token: string } }) {
     const { brand } = lookOf(a)
     const mode: CommentsMode = !bot && config.state && a.state && a.comments && a.comments !== 'off' && a.state.slots[COMMENTS_SLOT] ? a.comments : 'off'
     const admin = isAdmin(reader)
@@ -814,7 +821,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
             rootId="broadcast-root"
             ownerName={owner}
             comments={mode}
-            canShare={reader !== null || effectiveWriters(a.state!, a.access, COMMENTS_SLOT) === 'anyone'}
+            canShare={reader !== null || (effectiveWriters(a.state!, a.access, COMMENTS_SLOT) === 'anyone' && !(perReader && signInToAct(a, perReader)))}
             signedIn={reader !== null}
             isOwner={admin}
             version={a.version ?? (a.versions?.length ?? 0) + 1}
@@ -833,7 +840,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
   }
 
   /** The page itself, shared by open and gated pages. */
-  async function Body(a: Rec, { top, reader, perReader, untracked = false }: { top: boolean; reader: Reader | null; untracked?: boolean; perReader?: { rid: string; sig: string; label: string; note: string | null; owner: boolean; group: boolean; closesAt: string | null; token: string } }) {
+  async function Body(a: Rec, { top, reader, perReader, untracked = false }: { top: boolean; reader: Reader | null; untracked?: boolean; perReader?: { rid: string; sig: string; label: string; note: string | null; owner: boolean; group: boolean; forwarded?: boolean; closesAt: string | null; token: string } }) {
     const { pack, brand } = lookOf(a)
     let words: WordTiming[] = []
     if (a.narration && a.timings) {
@@ -851,7 +858,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     const current = a.version ?? (a.versions?.length ?? 0) + 1
     return (
       <>
-        <Menu a={a} reader={reader} comments={mode !== 'off'} history={history} viewing={current} settings={await settingsFor(a, reader)}
+        <Menu a={a} reader={reader} perReader={perReader} comments={mode !== 'off'} history={history} viewing={current} settings={await settingsFor(a, reader)}
           source={isAdmin(reader) ? sourceOf(a.id, a, a.markdown) : null} />
         {toc.length ? <TocRail items={toc} /> : null}
         <div id="artifact-narration-root">
@@ -933,7 +940,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
           rootId="artifact-narration-root"
           ownerName={owner}
           comments={mode}
-          canShare={mode !== 'off' && (reader !== null || effectiveWriters(a.state!, a.access, COMMENTS_SLOT) === 'anyone')}
+          canShare={mode !== 'off' && (reader !== null || (effectiveWriters(a.state!, a.access, COMMENTS_SLOT) === 'anyone' && !(perReader && signInToAct(a, perReader))))}
           signedIn={reader !== null}
           isOwner={isAdmin(reader)}
           version={a.version ?? (a.versions?.length ?? 0) + 1}

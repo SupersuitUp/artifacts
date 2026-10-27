@@ -133,3 +133,72 @@ describe('the publisher sees the page travel', () => {
     }
   })
 })
+
+describe('Share on a per-reader page', () => {
+  const items = (html: string) => /data-page-menu-items="([^"]*)"/.exec(html)?.[1].split(' ').filter(Boolean) ?? []
+  async function rendered(forward: 'off' | 'signed-in' | 'open' | undefined) {
+    const { renderToStaticMarkup } = await import('react-dom/server')
+    const recipients = memoryRecipientsStore()
+    const [r] = await recipients.add(ID, [{ label: 'Tim' }])
+    const routes = createArtifactRoutes(testConfig({
+      store: memoryArtifactStore([{ id: ID, title: 'At the river', summary: 'Why.', markdown: 'Body.', links: 'per-reader', ...(forward ? { forward } : {}) }]),
+      recipients: recipients as never, recipientSecret: () => S, readerSecret: () => RS, signInOrigin: site,
+    }))
+    return renderToStaticMarkup(await routes.Page({ params: Promise.resolve({ id: ID }), searchParams: Promise.resolve({ r: `${r.rid}.${ridSig(S, ID, r.rid)}` }) }))
+  }
+  it('makes a forward link, never the bare address that opens nothing, and says the name goes with it', async () => {
+    for (const f of ['signed-in', 'open'] as const) {
+      const html = await rendered(f)
+      expect(items(html)).toContain('share')
+      expect(html).toContain('data-page-menu-forward')
+    }
+    expect(await rendered('signed-in')).toContain('Your name goes with this link.')
+  })
+  it('is absent where the page says forward: off, or says nothing', async () => {
+    expect(items(await rendered('off'))).not.toContain('share')
+    expect(items(await rendered(undefined))).not.toContain('share')
+  })
+})
+
+describe('acting on a thread or forward link needs sign-in; a personal link does not', async () => {
+  const { mergeCommentsState } = await import('../artifacts/comments.js')
+  const { createMemoryStateStore } = await import('../artifacts/state-store.js')
+  async function build(forward: 'signed-in' | undefined) {
+    const merged = mergeCommentsState(undefined, 'anyone', 'owner')
+    if (!merged.ok) throw new Error(merged.error)
+    const recipients = memoryRecipientsStore()
+    const [named] = await recipients.add(ID, [{ label: 'Tim' }])
+    const [thread] = await recipients.add(ID, [{ label: 'The board thread', group: true }])
+    const [fwd] = await recipients.add(ID, [{ label: 'From Tim', group: true, parent: named.rid }])
+    const state = createMemoryStateStore()
+    const routes = createArtifactRoutes(testConfig({
+      store: memoryArtifactStore([{ id: ID, markdown: 'The river runs north.', version: 2, links: 'per-reader', comments: 'anyone', commentsVisible: 'owner', state: merged.state, ...(forward ? { forward } : {}) }]),
+      recipients: recipients as never, recipientSecret: () => S, readerSecret: () => RS, signInOrigin: site, state,
+    }))
+    const say = (rid: string, signedIn = false) => routes.STATE_POST(new NextRequest(`${site}/api/artifacts/${ID}/state`, {
+      method: 'POST', headers: { 'content-type': 'application/json', origin: site, cookie: [`${ridCookieName(ID)}=${rid}.${ridSig(S, ID, rid)}`, signedIn ? `${GRANT_COOKIE}=${mintGrant(RS, tim)}` : null].filter(Boolean).join('; ') },
+      body: JSON.stringify({ slot: 'comments', op: 'append', value: { anchor: { kind: 'text', quote: 'river', prefix: 'The ', suffix: ' runs north.' }, body: 'Which river?', version: 2 } }),
+    }), { params: Promise.resolve({ id: ID }) })
+    return { named, thread, fwd, say, state }
+  }
+  it('a personal link comments with no sign-in, under its label', async () => {
+    const b = await build('signed-in')
+    expect((await b.say(b.named.rid)).status).toBe(200)
+  })
+  it('a forward link asks for sign-in, then files the note under the link and the signed-in name', async () => {
+    const b = await build(undefined)
+    const refused = await b.say(b.fwd.rid)
+    expect(refused.status).toBe(401)
+    expect((await refused.json()).signIn).toContain(site)
+    expect((await b.say(b.fwd.rid, true)).status).toBe(200)
+    const [e] = (await b.state.entries(ID)).filter((x) => x.slot === 'comments')
+    expect(e.readerKey).toMatch(new RegExp(`^r:${b.fwd.rid}\\.[0-9a-f]{24}$`))
+    expect(e.writer).toMatchObject({ name: 'Tim', email: 'tim@example.com' })
+  })
+  it('a thread link on a page with forward: on asks for sign-in; on a page without the line it does not', async () => {
+    const on = await build('signed-in')
+    expect((await on.say(on.thread.rid)).status).toBe(401)
+    const off = await build(undefined)
+    expect((await off.say(off.thread.rid)).status).toBe(200)
+  })
+})
