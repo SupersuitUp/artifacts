@@ -1085,7 +1085,7 @@ mark is counted as before-send; senders mark as soon as delivery is confirmed.
 ### Who minted a link (0.53.0)
 
 Every link can say who made it, on whose authority, and when: `add: [{ label, provenance: { actor,
-authority, at?, link?, funnel?, stage? } }]`. `actor` is a person acting by hand or "<person>'s
+authority, at?, link?, funnel?, stage?, subject? } }]`; `subject` (0.58.0) is the sender's opaque person id (`p_` and 8 characters), never a name. `actor` is a person acting by hand or "<person>'s
 Pluma"; `authority` names what they acted under ("approved by <person> on the send card", "on
 <person>'s explicit request", "under the recurrent <name>"), with `link` to the session or message
 where one exists (https only); `at` defaults to now. `funnel` (a slug) and `stage` (an id, only with

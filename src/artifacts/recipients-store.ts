@@ -16,7 +16,7 @@ export type ForwardedBy = { uid: string; email: string; name: string | null } | 
  *  hand or "<person>'s Pluma"; `authority` is the request, recurrent or approval it acted under, with
  *  `link` to the session or message where one exists; `funnel` and `stage` name the funnel step the
  *  link was sent to move someone from, so a funnel move citing its opens has provenance. */
-export type Provenance = { actor: string; authority: string; at: string; link?: string; funnel?: string; stage?: string }
+export type Provenance = { actor: string; authority: string; at: string; link?: string; funnel?: string; stage?: string; subject?: string }
 export type RecipientsRecord = { recipients: Record<string, Recipient>; expireAt: string | null; keep: boolean; revokedAll?: string }
 export type ViewDoc = { artifactId: string; rid: string; session: string; device: string; firstAt: string; lastAt: string; activeSeconds: number; plays: Record<string, number> }
 /** What rendered the link before it was sent: never counted as the reader, shown so a publisher

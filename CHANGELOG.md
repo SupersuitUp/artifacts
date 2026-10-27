@@ -3,6 +3,19 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.58.0 (2026-10-27)
+
+**A link's provenance can name its reader by an opaque person id.** Superlinks step 6: a funnel
+suggestion ("Ada read the proposal to the end: move her to proposed?") has to know whose opens these
+are. A label is a name and cannot be trusted as an identity; the sender's opaque person id can.
+
+- `provenance.subject`: a person id, `p_` and 8 characters from the sender's records. Anything else
+  (a name, a different shape) is refused 400 and nothing is added. Kept on the row and answered back
+  like the rest of the provenance.
+- DETECTOR: a sender that posts `provenance.subject` and reads it back missing is on 0.57.x or older.
+- REMEDY: update the host.
+- Tests: recipients-api.test.tsx (subject kept; a name and malformed ids refused).
+
 ## 0.57.2 (2026-10-26)
 
 **0.57.1, published.** 0.57.1 was tagged but never reached npm: its publish run refused it, because

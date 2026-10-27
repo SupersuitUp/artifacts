@@ -144,6 +144,18 @@ describe('recipients API', () => {
       expect((await r.json()).error).toMatch(/provenance/)
     }
   })
+  it('provenance may name the reader by their opaque person id (subject), never by a name', async () => {
+    // Superlinks step 6 (2026-10-27): a funnel suggestion needs to know which person a link's opens
+    // belong to. The id is the sender's opaque person id (p_ and 8 characters), never a name.
+    const { call } = setup()
+    const subject = 'p_abcdefgh'
+    const ok = await (await call('POST', 'RECIPIENTS', { add: [{ label: 'Reader S', provenance: { actor: "Ada's Pluma", authority: 'approved by Ada on the send card', funnel: 'enterprise', stage: 'scoped', subject } }] })).json()
+    expect(ok.added[0].provenance.subject).toBe(subject)
+    for (const bad of ['Ada Example', 'p_ABCDEFGH', 'p_abc']) {
+      const r = await call('POST', 'RECIPIENTS', { add: [{ label: 'Reader T', provenance: { actor: 'x', authority: 'y', subject: bad } }] })
+      expect(r.status, bad).toBe(400)
+    }
+  })
   it('refuses a window that is not a time, in words', async () => {
     const { call } = setup()
     expect((await call('POST', 'RECIPIENTS', { add: [{ label: 'C', closes: 'friday' }] })).status).toBe(400)

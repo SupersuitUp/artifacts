@@ -39,7 +39,7 @@ const SLUG = /^[a-z0-9][a-z0-9_-]{0,63}$/
 /** A reader's provenance as sent, checked: who minted the link, on whose authority, when (default
  *  now), and the funnel step it serves. -> the clean record, or the reason it is refused. */
 export function readProvenance(v: unknown, now: Date = new Date()): { ok: true; value: Provenance } | { ok: false; why: string } {
-  if (!v || typeof v !== 'object' || Array.isArray(v)) return { ok: false, why: 'provenance is { actor, authority, at?, link?, funnel?, stage? }' }
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return { ok: false, why: 'provenance is { actor, authority, at?, link?, funnel?, stage?, subject? }' }
   const p = v as Record<string, unknown>
   const text = (x: unknown, max: number) => (typeof x === 'string' && x.trim() ? x.trim().slice(0, max) : '')
   const actor = text(p.actor, 120), authority = text(p.authority, 300)
@@ -51,8 +51,11 @@ export function readProvenance(v: unknown, now: Date = new Date()): { ok: true; 
   }
   if (p.funnel !== undefined && (typeof p.funnel !== 'string' || !SLUG.test(p.funnel))) return { ok: false, why: 'provenance.funnel must be a funnel slug' }
   if (p.stage !== undefined && (typeof p.stage !== 'string' || !SLUG.test(p.stage) || p.funnel === undefined)) return { ok: false, why: 'provenance.stage must be a stage id, with its funnel' }
+  // The reader by the sender's opaque person id (superlinks step 6), so a funnel can tell whose opens
+  // these are without a name ever reaching the host.
+  if (p.subject !== undefined && (typeof p.subject !== 'string' || !/^p_[0-9abcdefghjkmnpqrstvwxyz]{8}$/.test(p.subject))) return { ok: false, why: 'provenance.subject must be an opaque person id (p_ and 8 characters), never a name' }
   const at = typeof p.at === 'string' ? new Date(p.at).toISOString() : now.toISOString()
-  return { ok: true, value: { actor, authority, at, ...(link ? { link } : {}), ...(p.funnel ? { funnel: p.funnel as string } : {}), ...(p.stage ? { stage: p.stage as string } : {}) } }
+  return { ok: true, value: { actor, authority, at, ...(link ? { link } : {}), ...(p.funnel ? { funnel: p.funnel as string } : {}), ...(p.stage ? { stage: p.stage as string } : {}), ...(p.subject ? { subject: p.subject as string } : {}) } }
 }
 const none = () => new NextResponse(null, { status: 204, headers: { 'cache-control': 'no-store' } })
 const json = (b: unknown, status = 200) => NextResponse.json(b, { status, headers: { 'cache-control': 'no-store' } })
