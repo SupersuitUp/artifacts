@@ -3,6 +3,22 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## Unreleased
+
+**A host that cannot sign in to its own database says so, instead of a bare 500.** When a host's
+cloud credential is refused (a workload identity provider trusting another Vercel team's OIDC
+issuer, or a revoked service account key), every Firestore call threw and every route answered an
+empty 500. Publishers saw "500, no message", and the Supersuit comments client guessed "a missing
+index" (2026-10-28, after a hub's Vercel project moved teams). Every route handler in
+`createArtifactRoutes` now answers that one cause with `503 { error: "backend-auth", message }`. The
+cause itself is logged on the server and kept out of the body. Any other error is unchanged.
+
+- DETECTOR: the server log shows `invalid_grant`, `Getting metadata from plugin failed`,
+  `UNAUTHENTICATED` or `Could not load the default credentials`; clients now get a typed 503.
+- REMEDY: fix the host's credential. For Vercel workload identity, point the provider's issuer at
+  `https://oidc.vercel.com/<team>` and its audience at `https://vercel.com/<team>`.
+- Tests: `src/routes/backend-auth.test.tsx`.
+
 ## 0.58.1 (2026-10-27)
 
 **The no-link door on a per-reader page offers sign-in.** A signed-in owner or hub admin already got
