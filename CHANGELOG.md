@@ -3,7 +3,17 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
-## Unreleased
+## 0.58.2 (2026-11-02)
+
+**A letter's greeting and sign-off keep their own lines.** Markdown joins a soft line break with a
+space, so a letter ending "Your friend in Christ," then the name on a plain newline drew as one
+line. `remarkLetterBreaks` (in `ArtifactMarkdown`'s plugin list) turns a paragraph that opens on a
+short line (40 characters or fewer) ending in a comma into real breaks after each short line in it.
+Hard-wrapped prose still joins.
+
+- DETECTOR: a page whose sign-off reads "Love, Gary" on one line.
+- REMEDY: update; nothing to change in the page.
+- Tests: `src/artifacts/letter-breaks.test.tsx`.
 
 **A host that cannot sign in to its own database says so, instead of a bare 500.** When a host's
 cloud credential is refused (a workload identity provider trusting another Vercel team's OIDC
