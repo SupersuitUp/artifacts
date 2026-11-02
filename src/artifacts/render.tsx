@@ -25,6 +25,7 @@ import { VideoAutoplay } from '../reader/video-autoplay.js'
 import { CodeCopy } from '../reader/code-copy.js'
 import { DefinitionLayer } from '../reader/definition-layer.js'
 import { remarkDefinitions, type Definition } from './definitions.js'
+import { remarkLetterBreaks } from './letter-breaks.js'
 import { AUDIO_SRC, remarkVoiceNotes, TRANSCRIPT_LANG, type VoiceNoteBlock } from './voice-note.js'
 import { VoiceNote } from '../widgets/voice-note.js'
 
@@ -550,7 +551,7 @@ export function ArtifactMarkdown({
   // Voice notes first, so a section groups the note node the pair became.
   const voiceNotes: VoiceNoteBlock[] = []
   const voiced = /^ {0,3}(`{3,}|~{3,})\s*transcript\b/m.test(markdown)
-  const plugins = [remarkGfm, ...(voiced ? [remarkVoiceNotes(voiceNotes)] : []), ...(defined ? [remarkDefinitions(defined)] : []), ...(outline.length ? [remarkSections(outline[0].depth)] : [])]
+  const plugins = [remarkGfm, remarkLetterBreaks, ...(voiced ? [remarkVoiceNotes(voiceNotes)] : []), ...(defined ? [remarkDefinitions(defined)] : []), ...(outline.length ? [remarkSections(outline[0].depth)] : [])]
   const lists = /^ {0,3}(`{3,}|~{3,})\s*checklist\b/m.test(markdown) ? checklistsOf(markdown) : null
   const checklists: ChecklistCtx | undefined = lists
     // `send` from the host means it keeps answers and the page declared the `checklist` slot; on a
