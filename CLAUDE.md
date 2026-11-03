@@ -15,7 +15,7 @@ that earned them, live in SupersuitUp/docusaurus-preset-wiki's CLAUDE.md and pub
 ```bash
 npm version patch --no-git-tag-version   # or minor/major
 # write the CHANGELOG entry: what changed, the DETECTOR, the REMEDY, the tests
-git add package.json package-lock.json CHANGELOG.md
+git add package.json package-lock.json template/hub/package.json CHANGELOG.md
 git commit -m "<version>: <one line>"
 git push origin main
 git tag v<version> && git push origin v<version>
@@ -24,7 +24,9 @@ npm run update-artifacts -- <version>
 ```
 
 **Stage `package-lock.json` with `package.json`, always.** The workflow runs `npm ci`, which
-refuses a lockfile that disagrees with the manifest.
+refuses a lockfile that disagrees with the manifest. **Stage `template/hub/package.json` too:**
+`npm version` re-pins the hub template to the new version, and `test/hub-template.test.mjs` refuses
+a release whose template installs any other.
 
 **The workflow refuses a tag that disagrees with `package.json`, and a version already on npm.**
 Both refusals mean a step above was skipped. **A tag is not movable**: a fix after the tag is the
@@ -54,6 +56,14 @@ Hosts used to update themselves through a GitHub Action, triggered by the publis
 2026-10-15 when a host's org could no longer start Actions jobs, and nothing reported it: releases
 kept succeeding here while production stayed on the old version. Running the update from the
 machine that cut the release is the step that cannot fail without you seeing it.
+
+## The hub host template
+
+`template/hub/` is a deployable Next.js app for one operator's own hub (supersuit-dev#1630), shipped
+in the tarball so nobody needs a private repository to stand one up. It must stay generic: one
+tenant from `HUB_TENANT`, the default pack or the hub's own, no brand pack carrying a trademark, no
+embed or sign-in service pointing at one company's site. `npm run test:template` proves it installs
+and builds from the tarball; run it whenever the template or a shell export it uses changes.
 
 ## What must never land in this repo
 

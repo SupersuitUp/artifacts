@@ -1,6 +1,6 @@
 {
   "name": "@supersuit/artifacts",
-  "version": "0.58.2",
+  "version": "0.59.0",
   "description": "Publish markdown as branded, read-aloud pages from a Next.js app: the artifacts store, the route factory, the read-along reader, brand packs, password and confidential pages, and share cards.",
   "license": "MIT",
   "type": "module",
@@ -54,6 +54,7 @@
   "files": [
     "lib",
     "fonts",
+    "template",
     "README.md",
     "CHANGELOG.md",
     "LICENSE"
@@ -64,7 +65,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:packed": "node scripts/check-packed.mjs",
-    "prepack": "npm run build"
+    "prepack": "npm run build",
+    "test:template": "node scripts/check-template.mjs",
+    "version": "node scripts/sync-template-version.mjs"
   },
   "peerDependencies": {
     "@google-cloud/storage": ">=7",

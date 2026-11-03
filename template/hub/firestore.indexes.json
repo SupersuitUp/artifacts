@@ -1,0 +1,13 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "artifactState",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "slot", "order": "ASCENDING" },
+        { "fieldPath": "at", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

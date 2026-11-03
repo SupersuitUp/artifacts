@@ -1,0 +1,21 @@
+# The shape of a hub's settings. Every "__SET_BY_SETUP__" value is replaced at deploy time by the
+# apphosting.hub.yaml override that create-or-update-my-artifact-hub writes; the secrets are created
+# in the hub's own Secret Manager by the same setup.
+runConfig:
+  minInstances: 0
+  maxInstances: 2
+env:
+  - variable: HUB_TENANT
+    value: "__SET_BY_SETUP__"
+  - variable: FIREBASE_STORAGE_BUCKET
+    value: "__SET_BY_SETUP__"
+  - variable: ARTIFACT_PRIVATE_BUCKET
+    value: "__SET_BY_SETUP__"
+  - variable: TENANT_PUBLISH_KEY_HUB
+    secret: hub-publish-key
+  - variable: ARTIFACT_PASS_SECRET
+    secret: artifact-pass-secret
+  # Signs per-reader links (`links: per-reader`, and every shared review). Without it the hub
+  # answers 501 "this host keeps no per-reader links".
+  - variable: ARTIFACT_RECIPIENT_SECRET
+    secret: artifact-recipient-secret
