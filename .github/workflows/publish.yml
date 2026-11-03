@@ -78,6 +78,9 @@ jobs:
       # The tarball itself: every export resolves under plain Node ESM, the font ships and is
       # found from a host-shaped node_modules, and no test file or source leaks into it.
       - run: npm run test:packed
+      # The hub host template (template/hub), installed from the tarball outside the repo and built
+      # the way App Hosting builds it. Supersuit's hub setup deploys exactly this folder.
+      - run: npm run test:template
 
       - name: Refuse a tag that disagrees with package.json
         if: startsWith(github.ref, 'refs/tags/v')

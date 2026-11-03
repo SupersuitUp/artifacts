@@ -3,6 +3,25 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.59.0 (2026-11-02)
+
+**The deployable hub host ships in the package** (supersuit-dev#1630). `template/hub/` is a complete
+Next.js app for one operator's own artifact hub on Firebase App Hosting: every shell route as a
+one-line file, Google sign-in on the hub's own domain (the same-origin `/__/auth` rewrite and
+`/api/artifact-pass`), `/brand.json`, `/api/health` with the tile app door's version, the door
+itself at `/frapp`, the 410 proxy for shut per-reader links, `apphosting.yaml` with every setting the
+hub setup writes, and the comments feed's Firestore index. It is configured only by `HUB_TENANT`
+and the variables in its README, so it needs nothing from any private repository. Until now the
+only deployable host was private, and an operator's hub setup stopped at its first step with no
+source they could reach (supersuit-dev#1606). `npm version` pins the template to the package's own
+version (`scripts/sync-template-version.mjs`).
+
+- DETECTOR: `ls node_modules/@supersuit/artifacts/template/hub` is empty or missing.
+- REMEDY: update. Supersuit's hub setup uses this host when `--hub-source` is not given.
+- Tests: `test/hub-template.test.mjs`; `npm run test:template` (`scripts/check-template.mjs`)
+  installs the template from the packed tarball outside the repo and runs `next build`, and the
+  publish workflow runs it before publishing.
+
 ## 0.58.2 (2026-11-02)
 
 **A letter's greeting and sign-off keep their own lines.** Markdown joins a soft line break with a

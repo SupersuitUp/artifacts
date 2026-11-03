@@ -15,6 +15,17 @@ npm install @supersuit/artifacts
 Peers: `next >= 16`, `react >= 19`, `react-dom >= 19`, `firebase-admin >= 13` (the store is
 Firestore), and optionally `@google-cloud/storage >= 7` for uploaded files.
 
+## A deployable hub host, in the package
+
+`template/hub/` is a complete Next.js app that serves one operator's pages from a Google Cloud
+project they own (Firebase App Hosting, Firestore, Cloud Storage, Google sign-in on their own
+domain), configured entirely by environment variables. It ships in the tarball so anyone can
+deploy a hub without access to any private repository. Supersuit's `create-or-update-my-artifact-hub`
+copies it out of the package, runs `npm install` and deploys it; its own
+[README](./template/hub/README.md) lists every variable. The template pins this package's own
+version (`npm version` keeps it in step), and `npm run test:template` packs the package, installs
+the template from the tarball outside this repo and runs `next build` on it.
+
 ## What you get
 
 | Export | What it is |
