@@ -101,6 +101,22 @@ describe('opening', () => {
     expect(document.documentElement.style.overflow).toBe('')
   })
 
+  it('tells a screen reader that an image opens a dialog, and takes that back on unmount', async () => {
+    await mount()
+    const img = document.querySelector('img')!
+    expect(img.getAttribute('aria-haspopup')).toBe('dialog')
+    await act(async () => { for (const r of roots) r.unmount() })
+    roots = []
+    expect(img.hasAttribute('aria-haspopup')).toBe(false)
+  })
+
+  it('centres the counter, clear of the buttons iOS puts in the top left of a clip', async () => {
+    await mount()
+    await openFirst()
+    const counter = Array.from(dialog()!.querySelectorAll<HTMLElement>('div')).find((d) => d.textContent === '1 of 4')!
+    expect(counter.style.textAlign).toBe('center')
+  })
+
   it('opens from the keyboard', async () => {
     await mount()
     const img = document.querySelector('img')!
