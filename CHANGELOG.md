@@ -3,7 +3,7 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
-## Unreleased
+## 0.60.0 (2026-11-06)
 
 **Every image and video on a page opens full screen, with pinch to zoom and arrows through the page.** A new client component, `MediaViewer` (`src/reader/media-viewer.tsx`), mounted by `ArtifactMarkdown` and exported from `./reader`; the zoom arithmetic is pure, in `media-zoom.ts`. No new dependency. Body images and covers carry `data-artifact-image`; a pack's images are found through `data-artifact-figure`. The viewer is a portal on `<body>`, so the comment layer's gestures never see it, and it styles itself inline, so it needs nothing from a host's Tailwind build. iOS Safari needed `touch-action: none` and cancelled `touchmove` and `gesture*` events together. Margin taps close with a mouse only, because a near miss on an arrow closed the viewer on an iPhone.
 
