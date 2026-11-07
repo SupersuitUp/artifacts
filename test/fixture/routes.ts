@@ -22,6 +22,12 @@ const records: ArtifactStore['get'] = async (id): Promise<ArtifactRecord | null>
         createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-02T00:00:00Z', version: 2, note: 'Second pass', views: 0,
         state: { writers: 'anyone', visibility: 'tally', slots: { vote: { shape: 'one' } } },
       }
+    : id === 'gxy23456'
+      ? {
+          id, title: 'Gallery', summary: 'S', template: 'document', cover: '/media/cover.png',
+          markdown: '## Pictures\n\n![A wide screenshot](/media/wide.png)\n\nWords between.\n\n![A tall screenshot](/media/tall.png)\n\n![A silent loop](/media/loop.mp4)\n\n![sound: A clip](/media/clip.mp4)\n\n[![A linked picture](/media/wide.png)](https://example.com)\n',
+          createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z', versions: [], views: 0,
+        }
     : id === 'nts23456'
       ? {
           id, title: 'Notes', summary: 'S', template: 'document', markdown: '## Sales\n\nWords.\n\n```notes\n```\n',

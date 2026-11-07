@@ -4,6 +4,7 @@ export { ArtifactReader, wrapWords, seekableWord, litWordIndex, type WordTiming 
 export { begunCount } from './karaoke.js'
 export { PlayerBar } from './player-bar.js'
 export { QuietView } from './quiet-view.js'
+export { MediaViewer } from './media-viewer.js'
 export { CommentLayer } from './comment-layer.js'
 export { PageMenu, roleLine, menuItems, type PageMenuProps, type PageRole } from './page-menu.js'
 export { SettingsSheet, settingsChanges, ACCESS_LABEL, COMMENTS_LABEL, VISIBLE_LABEL, REOPEN_KEY, type PageSettings, type SettingsFact, type SheetKind, type AccessLevel } from './settings-sheet.js'

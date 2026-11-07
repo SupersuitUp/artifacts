@@ -23,6 +23,7 @@ import { embedSrc, isEmbedKind, parseEmbedFence, EMBED_KINDS, type EmbedKind } f
 import { EmbedFrame } from './embed-frame.js'
 import { VideoAutoplay } from '../reader/video-autoplay.js'
 import { CodeCopy } from '../reader/code-copy.js'
+import { MediaViewer } from '../reader/media-viewer.js'
 import { DefinitionLayer } from '../reader/definition-layer.js'
 import { remarkDefinitions, type Definition } from './definitions.js'
 import { remarkLetterBreaks } from './letter-breaks.js'
@@ -291,7 +292,7 @@ function baseComponents(block: BlockAttr, figure?: FigureFor, checklists?: Check
       <InlineAudio src={src} label={alt ?? ''} />
     ) : (
       // eslint-disable-next-line @next/next/no-img-element
-      <img src={typeof src === 'string' ? src : undefined} alt={alt ?? ''} className="my-6 w-full rounded-lg border border-[color:var(--a-line)]" />
+      <img data-artifact-image src={typeof src === 'string' ? src : undefined} alt={alt ?? ''} className="my-6 w-full rounded-lg border border-[color:var(--a-line)]" />
     )
   },
   a: ({ href, children }) =>
@@ -575,6 +576,7 @@ export function ArtifactMarkdown({
       ) : body}
       {VIDEO_IN_MD.test(markdown) ? <VideoAutoplay /> : null}
       {CODE_IN_MD.test(markdown) ? <CodeCopy /> : null}
+      <MediaViewer />
       {defined ? (
         <>
           <style>{DEFINED_TERM_CSS}</style>

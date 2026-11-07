@@ -211,6 +211,16 @@ as a change for the password and comments (as before, it takes the password off 
 off), and never for `access:`, which a file that names none leaves alone. A page last published
 before 0.31.0 has no `declared` and takes its file on its next publish, as every publish did.
 
+## Full screen images and video
+
+Tap any image or video on a page and it fills the screen. `ArtifactMarkdown` mounts this itself, so every page and every host has it with no setting, and a page with no JavaScript stays a plain page. It covers images in the body, a page's cover, an image a brand pack draws, and both kinds of video.
+
+- **Zoom:** pinch, double tap, or (with a mouse) click. A trackpad pinch and the `+`, `-` and `0` keys also work. Drag to look around a zoomed picture.
+- **Move:** arrows on screen, a swipe, or the arrow keys, through every image and video on the page in order.
+- **Close:** the X, a swipe down, Escape, or a mouse click off the picture. A finger off the picture does nothing, because the arrows sit there.
+- **Video:** a silent video loops and behaves like a picture. A `sound:` clip keeps its controls and gets an expand button on the page, because tapping it plays it. It moves to the viewer and comes back at the second it reached. Swipes do not work on it, because its controls take the touch; use the arrows.
+- **Left alone:** an image inside a link stays a link, and is not in the sequence. Drawing a comment box on an image does not open the viewer.
+
 ## Version history
 
 Every page says when it was last updated under the summary, and to its admins that line also names
