@@ -3,6 +3,8 @@
 // file; regenerate it only on purpose, with WRITE_GOLDEN=1, and say why in the commit.
 // Regenerated on purpose in 0.30.0: the History control left the version line for the page menu,
 // whose hidden server marker (role, items, the version list) is the only other difference.
+// Regenerated on purpose in 0.60.1: images and covers carry data-artifact-image for the full
+// screen viewer, and that attribute is the only difference.
 import { describe, it, expect, vi } from 'vitest'
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 vi.mock('next/navigation', () => ({

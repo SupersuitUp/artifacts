@@ -3,7 +3,15 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
-## 0.60.0 (2026-11-06)
+## 0.60.1 (2026-11-06)
+
+**The golden default page carries the viewer's image mark.** The 0.60.0 tag never reached npm: its publish run failed on `unchanged-default.test.tsx`, because every image now carries `data-artifact-image`. That attribute is the only difference in the regenerated golden. 0.60.1 is the first published version with the full screen viewer below.
+
+- DETECTOR: `npm view @supersuit/artifacts@0.60.0` finds nothing.
+- REMEDY: use 0.60.1.
+- TESTS: `unchanged-default.test.tsx`; the full suite ran before the tag.
+
+## 0.60.0 (2026-11-06, tagged, never published)
 
 **Every image and video on a page opens full screen, with pinch to zoom and arrows through the page.** A new client component, `MediaViewer` (`src/reader/media-viewer.tsx`), mounted by `ArtifactMarkdown` and exported from `./reader`; the zoom arithmetic is pure, in `media-zoom.ts`. No new dependency. Body images and covers carry `data-artifact-image`; a pack's images are found through `data-artifact-figure`. The viewer is a portal on `<body>`, so the comment layer's gestures never see it, and it styles itself inline, so it needs nothing from a host's Tailwind build. iOS Safari needed `touch-action: none` and cancelled `touchmove` and `gesture*` events together. Margin taps close with a mouse only, because a near miss on an arrow closed the viewer on an iPhone.
 
