@@ -804,7 +804,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
             </h1>
             {cover ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={cover} alt="" className="mt-5 w-full rounded-xl border border-[color:var(--a-line)]" />
+              <img data-artifact-image src={cover} alt="" className="mt-5 w-full rounded-xl border border-[color:var(--a-line)]" />
             ) : null}
             <div data-broadcast-body className="mt-4">
               <ArtifactMarkdown
@@ -921,7 +921,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
                     {a.cover ? (
                       <div className="mx-auto max-w-2xl px-6 pb-8">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={a.cover} alt="" className="w-full rounded-xl border border-[color:var(--a-line)]" />
+                        <img data-artifact-image src={a.cover} alt="" className="w-full rounded-xl border border-[color:var(--a-line)]" />
                       </div>
                     ) : null}
                   </>

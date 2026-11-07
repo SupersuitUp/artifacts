@@ -7,6 +7,12 @@ import { wrapWords } from '../reader/artifact-reader.js'
 const html = (md: string) => renderToStaticMarkup(<ArtifactMarkdown markdown={md} />)
 
 describe('ArtifactMarkdown', () => {
+  it('marks every body image for the full screen viewer, and leaves the page plain without JavaScript', () => {
+    const out = html('![A chart](https://example.com/a.png)')
+    expect(out).toMatch(/<img data-artifact-image[^>]*src="https:\/\/example.com\/a.png"/)
+    expect(out).not.toContain('data-artifact-viewer')
+  })
+
   it('an .mp4 in image syntax plays as a silent looping inline video, which a phone decodes in hardware', () => {
     const out = html('![The stack, animated](https://cdn.example.com/02-the-stack.abc12345.mp4)')
     expect(out).toContain('<video')

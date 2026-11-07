@@ -3,6 +3,14 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## Unreleased
+
+**Every image and video on a page opens full screen, with pinch to zoom and arrows through the page.** A new client component, `MediaViewer` (`src/reader/media-viewer.tsx`), mounted by `ArtifactMarkdown` and exported from `./reader`; the zoom arithmetic is pure, in `media-zoom.ts`. No new dependency. Body images and covers carry `data-artifact-image`; a pack's images are found through `data-artifact-figure`. The viewer is a portal on `<body>`, so the comment layer's gestures never see it, and it styles itself inline, so it needs nothing from a host's Tailwind build. iOS Safari needed `touch-action: none` and cancelled `touchmove` and `gesture*` events together. Margin taps close with a mouse only, because a near miss on an arrow closed the viewer on an iPhone.
+
+- DETECTOR: tap an image on a page. Nothing happens on an old version.
+- REMEDY: update. Nothing to configure. A host that draws its own `<img>` around the shell adds `data-artifact-image` to include it.
+- TESTS: `media-viewer.test.tsx`, `media-zoom.test.ts`, `render.test.tsx`; `check-packed` asserts the marks reach a served page. Verified by hand in iOS 26.2 Safari in the Simulator with real touches (a two-finger pinch reached 3.3x with `visualViewport.scale` at 1.00; pan, swipe, double tap, arrows, both video kinds) and in desktop Chrome by keyboard. WebDriver touch actions proved unreliable there, even on a plain button; drive the Simulator window with mouse events and a held Option key instead.
+
 ## 0.59.0 (2026-11-02)
 
 **The deployable hub host ships in the package** (supersuit-dev#1630). `template/hub/` is a complete

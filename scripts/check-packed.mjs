@@ -37,7 +37,7 @@ for (const bad of paths.filter((p) => /\.test\.|^src\/|^test\//.test(p))) fail(`
 if (!paths.includes('fonts/Newsreader-600.ttf')) fail('tarball has no fonts/Newsreader-600.ttf')
 const reader = readFileSync(join(dest, 'lib/reader/artifact-reader.js'), 'utf8')
 if (!/^['"]use client['"]/.test(reader)) fail("compiled reader lost its 'use client' directive")
-for (const f of ['player-bar.js', 'comment-layer.js', 'comment-card.js', 'page-menu.js', 'version-history.js', 'settings-sheet.js']) {
+for (const f of ['media-viewer.js', 'player-bar.js', 'comment-layer.js', 'comment-card.js', 'page-menu.js', 'version-history.js', 'settings-sheet.js']) {
   if (!/^['"]use client['"]/.test(readFileSync(join(dest, 'lib/reader', f), 'utf8'))) fail(`compiled ${f} lost its 'use client' directive`)
 }
 // GUARD: nothing the package ships may speak with the browser's own voice.
@@ -87,6 +87,9 @@ try {
   // The page menu (0.30.0): its server marker names the role and the items, and carries the
   // version list for readers with scripts off.
   if (!html.includes('data-page-menu-for="visitor"') || !html.includes('data-page-menu-items="share history"')) fail('the page has no page menu')
+  // The viewer is a client island: the marks it reads must reach the served page.
+  const gallery = await (await fetch(`${base}/gxy23456`)).text()
+  if ((gallery.match(/<img data-artifact-image/g) ?? []).length < 4) fail('a page lost the images the full screen viewer opens')
   const v1 = await fetch(`${base}/abc23456/v/1`)
   const v1html = await v1.text()
   if (v1.status !== 200 || !v1html.includes('the first body') || !v1html.includes('You are reading version 1 of 2')) fail(`version 1 answered ${v1.status}`)
