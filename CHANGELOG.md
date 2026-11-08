@@ -3,7 +3,7 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
-## Unreleased
+## 0.61.0 (2026-11-08)
 
 **Send outcomes: one success indicator for any send** (issue #12, item 1, and outcomes). A page declares a `goal` (`read` by default, `respond`, `ack`, or `{ click: <cta id> }`); a link titled `cta:<id>` is a CTA whose press the page records through `POST /seen` (`event: click`, under the beat, refused for an id the page does not carry); and every reader's line in `GET /views` and `summarizeViews` gains `lastOpenAt`, `sessions`, `opens`, `clicks`, `goal`, `outcome` (`not-opened`, `opened`, `read`, `returned`, `acted`), `succeeded` and `daysSinceSent`, all under the before-send rule. Thresholds are exported (`OUTCOME_READ_SECONDS` 30, `OUTCOME_RETURN_GAP_MS` one hour) and a host overrides them with `outcomeThresholds` on the routes, `summarizeViews`'s fourth argument, or `?readSeconds=` on `/views`. `ack` is new: the only acknowledgement before was the confidential page's agreement, keyed to a signed-in email, which a per-reader page cannot carry, so `ack` is a press of the CTA named `ack`. `GET /api/artifacts/<id>` answers `goal`. Existing fields are unchanged; a page with no goal reads as `read`; a view stored before clicks reads as none.
 
