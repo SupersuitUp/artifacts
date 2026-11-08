@@ -29,6 +29,7 @@ import { remarkDefinitions, type Definition } from './definitions.js'
 import { remarkLetterBreaks } from './letter-breaks.js'
 import { AUDIO_SRC, remarkVoiceNotes, TRANSCRIPT_LANG, type VoiceNoteBlock } from './voice-note.js'
 import { VoiceNote } from '../widgets/voice-note.js'
+import { CTA_ID, CTA_TITLE } from './goal.js'
 
 // Every colour is a theme variable (brand/theme.ts), so a page follows its light, dark or system mode.
 const GOLD = 'var(--a-accent)'
@@ -88,6 +89,12 @@ const CALLOUT = /^\[!(note|warning)\]\s*/i
 // else is a path on the author's disk (../meeting-transcripts/x.md), which the
 // publisher never uploads, so the anchor would 404. Those render as their text.
 const REACHABLE = /^(?:[a-z][a-z0-9+.-]*:|\/|#)/i
+/** The CTA id a link's title marks, or null. */
+function ctaOf(title: unknown): string | null {
+  const m = typeof title === 'string' ? CTA_TITLE.exec(title.trim()) : null
+  return m && CTA_ID.test(m[1].trim()) ? m[1].trim() : null
+}
+
 export function isReachableHref(href: unknown): href is string {
   return typeof href === 'string' && REACHABLE.test(href)
 }
@@ -295,14 +302,18 @@ function baseComponents(block: BlockAttr, figure?: FigureFor, checklists?: Check
       <img data-artifact-image src={typeof src === 'string' ? src : undefined} alt={alt ?? ''} className="my-6 w-full rounded-lg border border-[color:var(--a-line)]" />
     )
   },
-  a: ({ href, children }) =>
-    !isReachableHref(href) ? (
+  a: ({ href, children, title }) => {
+    // A link titled `cta:<id>` is a CTA (issue #12): the page records a press of it for a
+    // per-reader link, and the title, which is markup for this, is never shown.
+    const cta = ctaOf(title)
+    return !isReachableHref(href) ? (
       <span>{children}</span>
     ) : (
     <a
       href={href}
-      // A phone link opens an app, not a tab.
-      target={PHONE_LINK.test(href) ? undefined : '_blank'}
+      // A phone link opens an app, not a tab, and an in-page CTA (an ack) stays on the page.
+      target={PHONE_LINK.test(href) || (cta && href.startsWith('#')) ? undefined : '_blank'}
+      {...(cta ? { 'data-artifact-cta': cta } : {})}
       rel="noopener noreferrer"
       className="text-[color:var(--a-strong)] underline decoration-[color:var(--a-line-strong)] underline-offset-4 hover:decoration-[color:var(--a-strong)]"
     >
@@ -313,7 +324,8 @@ function baseComponents(block: BlockAttr, figure?: FigureFor, checklists?: Check
         </span>
       ) : null}
     </a>
-    ),
+    )
+  },
   code: ({ node, className, children }) => {
     const lang = /language-(\w+)/.exec(className ?? '')?.[1]
     if (lang === 'links') return <LinkCards source={textOf(children)} />

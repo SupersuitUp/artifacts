@@ -27,6 +27,7 @@ export { settleOnPublish, applySettingsPatch, withComments, declaredOf, password
 export type { PageSettings, SettingsFact, AccessLevel } from '../reader/settings-sheet.js'
 // Per-reader links: the host-facing surface only. The signing and token primitives stay internal.
 export { ridLink, parseRidParam, verifyRid, isUnfurlAgent, usableSecret, RECIPIENT_SECRET_MIN, ridOfReaderKey } from './recipients.js'
-export { createRecipientsStore, memoryRecipientsStore, summarizeViews, type RecipientsStore, type Recipient, type RecipientsRecord, type ViewDoc, type RecipientSummary, type Provenance } from './recipients-store.js'
+export { createRecipientsStore, memoryRecipientsStore, summarizeViews, type RecipientsStore, type Recipient, type RecipientsRecord, type ViewDoc, type RecipientSummary, type SummarizeOptions, type Provenance } from './recipients-store.js'
+export { parseGoal, goalCta, ctasIn, outcomeThresholds, GOAL_KINDS, DEFAULT_GOAL, CTA_ID, ACK_CTA, MAX_CLICKS_PER_SESSION, OUTCOMES, OUTCOME_READ_SECONDS, OUTCOME_RETURN_GAP_MS, OUTCOME_THRESHOLDS, type ArtifactGoal, type Outcome, type OutcomeThresholds } from './goal.js'
 export { migrateMemosToPrivate, MEMO_KEY, type MemoMigration } from './migrate-memos.js'
 export { parseTranscriptFence, scanVoiceNotes, transcriptFenceFromWords, wordsFromWhisperJson, isAudioSrc, TRANSCRIPT_LANG, MAX_TRANSCRIPT_WORDS, type TranscriptParagraphs, type TimedWord, type VoiceNoteBlock } from './voice-note.js'

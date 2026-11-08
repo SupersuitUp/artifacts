@@ -3,6 +3,14 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## Unreleased
+
+**Send outcomes: one success indicator for any send** (issue #12, item 1, and outcomes). A page declares a `goal` (`read` by default, `respond`, `ack`, or `{ click: <cta id> }`); a link titled `cta:<id>` is a CTA whose press the page records through `POST /seen` (`event: click`, under the beat, refused for an id the page does not carry); and every reader's line in `GET /views` and `summarizeViews` gains `lastOpenAt`, `sessions`, `opens`, `clicks`, `goal`, `outcome` (`not-opened`, `opened`, `read`, `returned`, `acted`), `succeeded` and `daysSinceSent`, all under the before-send rule. Thresholds are exported (`OUTCOME_READ_SECONDS` 30, `OUTCOME_RETURN_GAP_MS` one hour) and a host overrides them with `outcomeThresholds` on the routes, `summarizeViews`'s fourth argument, or `?readSeconds=` on `/views`. `ack` is new: the only acknowledgement before was the confidential page's agreement, keyed to a signed-in email, which a per-reader page cannot carry, so `ack` is a press of the CTA named `ack`. `GET /api/artifacts/<id>` answers `goal`. Existing fields are unchanged; a page with no goal reads as `read`; a view stored before clicks reads as none.
+
+- DETECTOR: `GET /views` rows carry no `outcome`; `goal:` in front matter is refused as an unknown key.
+- REMEDY: update. Nothing to configure. Add `goal:` to a page, and `"cta:<id>"` titles to the links that are its CTAs.
+- TESTS: `src/artifacts/outcomes.test.ts` (goal parsing and refusals, thresholds, clicks stored, a render before the send never counted, a second session on a known device counted as returned, each goal reaching and missing success, host thresholds), `src/routes/outcomes.test.tsx` (the click signal and its refusals, `/views` fields and thresholds by config and query, `GET` goal, the CTA link markup), `store.test.ts` (goal persisted and cleared), `quiet-view.test.tsx` (the page sends clicks, waiting for the beat), `index.test.ts` (exports). `seen.test.tsx`'s unknown-event case now uses `hover`, since `click` is known.
+
 ## 0.60.1 (2026-11-06)
 
 **The golden default page carries the viewer's image mark.** The 0.60.0 tag never reached npm: its publish run failed on `unchanged-default.test.tsx`, because every image now carries `data-artifact-image`. That attribute is the only difference in the regenerated golden. 0.60.1 is the first published version with the full screen viewer below.

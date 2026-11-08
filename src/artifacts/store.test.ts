@@ -163,6 +163,15 @@ describe('artifact store', () => {
     await saveArtifact({ id: r.id, meta, markdown: 'b2' })
     expect((await getArtifact(r.id))?.history).toBeUndefined()
   })
+  it('a page goal rides through, a click goal keeps its CTA, and a re-publish without the line goes back to read', async () => {
+    const r = await saveArtifact({ meta: { ...meta, goal: { click: 'book-call' } }, markdown: 'b' })
+    if ('notFound' in r) throw new Error('unexpected')
+    expect((await getArtifact(r.id))?.goal).toEqual({ click: 'book-call' })
+    await saveArtifact({ id: r.id, meta: { ...meta, goal: 'respond' }, markdown: 'b2' })
+    expect((await getArtifact(r.id))?.goal).toBe('respond')
+    await saveArtifact({ id: r.id, meta, markdown: 'b3' })
+    expect((await getArtifact(r.id))?.goal).toBeUndefined()
+  })
   it('comment_name rides through, and a re-publish without it clears it', async () => {
     const r = await saveArtifact({ meta: { ...meta, links: 'per-reader', commentName: 'required' }, markdown: 'b' })
     if ('notFound' in r) throw new Error('unexpected')

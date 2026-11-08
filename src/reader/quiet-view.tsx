@@ -28,6 +28,9 @@ export function QuietView({ id, rid, sig, token, endpoint }: { id: string; rid: 
     let wait: ReturnType<typeof setTimeout> | null = null
     let tick: ReturnType<typeof setInterval> | null = null
     let since = 0
+    // CTAs pressed before the view earned its beat: sent once it lands (issue #12).
+    let pending: string[] = []
+    const sendClicks = () => { if (!beat) return; for (const cta of pending) void post({ event: 'click', beat, cta }); pending = [] }
     const post = async (body: Record<string, unknown>) => {
       try {
         const r = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...base, ...body }), keepalive: true })
@@ -59,6 +62,7 @@ export function QuietView({ id, rid, sig, token, endpoint }: { id: string; rid: 
         viewSent = true
         const r = await post({ event: 'view', token })
         if (r?.beat && visible()) { beat = r.beat; startBeats() } else if (r?.beat) beat = r.beat
+        sendClicks()
       }, VIEW_AFTER_MS)
     }
     const disarm = () => {
@@ -71,6 +75,16 @@ export function QuietView({ id, rid, sig, token, endpoint }: { id: string; rid: 
       const media = el?.getAttribute?.('data-artifact-media')
       if (media && beat) void post({ event: 'play', beat, media })
     }
+    // A press of anything marked data-artifact-cta (a link titled `cta:<id>`) is the reader taking
+    // that CTA. keepalive carries it through the new tab a link opens.
+    const onClick = (e: Event) => {
+      const el = (e.target as Element | null)?.closest?.('[data-artifact-cta]')
+      const cta = el?.getAttribute('data-artifact-cta')
+      if (!cta) return
+      pending.push(cta)
+      sendClicks()
+    }
+    document.addEventListener('click', onClick, true)
     document.addEventListener('visibilitychange', onVisibility)
     document.addEventListener('prerenderingchange', onVisibility)
     document.addEventListener('play', onPlay, true)
@@ -80,6 +94,7 @@ export function QuietView({ id, rid, sig, token, endpoint }: { id: string; rid: 
       document.removeEventListener('visibilitychange', onVisibility)
       document.removeEventListener('prerenderingchange', onVisibility)
       document.removeEventListener('play', onPlay, true)
+      document.removeEventListener('click', onClick, true)
       window.removeEventListener('pagehide', disarm)
       disarm()
     }

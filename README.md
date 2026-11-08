@@ -311,6 +311,7 @@ summary: Three bets, what each costs, and what we stop doing to afford them.
 | `comment_name` | `required`: on a per-reader page, a comment through a group link needs a typed first name, and each browser on a group link is its own reader (see Per-reader links). Needs `links: per-reader` |
 | `forward` | `off`, `signed-in` or `open`: whether a reader of a per-reader page may make a link to pass it on (see Forward links). Absent is `off`. Needs `links: per-reader`. Sticky like `links` |
 | `history` | `everyone` or `admins`: who sees this page's version number and past versions, overriding the host's `history` for this one page (see Version history). Absent, the host decides. Refused as `everyone` on a per-reader page |
+| `goal` | What a send of the page is for: `read` (the default), `respond`, `ack`, or `click: <cta id>` (see Send outcomes). A republish without the line goes back to `read` |
 | `change` | One line saying what this version changed (see Version history) |
 | `template` | `document` (the default, the read-along reader) or `broadcast` (one message card sent to several people; see Broadcasts) |
 
@@ -1071,8 +1072,8 @@ Routes (spread into your route files by `createArtifactRoutes`): `RECIPIENTS`, `
 |---|---|---|
 | `GET /api/artifacts/<id>/recipients` | publish key | Every reader, with the working link for each |
 | `POST /api/artifacts/<id>/recipients` | publish key | Body `{ add?: [{ label, note?, group?, closes?, provenance? }], revoke?: [rid] or '*', expires?: ISO time or null, closes?: { rids: [rid] or '*', at: ISO time or null }, sent?: { rids: [rid] or '*', at?: ISO time } }`. `add` answers each new reader's link and its `provenance` (see Who minted a link); `expires: null` is Keep; `closes` sets, moves or clears a reader's feedback window; `sent` records when links reached their readers (see A render before the send) |
-| `GET /api/artifacts/<id>/views` | publish key | One line per reader: opened, came back, active seconds, plays, devices, comments, `sentAt`, `beforeSend` and `provenance`. Each comment is `{ id, parent, at, text }` (see Comment ids in /views). A page with no readers yet answers 200 with an empty list; a missing page answers 404 |
-| `POST /api/artifacts/<id>/seen` | the page itself (public) | The reader's own signal, below |
+| `GET /api/artifacts/<id>/views` | publish key | One line per reader: opened, came back, active seconds, plays, devices, comments, `sentAt`, `beforeSend` and `provenance`, plus each send's outcome (see Send outcomes). Each comment is `{ id, parent, at, text }` (see Comment ids in /views). A page with no readers yet answers 200 with an empty list; a missing page answers 404 |
+| `POST /api/artifacts/<id>/seen` | the page itself (public) | The reader's own signal, below: a view, beats, plays, and CTA clicks |
 
 Config, both on `createArtifactRoutes`: `recipients` (a store from `createRecipientsStore(db, '<collection path>')`, or `memoryRecipientsStore()` in tests) and `recipientSecret`, a function returning the signing secret, read on every request. A secret shorter than 32 characters is treated as unset: per-reader pages stay shut and the routes answer 404 or 501. Signing with an empty secret throws.
 
@@ -1232,6 +1233,74 @@ any stored entry in any slot, and a browser that removes its only entry and writ
 **Removing the line later.** Taking `comment_name: required` off a page turns its group link back into
 one shared reader, and every note left per browser stops being shown to its writer: the notes stay with
 the publisher, under their per-browser keys.
+
+### Send outcomes (Unreleased)
+
+One send is one page to one reader. Every reader's line in `GET /views` (and every row
+`summarizeViews` returns) says how far that send got, on one ladder that works for any page, so a
+host can draw each send in the column where it landed without reimplementing anything.
+
+**The page says what a send is for**, in front matter:
+
+```markdown
+---
+title: Next week
+summary: Two times that work.
+links: per-reader
+goal:
+  click: book-call
+---
+Pick one: [Book a call](https://cal.example.com/robin "cta:book-call").
+```
+
+| `goal:` | The send succeeded when |
+|---|---|
+| `read` (the default, and what a page without the line is) | the reader read it: at least `readSeconds` active seconds |
+| `respond` | the reader left a comment (a page needs `comments:` on for this to happen) |
+| `ack` | the reader pressed the page's ack CTA, a link titled `cta:ack`, e.g. `[Got it](#got-it "cta:ack")` |
+| `{ click: <cta id> }` | the reader pressed the CTA with that id |
+
+**A CTA is a link whose title is `cta:<id>`** (lowercase letters, digits, dashes, underscores, up to
+64). The title is never shown: the link renders with `data-artifact-cta="<id>"`, and an in-page CTA
+(`#...`) does not open a tab. On a reader's own link, a press sends `{ event: "click", beat, cta }`
+to `POST /seen`, under the same signature, render token and beat as every other signal (a press
+before the view lands waits for it). The route refuses a click without the beat (403), a malformed
+id or an id the page does not carry (400), and a revoked or expired reader (410); the owner's records
+nothing. Each session keeps up to 50 clicks. Publishing refuses a `goal` it does not know (`goal must be read, respond, ack, or { click:
+<cta id> }`), a click goal whose CTA the body does not carry, `goal: ack` with no `cta:ack` link, and
+a `cta:` title whose id could never be recorded.
+
+**`ack` is new.** The package's only acknowledgement before this was the confidential page's
+agreement (`POST /api/reader/ack`), which is keyed to a signed-in email on an `access:` page, and a
+per-reader page cannot carry `access:`. So `ack` is the smallest thing that is the reader's own
+word: a press of the CTA named `ack`.
+
+Each reader's line gains, every field under the before-send rule (a render before the recorded
+send is never the reader, nor anything later on its device; a comment written before the send is
+not their response):
+
+| Field | What it is |
+|---|---|
+| `lastOpenAt` | When the reader's latest session began, or null |
+| `sessions` | How many sessions the reader had |
+| `opens` | `[{ at, activeSeconds, device }]`, one per session, oldest first |
+| `clicks` | `[{ cta, at }]`, every CTA the reader pressed, oldest first |
+| `goal` | The page's goal (`read` when it has none) |
+| `outcome` | The highest rung reached: `not-opened`, `opened`, `read` (at least `readSeconds` active), `returned` (a second session at least `returnGapMs` after the first, on any device, the known one included), `acted` (the goal's action: a comment for `respond`, the `ack` CTA for `ack`, that CTA for a click goal; never for `read`) |
+| `succeeded` | Whether the send reached the goal: for `read`, reading; for every other goal, acting |
+| `daysSinceSent` | Whole days from `sentAt` to now, or null with no recorded send, for drawing age |
+
+`sentAt` was already on the line. The response also carries the page's `goal` and the `thresholds`
+it measured by. Every field that was there before is unchanged.
+
+**The thresholds are exported**: `OUTCOME_READ_SECONDS` (30: a skim of a short page, about what a
+phone reader gives a sent link), `OUTCOME_RETURN_GAP_MS` (an hour, the line `cameBack` already
+draws, so two tabs in one sitting are not a return), together `OUTCOME_THRESHOLDS`. A host passes
+its own as `outcomeThresholds: { readSeconds?, returnGapMs? }` on `createArtifactRoutes`, as
+`summarizeViews(rec, views, comments, { goal, thresholds, now })`, or for one request as
+`GET /views?readSeconds=<n>`. `OUTCOMES` lists the rungs in order; `parseGoal`, `ctasIn` and
+`outcomeThresholds` are exported for hosts that check a page themselves. `GET /api/artifacts/<id>`
+answers the page's `goal` too.
 
 ## Broadcasts (`template: broadcast`)
 

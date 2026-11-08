@@ -90,8 +90,8 @@ describe('the signal is refused before it is trusted', () => {
     expect((await seen(view(ana.rid))).status).toBe(410)
     expect(await recipients.views('abcd2345')).toEqual([])
   })
-  it('an unknown event is 400', async () => {
+  it('an unknown event is 400 (click is known since issue #12; it needs the beat)', async () => {
     const { ana, seen, view } = await setup()
-    expect((await seen(view(ana.rid, { event: 'click' }))).status).toBe(400)
+    expect((await seen(view(ana.rid, { event: 'hover' }))).status).toBe(400)
   })
 })

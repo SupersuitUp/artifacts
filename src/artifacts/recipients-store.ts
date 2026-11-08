@@ -5,6 +5,7 @@
 //   <base>RecipientTokens/<key>                   { expireAt } (a Firestore TTL policy may sweep it)
 import type { Firestore } from 'firebase-admin/firestore'
 import { newRid, ridOfReaderKey } from './recipients.js'
+import { DEFAULT_GOAL, MAX_CLICKS_PER_SESSION, goalCta, outcomeThresholds, type ArtifactGoal, type Outcome, type OutcomeThresholds } from './goal.js'
 
 /** `sentAt`: when the sender says the link reached the reader (the publish key marks it). A view
  *  that began before then was not the reader's, whoever rendered it. */
@@ -18,11 +19,22 @@ export type ForwardedBy = { uid: string; email: string; name: string | null } | 
  *  link was sent to move someone from, so a funnel move citing its opens has provenance. */
 export type Provenance = { actor: string; authority: string; at: string; link?: string; funnel?: string; stage?: string; subject?: string }
 export type RecipientsRecord = { recipients: Record<string, Recipient>; expireAt: string | null; keep: boolean; revokedAll?: string }
-export type ViewDoc = { artifactId: string; rid: string; session: string; device: string; firstAt: string; lastAt: string; activeSeconds: number; plays: Record<string, number> }
+/** `clicks` (issue #12): each CTA the reader pressed in this session, in order. Absent on a view
+ *  recorded before clicks existed, which reads as none. */
+export type ViewDoc = { artifactId: string; rid: string; session: string; device: string; firstAt: string; lastAt: string; activeSeconds: number; plays: Record<string, number>; clicks?: { cta: string; at: string }[] }
 /** What rendered the link before it was sent: never counted as the reader, shown so a publisher
  *  can see it happened (usually themselves, checking the page). Null when no send was recorded. */
 export type BeforeSend = { sessions: number; devices: number; activeSeconds: number; firstAt: string | null } | null
-export type RecipientSummary = { rid: string; label: string; group: boolean; revoked: boolean; closesAt: string | null; sentAt: string | null; provenance: Provenance | null; parent: string | null; forwardedBy: ForwardedBy | null; beforeSend: BeforeSend; opened: boolean; firstOpenAt: string | null; cameBack: boolean; activeSeconds: number; plays: number; devices: number; comments: { id: string | null; parent: string | null; at: string; text: string }[] }
+/** One reader's line. The fields from `lastOpenAt` on (issue #12) are the send's outcome, every one
+ *  of them under the before-send rule: `opens` is each of the reader's sessions, `clicks` each CTA
+ *  they pressed, `outcome` the highest rung of OUTCOMES the send reached, `succeeded` whether it
+ *  reached the page's `goal`, and `daysSinceSent` whole days from `sentAt` (null with no send). */
+export type RecipientSummary = { rid: string; label: string; group: boolean; revoked: boolean; closesAt: string | null; sentAt: string | null; provenance: Provenance | null; parent: string | null; forwardedBy: ForwardedBy | null; beforeSend: BeforeSend; opened: boolean; firstOpenAt: string | null; cameBack: boolean; activeSeconds: number; plays: number; devices: number; comments: { id: string | null; parent: string | null; at: string; text: string }[]
+  lastOpenAt: string | null; sessions: number; opens: { at: string; activeSeconds: number; device: string }[]; clicks: { cta: string; at: string }[]
+  goal: ArtifactGoal; outcome: Outcome; succeeded: boolean; daysSinceSent: number | null }
+/** What summarizeViews measures outcomes by: the page's goal (default read), the thresholds (default
+ *  OUTCOME_THRESHOLDS) and the clock `daysSinceSent` counts to (default now). */
+export type SummarizeOptions = { goal?: ArtifactGoal; thresholds?: Partial<OutcomeThresholds>; now?: Date }
 type NewRecipient = { label: string; note?: string; owner?: boolean; group?: boolean; closesAt?: string; provenance?: Provenance; parent?: string; forwardedBy?: ForwardedBy }
 export interface RecipientsStore {
   get(artifactId: string): Promise<RecipientsRecord | null>
@@ -38,7 +50,8 @@ export interface RecipientsStore {
   setSent?(artifactId: string, rids: string[] | '*', sentAt: string): Promise<string[]>
   setExpiry(artifactId: string, expireAt: string | null): Promise<void>
   useToken(key: string, expiresAt: number): Promise<boolean>
-  recordView(v: { artifactId: string; rid: string; session: string; device: string; at: string; addSeconds: number; play?: string }): Promise<void>
+  /** `click` (issue #12): a CTA id the reader pressed, kept on the session with its time. */
+  recordView(v: { artifactId: string; rid: string; session: string; device: string; at: string; addSeconds: number; play?: string; click?: string }): Promise<void>
   views(artifactId: string): Promise<ViewDoc[]>
   expiring(nowIso: string): Promise<string[]>
   forget(artifactId: string): Promise<void>
@@ -99,10 +112,11 @@ function sentIn(rec: RecipientsRecord, rids: string[] | '*', sentAt: string): st
 }
 
 function addView(prev: ViewDoc | undefined, v: Parameters<RecipientsStore['recordView']>[0]): ViewDoc {
-  const doc: ViewDoc = prev ? { ...prev, plays: { ...prev.plays } } : { artifactId: v.artifactId, rid: v.rid, session: v.session, device: v.device, firstAt: v.at, lastAt: v.at, activeSeconds: 0, plays: {} }
+  const doc: ViewDoc = prev ? { ...prev, plays: { ...prev.plays }, ...(prev.clicks ? { clicks: [...prev.clicks] } : {}) } : { artifactId: v.artifactId, rid: v.rid, session: v.session, device: v.device, firstAt: v.at, lastAt: v.at, activeSeconds: 0, plays: {} }
   doc.activeSeconds += Math.max(0, Math.min(60, v.addSeconds))
   if (v.at > doc.lastAt) doc.lastAt = v.at
   if (v.play) doc.plays[v.play] = (doc.plays[v.play] ?? 0) + 1
+  if (v.click && (doc.clicks?.length ?? 0) < MAX_CLICKS_PER_SESSION) doc.clicks = [...(doc.clicks ?? []), { cta: v.click, at: v.at }]
   return doc
 }
 
@@ -217,7 +231,11 @@ export function createRecipientsStore(db: Firestore, base: string): RecipientsSt
 }
 
 /** One line per reader (never the owner), in the order they were added. */
-export function summarizeViews(rec: RecipientsRecord, views: ViewDoc[], comments: { readerKey: string; id?: string | null; parent?: string | null; at: string; text: string }[]): RecipientSummary[] {
+export function summarizeViews(rec: RecipientsRecord, views: ViewDoc[], comments: { readerKey: string; id?: string | null; parent?: string | null; at: string; text: string }[], opts: SummarizeOptions = {}): RecipientSummary[] {
+  const goal = opts.goal ?? DEFAULT_GOAL
+  const t = outcomeThresholds(opts.thresholds)
+  const nowMs = (opts.now ?? new Date()).getTime()
+  const cta = goalCta(goal)
   return Object.values(rec.recipients).filter((r) => !r.owner).sort((a, b) => a.addedAt.localeCompare(b.addedAt)).map((r) => {
     const all = views.filter((v) => v.rid === r.rid).sort((a, b) => a.firstAt.localeCompare(b.firstAt))
     // A RENDER BEFORE THE SEND IS NEVER THE READER (2026-10-25). The link was opened on the
@@ -234,6 +252,15 @@ export function summarizeViews(rec: RecipientsRecord, views: ViewDoc[], comments
     const early = all.filter((v) => preDevices.has(v.device))
     const mine = all.filter((v) => !preDevices.has(v.device))
     const firsts = mine.map((v) => Date.parse(v.firstAt))
+    const activeSeconds = mine.reduce((n, v) => n + v.activeSeconds, 0)
+    const theirs = comments.filter((c) => ridOfReaderKey(c.readerKey) === r.rid)
+    const clicks = mine.flatMap((v) => v.clicks ?? []).sort((a, b) => a.at.localeCompare(b.at))
+    // The outcome, by the same rule: a comment written before the send was not the reader's either.
+    const responded = theirs.some((c) => !Number.isFinite(sentMs) || !(Date.parse(c.at) < sentMs))
+    const acted = goal === 'respond' ? responded : cta !== null && clicks.some((c) => c.cta === cta)
+    const read = mine.length > 0 && activeSeconds >= t.readSeconds
+    const returned = firsts.length > 1 && firsts[firsts.length - 1] - firsts[0] >= t.returnGapMs
+    const outcome: Outcome = acted ? 'acted' : returned ? 'returned' : read ? 'read' : mine.length ? 'opened' : 'not-opened'
     return {
       rid: r.rid, label: r.label, group: r.group === true, revoked: !!r.revokedAt, closesAt: r.closesAt ?? null,
       sentAt: r.sentAt ?? null,
@@ -244,10 +271,18 @@ export function summarizeViews(rec: RecipientsRecord, views: ViewDoc[], comments
       opened: mine.length > 0,
       firstOpenAt: mine[0]?.firstAt ?? null,
       cameBack: firsts.length > 1 && firsts[firsts.length - 1] - firsts[0] >= CAME_BACK_MS,
-      activeSeconds: mine.reduce((n, v) => n + v.activeSeconds, 0),
+      activeSeconds,
       plays: mine.reduce((n, v) => n + Object.values(v.plays).reduce((a, b) => a + b, 0), 0),
       devices: new Set(mine.map((v) => v.device)).size,
-      comments: comments.filter((c) => ridOfReaderKey(c.readerKey) === r.rid).map((c) => ({ id: c.id ?? null, parent: c.parent ?? null, at: c.at, text: c.text })),
+      comments: theirs.map((c) => ({ id: c.id ?? null, parent: c.parent ?? null, at: c.at, text: c.text })),
+      lastOpenAt: mine[mine.length - 1]?.firstAt ?? null,
+      sessions: mine.length,
+      opens: mine.map((v) => ({ at: v.firstAt, activeSeconds: v.activeSeconds, device: v.device })),
+      clicks,
+      goal, outcome,
+      // `read` succeeds on reading; every other goal only on its action.
+      succeeded: goal === 'read' ? read : acted,
+      daysSinceSent: Number.isFinite(sentMs) ? Math.max(0, Math.floor((nowMs - sentMs) / 86_400_000)) : null,
     }
   })
 }

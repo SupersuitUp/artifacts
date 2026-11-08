@@ -108,4 +108,17 @@ describe('QuietView', () => {
     await vi.advanceTimersByTimeAsync(0)
     expect(posts.find((p) => p.body.event === 'play')?.body).toMatchObject({ media: 'river.mp4', beat: 'b'.repeat(16) })
   })
+  it('a CTA pressed before the view waits for its beat, one pressed after goes at once, and a plain link sends nothing (issue #12)', async () => {
+    document.body.innerHTML = '<a id="cta" href="#got-it" data-artifact-cta="ack"><span id="inner">Got it</span></a><a id="plain" href="#x">x</a>'
+    render(<QuietView {...props} />)
+    document.getElementById('inner')!.click()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(posts.filter((p) => p.body.event === 'click')).toHaveLength(0)
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(posts.filter((p) => p.body.event === 'click').map((p) => p.body)).toMatchObject([{ cta: 'ack', beat: 'b'.repeat(16), rid: props.rid }])
+    document.getElementById('cta')!.click()
+    document.getElementById('plain')!.click()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(posts.filter((p) => p.body.event === 'click')).toHaveLength(2)
+  })
 })

@@ -7,6 +7,7 @@ import { mergeChecklistState, mergeWidgetState, scanWidgets } from './widgets.js
 import { COMMENTS_MODES, mergeCommentsState, type CommentsMode, type CommentsVisible } from './comments.js'
 import { THEME_MODES, type ThemeMode } from '../brand/theme.js'
 import { parseDefinitions, type Definition } from './definitions.js'
+import { parseGoal, checkGoalAgainstBody, type ArtifactGoal } from './goal.js'
 
 export type ArtifactMeta = {
   title: string
@@ -77,6 +78,10 @@ export type ArtifactMeta = {
    *  link to pass it on, and whether they must sign in first. Absent is off. A door like `links:`,
    *  so sticky: a republish that leaves the line out changes nothing. */
   forward?: ForwardMode
+  /** `goal: read | respond | ack | { click: <cta id> }` (issue #12): what a send of this page is
+   *  for, so each reader's outcome says whether the send succeeded. Absent is `read`. Content, like
+   *  `toc:`: a republish without the line goes back to read. */
+  goal?: ArtifactGoal
 }
 export const FORWARD_MODES = ['off', 'signed-in', 'open'] as const
 export type ForwardMode = (typeof FORWARD_MODES)[number]
@@ -105,7 +110,7 @@ export const PACK_NAME = /^[a-z0-9][a-z0-9-]{0,39}$/
 /** The longest `to:` a page may carry: a name or two, never a sentence. */
 export const MAX_TO_CHARS = 60
 
-const KNOWN = new Set(['title', 'summary', 'subtitle', 'to', 'template', 'audience', 'cover', 'id', 'voice', 'narration', 'timings', 'narrationHash', 'password', 'access', 'state', 'theme', 'pack', 'toc', 'definitions', 'change', 'comments', 'comments_visible', 'links', 'media', 'comment_name', 'history', 'forward'])
+const KNOWN = new Set(['title', 'summary', 'subtitle', 'to', 'template', 'audience', 'cover', 'id', 'voice', 'narration', 'timings', 'narrationHash', 'password', 'access', 'state', 'theme', 'pack', 'toc', 'definitions', 'change', 'comments', 'comments_visible', 'links', 'media', 'comment_name', 'history', 'forward', 'goal'])
 
 export function parseArtifactSource(
   text: string,
@@ -170,6 +175,15 @@ export function parseArtifactSource(
   if (d.forward !== undefined && d.forward !== null) {
     if (!FORWARD_MODES.includes(d.forward as ForwardMode)) return { ok: false, error: 'forward must be off, signed-in or open' }
     meta.forward = d.forward as ForwardMode
+  }
+  if (d.goal !== undefined && d.goal !== null) {
+    const g = parseGoal(d.goal)
+    if (!g.ok) return { ok: false, error: g.error }
+    meta.goal = g.goal
+  }
+  {
+    const why = checkGoalAgainstBody(meta.goal, content)
+    if (why) return { ok: false, error: why }
   }
   if (d.theme !== undefined) {
     if (!THEME_MODES.includes(d.theme as ThemeMode)) return { ok: false, error: `theme must be one of: ${THEME_MODES.join(', ')}` }

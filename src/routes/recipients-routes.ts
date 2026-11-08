@@ -5,6 +5,7 @@ import { GRANT_COOKIE, signInUrl, verifyGrant } from '../artifacts/reader.js'
 import { perReaderGate } from './per-reader.js'
 import { summarizeViews, type ForwardedBy, type Provenance, type RecipientsStore } from '../artifacts/recipients-store.js'
 import { COMMENTS_SLOT } from '../artifacts/comments.js'
+import { CTA_ID, ctasIn, outcomeThresholds, type OutcomeThresholds } from '../artifacts/goal.js'
 import type { ArtifactStore } from '../artifacts/store.js'
 import type { StateStore } from '../artifacts/state-store.js'
 import type { ArtifactAssets } from '../artifacts/assets.js'
@@ -27,6 +28,9 @@ export type RecipientsRoutesCtx = {
   readerSecret?: () => string | undefined
   signInOrigin?: string
   siteUrl?: string
+  /** The outcome thresholds `GET /views` measures by (issue #12), over OUTCOME_THRESHOLDS. A caller
+   *  may move `readSeconds` per request with `?readSeconds=<n>`. */
+  outcomes?: Partial<OutcomeThresholds>
 }
 /** How many forward links one reader may make on one page in a day. */
 export const FORWARDS_PER_DAY = 20
@@ -99,7 +103,18 @@ export function createRecipientsRoutes(given: RecipientsRoutesCtx) {
       await ctx.recipients.recordView({ artifactId: id, rid, session, device, at, addSeconds: seconds, ...(media ? { play: media } : {}) })
       return json({})
     }
-    return json({ error: 'event must be view, beat or play' }, 400)
+    // A CTA the reader pressed (issue #12): the same beat as any other signal after the view, and
+    // only an id the page itself carries, so a click is never recorded for a button nobody drew.
+    if (event === 'click') {
+      if (str(b?.beat) !== beatKey(secret, id, rid, session)) return json({ error: 'forbidden' }, 403)
+      const cta = str(b?.cta)
+      if (!CTA_ID.test(cta)) return json({ error: 'cta must be a CTA id' }, 400)
+      const page = await ctx.store.get(id)
+      if (!page || !ctasIn(page.markdown ?? '').includes(cta)) return json({ error: 'this page carries no such CTA' }, 400)
+      await ctx.recipients.recordView({ artifactId: id, rid, session, device, at, addSeconds: 0, click: cta })
+      return json({})
+    }
+    return json({ error: 'event must be view, beat, play or click' }, 400)
   }
   const unauth = () => json({ error: 'publish key required' }, 401)
   async function listing(id: string) {
@@ -187,7 +202,10 @@ export function createRecipientsRoutes(given: RecipientsRoutesCtx) {
     const rec = (await ctx.recipients.get(id)) ?? { recipients: {}, expireAt: null, keep: false }
     const entries = ctx.state ? await ctx.state.entries(id) : []
     const comments = entries.filter((e) => e.slot === COMMENTS_SLOT && e.readerKey.startsWith('r:')).map((e) => ({ readerKey: e.readerKey, id: e.id, parent: typeof (e.value as { parent?: unknown } | null)?.parent === 'string' ? (e.value as { parent: string }).parent : null, at: e.at, text: String((e.value as { body?: unknown } | null)?.body ?? '') }))
-    return json({ id, expireAt: rec.expireAt, keep: rec.keep, recipients: summarizeViews(rec, await ctx.recipients.views(id), comments) })
+    const q = req.nextUrl.searchParams.get('readSeconds')
+    const thresholds = outcomeThresholds({ ...ctx.outcomes, ...(q !== null && /^\d{1,6}$/.test(q) ? { readSeconds: Number(q) } : {}) })
+    const goal = a.goal ?? 'read'
+    return json({ id, expireAt: rec.expireAt, keep: rec.keep, goal, thresholds, recipients: summarizeViews(rec, await ctx.recipients.views(id), comments, { goal, thresholds }) })
   }
   /** Reader text goes with the page: every comment and answer on it, whoever wrote it. */
   async function clearReaderText(id: string) {

@@ -10,6 +10,7 @@
 import { randomInt } from 'node:crypto'
 import { FieldValue, type Firestore } from 'firebase-admin/firestore'
 import type { ArtifactKind, ArtifactMeta, ForwardMode } from './front-matter.js'
+import type { ArtifactGoal } from './goal.js'
 import type { Access } from './reader.js'
 import type { StateConfig } from './state.js'
 import type { ThemeMode } from '../brand/theme.js'
@@ -46,6 +47,8 @@ export type ArtifactRecord = {
   commentName?: 'required'
   /** Whether a reader may make a forward link (front-matter `forward:`); absent is off. */
   forward?: ForwardMode
+  /** What a send of this page is for (front-matter `goal:`); absent is `read`. */
+  goal?: ArtifactGoal
   /** The page's own `history:` line; absent, the host's setting decides. */
   history?: 'admins' | 'everyone'
   definitions?: Definition[]
@@ -277,6 +280,7 @@ async function saveArtifact(col: Col, input: SaveInput): Promise<SaveResult> {
     ...(input.meta.toc !== undefined ? { toc: input.meta.toc } : {}),
     ...(input.meta.commentName ? { commentName: input.meta.commentName } : {}),
     ...(input.meta.forward ? { forward: input.meta.forward } : {}),
+    ...(input.meta.goal ? { goal: input.meta.goal } : {}),
     ...(input.meta.history ? { history: input.meta.history } : {}),
     ...(input.meta.definitions?.length ? { definitions: input.meta.definitions } : {}),
   }
@@ -330,6 +334,7 @@ async function saveArtifact(col: Col, input: SaveInput): Promise<SaveResult> {
       ...(input.meta.toc !== undefined ? {} : { toc: FieldValue.delete() }),
       ...(input.meta.commentName ? {} : { commentName: FieldValue.delete() }),
       ...(input.meta.history ? {} : { history: FieldValue.delete() }),
+      ...(input.meta.goal ? {} : { goal: FieldValue.delete() }),
       ...(input.meta.definitions?.length ? {} : { definitions: FieldValue.delete() }),
     }
     // `voice: none` is the page declaring it has no audio. An update merges, so the recording it

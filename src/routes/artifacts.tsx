@@ -47,6 +47,7 @@ import { AckDoor, ConfidentialBanner, NO_PRINT_CSS, NotAllowedDoor, SignInDoor, 
 import { ARTIFACT_ID_RE } from './ids.js'
 import { createStateRoutes } from './state-routes.js'
 import { createRecipientsRoutes } from './recipients-routes.js'
+import type { OutcomeThresholds } from '../artifacts/goal.js'
 import { QuietView } from '../reader/quiet-view.js'
 import { PageAnalytics } from '../reader/page-analytics.js'
 import { analyticsPlan, type AnalyticsConfig } from '../reader/analytics-plan.js'
@@ -165,6 +166,9 @@ export type ArtifactRoutesConfig = {
   recipients?: RecipientsStore
   /** Signs per-reader links and render tokens. At least 32 characters. Read at request time. */
   recipientSecret?: () => string | undefined
+  /** The thresholds `GET /views` measures each send's outcome by (issue #12), over the package's
+   *  OUTCOME_THRESHOLDS: `readSeconds` (default 30) and `returnGapMs` (default an hour). */
+  outcomeThresholds?: Partial<OutcomeThresholds>
   /** Product analytics for this host's pages (0.50.0): PostHog with session replay, heatmaps,
    *  autocapture, scroll depth on leave, and section_viewed / narration_* events. Without a key no
    *  page loads any analytics script. Never records the owner or an admin, never a link-preview
@@ -289,7 +293,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
   })
   const recipientsRoutes = createRecipientsRoutes({
     store, recipients: config.recipients, recipientSecret: config.recipientSecret, publishKey: config.publishKey,
-    state: config.state, assets: config.assets, pageUrl, authed, readerSecret, signInOrigin, siteUrl,
+    state: config.state, assets: config.assets, pageUrl, authed, readerSecret, signInOrigin, siteUrl, outcomes: config.outcomeThresholds,
   })
   const personalRoutes = createPersonalRoutes({ store, personal: config.personal, readers: config.readers, readerSecret, pageUrl, signInOrigin, siteUrl, audioUrl })
   const voiceRoutes = createVoiceRoutes({
@@ -1295,6 +1299,8 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
       text: narrationText({ title: a.title, subtitle: a.subtitle, summary: a.summary, markdown: a.markdown }),
       title: a.title, ...(a.subtitle ? { subtitle: a.subtitle } : {}), summary: a.summary, ...(a.to ? { to: a.to } : {}),
       markdown: a.markdown, version: a.version ?? 1, updatedAt: a.updatedAt,
+      // What a send of the page is for (issue #12): the goal each reader's outcome is measured by.
+      goal: a.goal ?? 'read',
       // What a link to this page lets its reader do (0.57.0), so a sender can say so before the
       // reader's link exists: the send card is approved before anything is minted.
       share: {
