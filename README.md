@@ -314,6 +314,8 @@ summary: Three bets, what each costs, and what we stop doing to afford them.
 | `history` | `everyone` or `admins`: who sees this page's version number and past versions, overriding the host's `history` for this one page (see Version history). Absent, the host decides. Refused as `everyone` on a per-reader page |
 | `goal` | What a send of the page is for: `read` (the default), `respond`, `ack`, or `click: <cta id>` (see Send outcomes). A republish without the line goes back to `read` |
 | `mark` | `none`: leave the brand mark off this page. A pack with a `Mark` shows it small (32 px tall) above the kicker of every page, linking to the host's front page; the cover and the unfurl stay the page's own. A republish without the line shows it again |
+| `lang` | The language the page is written in, a BCP 47 tag (`en`, `es`, `es-MX`). Marks the page's words for screen readers and the browser's translate offer, and sets `og:locale`. Absent, nothing changes |
+| `translations` | The same document in other languages on this host, as a map of tag to page id: `{"es": "abcd2345"}` (the publisher resolves each twin's file to its id). With `lang`, the page draws a small switch at the top naming each language in itself ("English · Español") and the unfurl carries `hreflang` alternates. Each page names its own twins; a republish without the line removes the switch |
 | `change` | One line saying what this version changed (see Version history) |
 | `template` | `document` (the default, the read-along reader) or `broadcast` (one message card sent to several people; see Broadcasts) |
 

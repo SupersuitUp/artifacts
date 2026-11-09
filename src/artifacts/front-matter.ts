@@ -8,6 +8,7 @@ import { COMMENTS_MODES, mergeCommentsState, type CommentsMode, type CommentsVis
 import { THEME_MODES, type ThemeMode } from '../brand/theme.js'
 import { parseDefinitions, type Definition } from './definitions.js'
 import { parseGoal, checkGoalAgainstBody, type ArtifactGoal } from './goal.js'
+import { parseLang, parseTranslations } from './language.js'
 
 export type ArtifactMeta = {
   title: string
@@ -85,6 +86,12 @@ export type ArtifactMeta = {
   /** `mark: none` (supersuit-dev#2151): this page leaves out the pack's mark that every page of a
    *  branded hub shows above the kicker. Content, like `toc:`: a republish without it shows it. */
   mark?: 'none'
+  /** `lang: es` (supersuit-dev#2156): the language the page is written in, a BCP 47 tag. Marks the
+   *  page's words for screen readers and translation, and sets og:locale. Content, like `toc:`. */
+  lang?: string
+  /** `translations: {"es": "<id>"}`: the same document in other languages on this host, by page id
+   *  (the publisher resolves each twin's file to its id). Draws the language switch. Content. */
+  translations?: Record<string, string>
 }
 export const FORWARD_MODES = ['off', 'signed-in', 'open'] as const
 export type ForwardMode = (typeof FORWARD_MODES)[number]
@@ -113,7 +120,7 @@ export const PACK_NAME = /^[a-z0-9][a-z0-9-]{0,39}$/
 /** The longest `to:` a page may carry: a name or two, never a sentence. */
 export const MAX_TO_CHARS = 60
 
-const KNOWN = new Set(['title', 'summary', 'subtitle', 'to', 'template', 'audience', 'cover', 'id', 'voice', 'narration', 'timings', 'narrationHash', 'password', 'access', 'state', 'theme', 'pack', 'toc', 'definitions', 'change', 'comments', 'comments_visible', 'links', 'media', 'comment_name', 'history', 'forward', 'goal', 'mark'])
+const KNOWN = new Set(['title', 'summary', 'subtitle', 'to', 'template', 'audience', 'cover', 'id', 'voice', 'narration', 'timings', 'narrationHash', 'password', 'access', 'state', 'theme', 'pack', 'toc', 'definitions', 'change', 'comments', 'comments_visible', 'links', 'media', 'comment_name', 'history', 'forward', 'goal', 'mark', 'lang', 'translations'])
 
 export function parseArtifactSource(
   text: string,
@@ -182,6 +189,16 @@ export function parseArtifactSource(
   if (d.mark !== undefined && d.mark !== null) {
     if (d.mark !== 'none') return { ok: false, error: 'mark must be none (it hides the brand mark on this page)' }
     meta.mark = 'none'
+  }
+  if (d.lang !== undefined && d.lang !== null) {
+    const l = parseLang(d.lang)
+    if (!l.ok) return { ok: false, error: l.error }
+    meta.lang = l.lang
+  }
+  if (d.translations !== undefined && d.translations !== null) {
+    const t = parseTranslations(d.translations)
+    if (!t.ok) return { ok: false, error: t.error }
+    if (Object.keys(t.translations).length) meta.translations = t.translations
   }
   if (d.goal !== undefined && d.goal !== null) {
     const g = parseGoal(d.goal)

@@ -46,6 +46,8 @@ import { readSecondsFor, wordCount, type ReaderEvent } from '../artifacts/read-a
 import type { ResolveEvent } from '../artifacts/resolve-digest.js'
 import { AckDoor, ConfidentialBanner, NO_PRINT_CSS, NotAllowedDoor, SignInDoor, Watermark, ackText } from '../artifacts/confidential.js'
 import { ARTIFACT_ID_RE } from './ids.js'
+import { Fragment } from 'react'
+import { languageName, ogLocale } from '../artifacts/language.js'
 import { createStateRoutes } from './state-routes.js'
 import { createRecipientsRoutes } from './recipients-routes.js'
 import type { OutcomeThresholds } from '../artifacts/goal.js'
@@ -455,19 +457,49 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     )
   }
 
+  /** hreflang alternates: this page in its own language, then each translation (supersuit-dev#2156). */
+  function languagesOf(a: ArtifactRecord): Record<string, string> | null {
+    if (!a.lang || !a.translations) return null
+    const out: Record<string, string> = { [a.lang]: pageUrl(a.id) }
+    for (const [tag, id] of Object.entries(a.translations)) if (tag !== a.lang) out[tag] = pageUrl(id)
+    return out
+  }
+
+  /** The language switch at the top of a page that names its translations: each language in its
+   *  own words, this one unlinked. Unspoken; a link, so it works with no script. */
+  function LanguageSwitch({ a, brand }: { a: ArtifactRecord; brand: BrandPack }) {
+    if (!a.lang || !a.translations) return null
+    const others = Object.entries(a.translations).filter(([tag]) => tag !== a.lang)
+    if (!others.length) return null
+    const items = [[a.lang, null] as const, ...others.map(([tag, id]) => [tag, id] as const)].sort(([x], [y]) => x.localeCompare(y))
+    return (
+      <nav data-nospeak data-translations aria-label="Languages" className="mx-auto mb-0 mt-6 max-w-2xl px-6 text-center text-sm">
+        {items.map(([tag, id], i) => (
+          <Fragment key={tag}>
+            {i ? ' · ' : null}
+            {id === null
+              ? <span aria-current="page" lang={tag}>{languageName(tag)}</span>
+              : <a href={pagePath(id)} hrefLang={tag} lang={tag} className="underline underline-offset-4" style={{ color: brand.accent }}>{languageName(tag)}</a>}
+          </Fragment>
+        ))}
+      </nav>
+    )
+  }
+
   async function generateMetadata({ params }: Params): Promise<Metadata> {
     const { id } = await params
     const a = ARTIFACT_ID.test(id) ? await store.get(id) : null
     if (!a) return { title: 'Not found', robots: { index: false, follow: false } }
     const url = pageUrl(a.id)
     const { brand } = lookOf(a)
+    const langs = languagesOf(a)
     const image = absolute(a.cover) ?? (brand.share ? shareCardUrl(a.id, a.updatedAt) : absolute(config.defaultShareImage))
     // Who it is for leads the unfurl, so a thread shows it before the reader opens anything.
     const title = a.to ? `For ${a.to}: ${a.title}` : a.title
     return {
       title,
       description: a.summary,
-      alternates: { canonical: pagePath(a.id) },
+      alternates: { canonical: pagePath(a.id), ...(langs ? { languages: langs } : {}) },
       robots: { index: false, follow: false },
       openGraph: {
         title,
@@ -475,6 +507,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
         url,
         siteName: brand.name,
         type: 'article',
+        ...(a.lang ? { locale: ogLocale(a.lang) } : {}),
         ...(image ? { images: [{ url: image, alt: a.cover ? a.title : brand.name }] } : {}),
       },
       twitter: {
@@ -886,7 +919,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
         <Menu a={a} reader={reader} perReader={perReader} comments={mode !== 'off'} history={history} viewing={current} settings={await settingsFor(a, reader)}
           source={isAdmin(reader) ? sourceOf(a.id, a, a.markdown) : null} />
         {toc.length ? <TocRail items={toc} /> : null}
-        <div id="artifact-narration-root">
+        <div id="artifact-narration-root" lang={a.lang}>
           {await (async () => {
             const n = a.version ?? (a.versions?.length ?? 0) + 1
             const meta = (
@@ -936,6 +969,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
                     ) : perReader?.note ? (
                       <p data-for-reader className="mx-auto mt-6 mb-0 max-w-2xl px-6 text-lg">{`For ${perReader.label}: ${perReader.note}`}</p>
                     ) : null}
+                    <LanguageSwitch a={a} brand={brand} />
                     {header}
                     {a.cover ? (
                       <div className="mx-auto max-w-2xl px-6 pb-8">
