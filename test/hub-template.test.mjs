@@ -40,7 +40,7 @@ describe('the hub host template', () => {
 
   it('serves every route the setup and the publisher call', () => {
     for (const r of ['[id]/page.tsx', '[id]/share.png/route.tsx', 'api/artifacts/route.ts', 'api/reader/enter/route.ts',
-      'api/reader/ack/route.ts', 'api/reader/ask/route.ts', 'api/health/route.ts', 'api/comments/route.ts', 'api/artifact-pass/route.ts',
+      'api/reader/ack/route.ts', 'api/reader/ask/route.ts', 'api/health/route.ts', 'api/comments/route.ts', 'api/artifact-pass/route.ts', 'api/activity/route.ts',
       'artifact/sign-in/page.tsx', 'brand.json/route.ts', 'frapp/route.ts']) {
       expect(existsSync(join(hub, 'app', r)), r).toBe(true)
     }

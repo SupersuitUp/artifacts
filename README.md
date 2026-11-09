@@ -97,6 +97,7 @@ The rest, each exporting the named handler(s) from `artifacts`:
 | `app/api/reader/track/route.ts` | `POST` = `TRACK` |
 | `app/api/artifacts/[id]/resolve/route.ts` | `POST` = `RESOLVE` (see [resolving a thread](#resolving-a-thread)) |
 | `app/api/comments/route.ts` | `GET` = `COMMENTS_FEED` (see [the comments feed](#the-comments-feed)) |
+| `app/api/activity/route.ts` | `GET` = `ACTIVITY` (see [the owner's endpoints](#the-owners-endpoints)) |
 | `app/api/health/route.ts` | `GET` = `HEALTH` (see [the comments feed](#the-comments-feed)) |
 
 Pages live at `/<id>` by default. Mounting inside a larger site, pass `pagePrefix: '/a/'` and put
@@ -1097,14 +1098,35 @@ Routes (spread into your route files by `createArtifactRoutes`): `RECIPIENTS`, `
 
 | Route | Who | What |
 |---|---|---|
-| `GET /api/artifacts/<id>/recipients` | publish key | Every reader, with the working link for each |
-| `POST /api/artifacts/<id>/recipients` | publish key | Body `{ add?: [{ label, note?, group?, closes?, provenance? }], revoke?: [rid] or '*', expires?: ISO time or null, closes?: { rids: [rid] or '*', at: ISO time or null }, sent?: { rids: [rid] or '*', at?: ISO time } }`. `add` answers each new reader's link and its `provenance` (see Who minted a link); `expires: null` is Keep; `closes` sets, moves or clears a reader's feedback window; `sent` records when links reached their readers (see A render before the send) |
-| `GET /api/artifacts/<id>/views` | publish key | One line per reader: opened, came back, active seconds, plays, devices, comments, `sentAt`, `beforeSend` and `provenance`, plus each send's outcome (see Send outcomes). Each comment is `{ id, parent, at, text }` (see Comment ids in /views). A page with no readers yet answers 200 with an empty list; a missing page answers 404 |
+| `GET /api/artifacts/<id>/recipients` | publish key, or the owner signed in | Every reader, with the working link for each |
+| `POST /api/artifacts/<id>/recipients` | publish key, or the owner signed in (same origin, JSON) | Body `{ add?: [{ label, note?, group?, closes?, provenance? }], revoke?: [rid] or '*', expires?: ISO time or null, closes?: { rids: [rid] or '*', at: ISO time or null }, sent?: { rids: [rid] or '*', at?: ISO time } }`. `add` answers each new reader's link and its `provenance` (see Who minted a link); `expires: null` is Keep; `closes` sets, moves or clears a reader's feedback window; `sent` records when links reached their readers (see A render before the send) |
+| `GET /api/artifacts/<id>/views` | publish key, or the owner signed in | One line per reader: opened, came back, active seconds, plays, devices, comments, `sentAt`, `beforeSend` and `provenance`, plus each send's outcome (see Send outcomes). Each comment is `{ id, parent, at, text }` (see Comment ids in /views). A page with no readers yet answers 200 with an empty list; a missing page answers 404 |
 | `POST /api/artifacts/<id>/seen` | the page itself (public) | The reader's own signal, below: a view, beats, plays, and CTA clicks |
 
 Config, both on `createArtifactRoutes`: `recipients` (a store from `createRecipientsStore(db, '<collection path>')`, or `memoryRecipientsStore()` in tests) and `recipientSecret`, a function returning the signing secret, read on every request. A secret shorter than 32 characters is treated as unset: per-reader pages stay shut and the routes answer 404 or 501. Signing with an empty secret throws.
 
 The `Page` route must stay `force-dynamic` (the package's `dynamic` export says so; re-export it), because the page carries a fresh render token and answers per link.
+
+### The owner's endpoints
+
+The endpoints the owner's panel uses take the publish key, or the owner or an admin of this host
+signed in by the reader grant: `GET /views`, `GET|POST /recipients`, `GET|POST /versions`,
+`POST /api/artifacts?unpublish=1&id=<id>`, `DELETE /api/artifacts/<id>`, `GET /reads`,
+`GET /responses`, `GET /api/artifacts` (LIST) and `GET /api/activity`. Nobody signed in gets 401; a
+signed-in reader who is not the owner gets 403. A change made with the grant must come from this
+host's own pages (Origin and Sec-Fetch-Site) and a body must be JSON, so a cross-site form can
+never change, unpublish or delete a page.
+
+`GET /api/activity?since=<ISO>[&limit=<n>][&cursor=<c>]`: every page's opens, button clicks and
+comments after `since`, newest first, in one call: `{ since, now, events: [{ kind: 'open' | 'click'
+| 'comment', at, artifactId, title, url, reader: { rid, label } | { name }, device?, activeSeconds?,
+cta?, commentId?, parent?, text? }], cursor, more }`. Opens and clicks follow `summarizeViews` (never
+the owner's own link, never a render before the send); a publisher's reply is left out. At most 500
+events (`limit` lowers it); when `more` is true, pass `cursor` to continue. LIST carries
+`readerLinks` on every page: how many people hold a live link of their own.
+
+The page's `views` counter counts readers: never the owner or an admin signed in, never a
+link-preview fetcher (`isUnfurlAgent`).
 
 ### What counts as a view
 

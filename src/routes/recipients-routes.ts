@@ -10,6 +10,8 @@ import type { ArtifactStore } from '../artifacts/store.js'
 import type { StateStore } from '../artifacts/state-store.js'
 import type { ArtifactAssets } from '../artifacts/assets.js'
 import { ARTIFACT_ID_RE } from './ids.js'
+import { keyOrOwner } from './owner-auth.js'
+import type { Reader } from '../artifacts/reader.js'
 
 type Params = { params: Promise<{ id: string }> }
 export type RecipientsRoutesCtx = {
@@ -26,6 +28,9 @@ export type RecipientsRoutesCtx = {
   /** For FORWARD: who is signed in (the grant cookie's secret), where to send someone to sign in,
    *  and this host's own address, the only origin a forward may be asked from. */
   readerSecret?: () => string | undefined
+  /** The owner or one of this host's admins: with `readerSecret` and `siteUrl`, RECIPIENTS and
+   *  VIEWS also take them signed in, not only the publish key (the owner panel). Absent, key only. */
+  isAdmin?: (reader: Reader | null) => boolean
   signInOrigin?: string
   siteUrl?: string
   /** The outcome thresholds `GET /views` measures by (issue #12), over OUTCOME_THRESHOLDS. A caller
@@ -117,6 +122,10 @@ export function createRecipientsRoutes(given: RecipientsRoutesCtx) {
     return json({ error: 'event must be view, beat, play or click' }, 400)
   }
   const unauth = () => json({ error: 'publish key required' }, 401)
+  /** The publish key, or (when the host says who its owner is) the owner signed in. */
+  const gate = (req: NextRequest, write = false) => ctx.isAdmin && ctx.readerSecret && ctx.siteUrl
+    ? keyOrOwner(req, { authed: ctx.authed, readerSecret: ctx.readerSecret, isAdmin: ctx.isAdmin, siteUrl: ctx.siteUrl }, { write, json: true })
+    : ctx.authed(req) ? null : unauth()
   async function listing(id: string) {
     const secret = ctx.recipientSecret!()!
     const rec = (await ctx.recipients!.get(id)) ?? { recipients: {}, expireAt: null, keep: false }
@@ -128,7 +137,8 @@ export function createRecipientsRoutes(given: RecipientsRoutesCtx) {
   /** GET and POST /api/artifacts/<id>/recipients: who a per-reader page was sent to (publish key). */
   async function RECIPIENTS(req: NextRequest, { params }: Params) {
     const { id } = await params
-    if (!ctx.authed(req)) return unauth()
+    const refused = gate(req, req.method !== 'GET')
+    if (refused) return refused
     if (!ctx.recipients || !ctx.recipientSecret?.()) return json({ error: 'this host keeps no per-reader links' }, 501)
     const a = ARTIFACT_ID_RE.test(id) ? await ctx.store.get(id) : null
     if (!a) return json({ error: `no artifact with id ${id}` }, 404)
@@ -194,7 +204,8 @@ export function createRecipientsRoutes(given: RecipientsRoutesCtx) {
   /** GET /api/artifacts/<id>/views: one line per reader, with their comments (publish key). */
   async function VIEWS(req: NextRequest, { params }: Params) {
     const { id } = await params
-    if (!ctx.authed(req)) return unauth()
+    const refused = gate(req)
+    if (refused) return refused
     if (!ctx.recipients) return json({ error: 'this host keeps no per-reader links' }, 501)
     const a = ARTIFACT_ID_RE.test(id) ? await ctx.store.get(id) : null
     if (!a) return json({ error: `no artifact with id ${id}` }, 404)

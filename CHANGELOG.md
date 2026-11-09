@@ -5,6 +5,25 @@ host can tell whether it is affected (DETECTOR), what a host does about it (REME
 
 ## Unreleased
 
+**The owner's panel can call the owner endpoints signed in, and a hub has one activity feed.** The
+endpoints the owner panel uses now take the owner or an admin signed in (the reader grant), as LIST
+already did, besides the publish key: `GET /views`, `GET|POST /recipients`, `GET|POST /versions`,
+`POST ?unpublish=1`, `DELETE /api/artifacts/<id>`, `GET /reads` and `GET /responses`. Nobody signed
+in is 401; a signed-in reader who is not the owner is 403. A change made with the grant must come
+from this host's own pages (Origin, Sec-Fetch-Site) and a body must be JSON, the guard `/settings`
+and `/resolve` use, so a cross-site form can never delete or unpublish a page. New `GET
+/api/activity?since=<ISO>` (key or owner): every page's opens, button clicks and comments since a
+time, newest first, in one call, built on `summarizeViews` (never the owner's own link, never a
+render before the send); at most 500 events, `limit` and `cursor` page the rest. LIST adds
+`readerLinks` (live reader links, never the owner's) on every page. The page view counter no longer
+counts the owner or an admin signed in, nor a link-preview bot (`isUnfurlAgent`).
+
+- DETECTOR: a host with no `app/api/activity/route.ts`; a dashboard that calls `/views` once per page.
+- REMEDY: add `app/api/activity/route.ts` exporting `GET` as `routes.ACTIVITY` (the hub template
+  now ships it). The other endpoints need nothing from a host.
+- TESTS: `src/routes/owner-api.test.tsx` (401/200/403 and the cross-site refusal on each endpoint,
+  the activity feed and its cursor, `readerLinks`, the view counter), `test/hub-template.test.mjs`.
+
 **The owner's view of a hub is in the package: `./analytics` (the rules) and `./owner` (`ArtifactsTile`, the screen).**
 They were a continent app's Artifacts tile, written in that app; they move here unchanged so the tile and a hub's own
 owner view (next) draw from one copy. Nothing about an existing route or page changes.
