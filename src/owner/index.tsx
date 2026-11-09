@@ -54,6 +54,30 @@ export interface ArtifactsTileProps {
   homeHref?: string
   /** On the outcome view: where a card's Draft ready goes, or null when that send has no draft for its stage. */
   draftHref?: (s: Send) => string | null
+  /** Every page on the hub, listed under the home's columns (a hub's own owner view). Absent: no list. */
+  pages?: HubPage[]
+}
+
+/** One page of the hub in the home's page list. */
+export interface HubPage {
+  id: string; title: string; url: string; kind: string; updatedAt: string
+  /** How many people hold a live reader link of their own (LIST's readerLinks). */
+  readerLinks: number
+  /** The page's view counter, where the kind keeps one. */
+  views?: number
+}
+
+/** The tile's theme from a page's own theme variables (`--a-*`, set by BrandGround or carried onto a portal), so the
+ *  hub's owner view and a page's owner panel draw in the page's look, light or dark. `display` is the pack's face. */
+export function themeFromPageVars(display?: string): ArtifactsTileTheme {
+  return {
+    card: 'var(--a-surface, var(--a-ground, #fff))', ink: 'var(--a-strong, var(--a-ink, #111))', muted: 'var(--a-muted, #666)',
+    hairline: 'var(--a-line, rgba(127,127,127,0.3))',
+    accentSoft: 'color-mix(in srgb, var(--a-accent, #111) 45%, var(--a-ground, #fff))',
+    accentTint: 'color-mix(in srgb, var(--a-accent, #111) 14%, var(--a-ground, #fff))',
+    danger: '#c0392b', primary: 'var(--a-accent, #111)', onPrimary: 'var(--a-on-accent, var(--a-ground, #fff))',
+    heading: display ? { fontFamily: display } : {},
+  }
 }
 
 type Query = Record<string, string | undefined>
@@ -256,7 +280,7 @@ function BoardCard({ c, s, quietDays, now, draft }: { c: Ctx; s: Send; quietDays
   const hot = heat >= 2
   return (
     <li data-card={`${s.label}@${s.pageId}`} data-succeeded={String(s.succeeded)} data-heat={heat} className="rounded-xl px-3 py-2.5"
-      style={{ backgroundColor: heat === 3 ? t.danger + '14' : t.card, boxShadow: `inset 0 0 0 ${hot ? 2 : 1}px ${s.outcome === 'not-opened' ? heatBorder[heat] : s.succeeded ? t.primary : t.hairline}` }}>
+      style={{ backgroundColor: heat === 3 ? `color-mix(in srgb, ${t.danger} 8%, transparent)` : t.card, boxShadow: `inset 0 0 0 ${hot ? 2 : 1}px ${s.outcome === 'not-opened' ? heatBorder[heat] : s.succeeded ? t.primary : t.hairline}` }}>
       <div className="flex items-baseline justify-between gap-2">
         <Link href={personHref(c, s.personKey)} className="text-base leading-snug" style={{ ...linkStyle(t), ...t.heading }}>{s.label}</Link>
         {s.succeeded && <span className="shrink-0 rounded-full px-2 py-0.5 text-xs" style={{ backgroundColor: t.accentTint, color: t.ink }}>Met its goal</span>}
@@ -291,7 +315,7 @@ function Board({ c, data, f, q, now, draftHref }: { c: Ctx; data: Sends; f: Filt
       <div data-view="board" className="lg:flex lg:items-start lg:gap-3 lg:overflow-x-auto lg:pb-4">
         {columns.map((col) => (
           <section key={col.outcome} data-outcome={col.outcome} data-count={col.count}
-            className={`${col.outcome === stage ? 'flex' : 'hidden lg:flex'} min-w-0 flex-col rounded-2xl p-2 lg:min-w-40 lg:flex-1 lg:basis-0`} style={{ backgroundColor: t.hairline + '55' }}>
+            className={`${col.outcome === stage ? 'flex' : 'hidden lg:flex'} min-w-0 flex-col rounded-2xl p-2 lg:min-w-40 lg:flex-1 lg:basis-0`} style={{ backgroundColor: `color-mix(in srgb, ${t.hairline} 33%, transparent)` }}>
             <header className="mb-2 px-1">
               <h2 className="text-lg leading-tight" style={{ ...t.heading, color: t.ink }}>{OUTCOME_LABEL[col.outcome]}</h2>
               <p className="text-xs" style={{ color: t.muted }}>{col.count === 1 ? '1 send' : `${col.count} sends`}</p>
@@ -309,7 +333,7 @@ function Board({ c, data, f, q, now, draftHref }: { c: Ctx; data: Sends; f: Filt
   )
 }
 
-function SendCard({ c, s, title, attr }: { c: Ctx; s: Send; title: string; attr: Record<string, string> }) {
+function SendCard({ c, s, title, attr, children }: { c: Ctx; s: Send; title: string; attr: Record<string, string>; children?: ReactNode }) {
   const { t } = c
   const more = detailsOf(s)
   return (
@@ -319,7 +343,43 @@ function SendCard({ c, s, title, attr }: { c: Ctx; s: Send; title: string; attr:
       <p className="mt-1 text-[15px]" style={{ color: s.quiet ? t.danger : s.opened ? t.ink : t.muted }}>{stateOf(s)}</p>
       {more && <p className="mt-1 text-sm" style={{ color: t.muted }}>{more}</p>}
       {s.comments.map((cm, i) => <p key={i} className="mt-1 text-sm" style={{ color: t.ink }}><span style={{ color: t.muted }}>{`${day(cm.at)}: `}</span>{`“${cm.text}”`}</p>)}
+      {children}
     </li>
+  )
+}
+
+/** One reader's card, as the page view draws it: when it was sent, whether and how it was read, and their comments.
+ *  `children` go under it (the owner panel's buttons). */
+export function ReaderCard({ s, theme, children }: { s: Send; theme: ArtifactsTileTheme; children?: ReactNode }) {
+  return <SendCard c={{ t: theme, base: '' }} s={s} title={s.label} attr={{ 'data-reader': s.label }}>{children}</SendCard>
+}
+
+function PageList({ c, pages, sends }: { c: Ctx; pages: HubPage[]; sends: readonly Send[] }) {
+  const { t } = c
+  const withReaders = new Set(sends.map((s) => s.pageId))
+  const sorted = [...pages].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id))
+  return (
+    <section data-view="pages" className="mt-8 px-5" aria-label="Pages">
+      <h2 className="text-xl" style={{ ...t.heading, color: t.ink }}>Pages</h2>
+      <p className="text-xs" style={{ color: t.muted }}>{`Every page on this hub, ${pages.length === 1 ? '1 page' : `${pages.length} pages`}, last changed first`}</p>
+      {sorted.length ? (
+        <ul className="lg:grid lg:grid-cols-2 lg:gap-x-8">{sorted.map((p) => (
+          <li key={p.id} data-hub-page={p.id} className="py-3" style={{ boxShadow: `inset 0 -1px 0 ${t.hairline}` }}>
+            <p className="text-[15px]" style={{ color: t.ink }}>
+              <a href={p.url} style={{ ...linkStyle(t), ...t.heading, overflowWrap: 'anywhere' }}>{p.title || p.id}</a>
+            </p>
+            <p className="mt-0.5 text-sm" style={{ color: t.muted }}>
+              {[
+                `changed ${day(p.updatedAt)}`, p.kind === 'broadcast' ? 'broadcast' : '',
+                p.readerLinks ? `${p.readerLinks} reader link${p.readerLinks === 1 ? '' : 's'}` : 'no reader links',
+                typeof p.views === 'number' && p.views ? `${p.views} view${p.views === 1 ? '' : 's'}` : '',
+              ].filter(Boolean).join(' · ')}
+              {withReaders.has(p.id) ? <>{' · '}<Link href={pageHref(c, p.id)} style={linkStyle(t)}>readers</Link></> : null}
+            </p>
+          </li>
+        ))}</ul>
+      ) : <p className="mt-3 text-sm" style={{ color: t.muted }}>Nothing is published here yet.</p>}
+    </section>
   )
 }
 
@@ -340,7 +400,7 @@ function Shell({ c, title, back, fetchedAt, backRow, children }: { c: Ctx; title
 }
 
 /** The whole screen: the home (Activity or Outcomes), one page's readers (`p`), or one person's timeline (`who`). */
-export function ArtifactsTile({ data, query: q, title, theme, back, notFound, basePath = '/artifacts', homeHref = '/', draftHref }: ArtifactsTileProps) {
+export function ArtifactsTile({ data, query: q, title, theme, back, notFound, basePath = '/artifacts', homeHref = '/', draftHref, pages }: ArtifactsTileProps) {
   const c: Ctx = { t: theme, base: basePath }
   const t = theme
   const now = new Date(data.fetchedAt)
@@ -398,6 +458,7 @@ export function ArtifactsTile({ data, query: q, title, theme, back, notFound, ba
           </>
         )}
       </div>
+      {pages ? <PageList c={c} pages={pages} sends={data.sends} /> : null}
     </Shell>
   )
 }

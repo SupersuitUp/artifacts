@@ -21,6 +21,7 @@ import { themeVarsAround } from './theme-vars.js'
 import { HistoryPanel, VersionList, type HistoryItem } from './version-history.js'
 import { PINS_STATE, requestPins, signInBack } from './page-bridge.js'
 import { REOPEN_KEY, SettingsSheet, type PageSettings, type SheetKind } from './settings-sheet.js'
+import { OwnerPanel, type OwnerView } from './owner-panel.js'
 
 export type PageRole = 'visitor' | 'reader' | 'owner' | 'admin'
 
@@ -49,6 +50,8 @@ export type PageMenuProps = {
   /** The page's share and comment settings, for the owner and admins only; null for everyone
    *  else, so nobody else's page carries the list or the key. */
   settings?: PageSettings | null
+  /** This page's owner panel (owner-panel.tsx), for the owner and admins signed in only; null for everyone else. */
+  ownerView?: OwnerView | null
 }
 
 /** The menu's first line: who this reader is to this page. */
@@ -60,10 +63,11 @@ export function roleLine(role: PageRole, name: string | null, shutOut = false): 
 }
 
 /** The items this reader gets, in order. Exported so the server markup and tests can name them. */
-export function menuItems(p: Pick<PageMenuProps, 'share' | 'comments' | 'signIn' | 'signOut' | 'history' | 'markdown' | 'settings' | 'viewAsReader'>): string[] {
+export function menuItems(p: Pick<PageMenuProps, 'share' | 'comments' | 'signIn' | 'signOut' | 'history' | 'markdown' | 'settings' | 'viewAsReader' | 'ownerView'>): string[] {
   return [
     p.share ? 'share' : null,
     p.comments ? 'comments' : null,
+    p.ownerView ? 'owner-view' : null,
     p.settings ? 'share-settings' : null,
     p.settings && p.settings.comments !== null ? 'comment-settings' : null,
     p.history ? 'history' : null,
@@ -105,7 +109,7 @@ async function copyText(text: string): Promise<boolean> {
 }
 
 export function PageMenu(props: PageMenuProps) {
-  const { role, name, shutOut, share, comments, signIn, signOut, history, markdown, settings, viewAsReader } = props
+  const { role, name, shutOut, share, comments, signIn, signOut, history, markdown, settings, viewAsReader, ownerView } = props
   const items = menuItems(props)
   const [mounted, setMounted] = useState(false)
   const [open, setOpen] = useState(false)
@@ -114,6 +118,7 @@ export function PageMenu(props: PageMenuProps) {
   const [pins, setPins] = useState(true)
   const [said, setSaid] = useState<string | null>(null)
   const [historyOpen, setHistoryOpen] = useState(false)
+  const [ownerOpen, setOwnerOpen] = useState(false)
   const [sheet, setSheet] = useState<{ kind: SheetKind; saved: boolean } | null>(null)
   const marker = useRef<HTMLSpanElement | null>(null)
   const button = useRef<HTMLButtonElement | null>(null)
@@ -266,6 +271,12 @@ export function PageMenu(props: PageMenuProps) {
               {pins ? 'Hide comments' : 'Show comments'}
             </button>
           ) : null}
+          {ownerView ? (
+            <button type="button" role="menuitem" data-page-menu-item="owner-view" aria-haspopup="dialog" onClick={() => { setOpen(false); setOwnerOpen(true) }} style={itemStyle}>
+              Owner view
+              <span style={sub}>Readers, links, versions</span>
+            </button>
+          ) : null}
           {settings ? (
             <button type="button" role="menuitem" data-page-menu-item="share-settings" aria-haspopup="dialog" onClick={() => onSheet('share')} style={itemStyle}>
               Share settings
@@ -300,6 +311,11 @@ export function PageMenu(props: PageMenuProps) {
       {sheet && settings ? (
         <SettingsSheet kind={sheet.kind} settings={settings} saved={sheet.saved} phone={phone} vars={vars} onCopy={copyText}
           onClose={() => { setSheet(null); button.current?.focus() }} />
+      ) : null}
+      {ownerOpen && ownerView ? (
+        <OwnerPanel view={ownerView} phone={phone} vars={vars} onCopy={copyText}
+          onShareSettings={settings ? () => { setOwnerOpen(false); setSheet({ kind: 'share', saved: false }) } : undefined}
+          onClose={() => { setOwnerOpen(false); button.current?.focus() }} />
       ) : null}
       {historyOpen && history ? (
         <HistoryPanel items={history.items} base={history.base} viewing={history.viewing} anchor={button}

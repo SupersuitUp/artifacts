@@ -131,7 +131,7 @@ export function createRecipientsRoutes(given: RecipientsRoutesCtx) {
     const rec = (await ctx.recipients!.get(id)) ?? { recipients: {}, expireAt: null, keep: false }
     return {
       id, expireAt: rec.expireAt, keep: rec.keep,
-      recipients: Object.values(rec.recipients).map((r) => ({ rid: r.rid, label: r.label, group: r.group === true, owner: r.owner === true, revoked: !!r.revokedAt, closesAt: r.closesAt ?? null, sentAt: r.sentAt ?? null, provenance: r.provenance ?? null, parent: r.parent ?? null, forwardedBy: r.forwardedBy ?? null, url: ridLink(ctx.pageUrl(id), id, r.rid, secret) })),
+      recipients: Object.values(rec.recipients).map((r) => ({ rid: r.rid, label: r.label, addedAt: r.addedAt, group: r.group === true, owner: r.owner === true, revoked: !!r.revokedAt, closesAt: r.closesAt ?? null, sentAt: r.sentAt ?? null, provenance: r.provenance ?? null, parent: r.parent ?? null, forwardedBy: r.forwardedBy ?? null, url: ridLink(ctx.pageUrl(id), id, r.rid, secret) })),
     }
   }
   /** GET and POST /api/artifacts/<id>/recipients: who a per-reader page was sent to (publish key). */

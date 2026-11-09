@@ -1,12 +1,18 @@
-// The hub's home. Pages are shared by link, so there is nothing to list here; this says whose
-// pages these are and stops.
+// The hub's home. For its owner or an admin signed in it is their dashboard (the shell's HubHome: the Artifacts tile
+// over the whole hub, every page listed). Everyone else is shared pages by link, so this says whose pages these are
+// and stops.
 import { BrandGround, BrandMark } from '@supersuit/artifacts/brand'
 import { hubTenant } from '@/tenant'
+import { hubRoutes } from '@/lib/routes'
 
 export const dynamic = 'force-dynamic'
 
-export default function Home() {
+type Props = { searchParams?: Promise<Record<string, string | string[] | undefined>> }
+
+export default async function Home({ searchParams }: Props) {
   const t = hubTenant()
+  const owner = t.configured ? await hubRoutes().HubHome({ searchParams }) : null
+  if (owner) return owner
   return (
     <BrandGround pack={t.pack}>
       <div className="mx-auto max-w-2xl px-6 pt-32 text-center">

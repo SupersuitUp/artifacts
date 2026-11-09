@@ -5,6 +5,22 @@ host can tell whether it is affected (DETECTOR), what a host does about it (REME
 
 ## Unreleased
 
+**A hub's home is its owner's dashboard, and every page has an Owner view.** New `HubHome({ searchParams })` in the
+route table: for the owner or an admin signed in, the Artifacts tile over the whole hub with every page listed under it
+(`ArtifactsTile`'s new `pages` prop); `null` for everyone else, so a host's plain front page stays as it is. The page
+menu gains "Owner view" (owner and admins only), a panel with that page's readers, opens, came back, comments and
+versions, and buttons that call the same endpoints the publisher's commands call: new reader link, copy, shut, when
+links close, Share settings, unpublish and delete (each of the last two after a confirm). New exports:
+`themeFromPageVars`, `ReaderCard`, `HubPage` (`./owner`), `sendOfSummary` (`./analytics`). The recipients listing adds
+`addedAt`. The tile's two translucent fills are now `color-mix` instead of a hex alpha suffix, the same colour, so a
+theme may be CSS variables.
+
+- DETECTOR: a host whose `app/page.tsx` does not call `HubHome`.
+- REMEDY: in `app/page.tsx`, `const owner = await routes.HubHome({ searchParams }); if (owner) return owner` before the
+  plain page (the hub template does). The Owner view needs nothing from a host.
+- TESTS: `src/routes/hub-home.test.tsx`, `src/routes/owner-view.test.tsx`, `src/reader/owner-panel.test.tsx` (each button
+  against the CLI verb it mirrors), `src/routes/page-menu.test.tsx` (the admin's items), `test/hub-template.test.mjs`.
+
 **The owner's panel can call the owner endpoints signed in, and a hub has one activity feed.** The
 endpoints the owner panel uses now take the owner or an admin signed in (the reader grant), as LIST
 already did, besides the publish key: `GET /views`, `GET|POST /recipients`, `GET|POST /versions`,

@@ -300,6 +300,14 @@ counts an open differently from the hub's own views route.
   optionally `basePath` (default `/artifacts`), `homeHref` and `draftHref(send)`. Who may see it is yours to decide.
 - It is drawn with Tailwind classes, so let Tailwind scan it: `@source "../../node_modules/@supersuit/artifacts/lib/owner";`
   in your global CSS.
+- `pages` (optional) lists every page of the hub under the home (`HubPage`: id, title, url, kind, updatedAt,
+  readerLinks, views). `themeFromPageVars(display?)` is a theme drawn from a page's own `--a-*` variables, light or dark.
+  `ReaderCard` is one reader's card as the page view draws it, with room for buttons under it.
+- **A hub's own home for its owner** is the route table's `HubHome({ searchParams })`: the tile over the whole hub, read
+  from the host's own stores, every page listed, `?p=`/`?who=`/filters on `/`. It answers `null` to anyone who is not
+  the owner or an admin signed in, so the host's `app/page.tsx` draws its plain front page then:
+  `const owner = await routes.HubHome({ searchParams }); if (owner) return owner`. `ownerQuietDays` (default 3) sets
+  Waiting on. The hub template's home does exactly this.
 
 ## Front matter
 
@@ -1127,6 +1135,14 @@ events (`limit` lowers it); when `more` is true, pass `cursor` to continue. LIST
 
 The page's `views` counter counts readers: never the owner or an admin signed in, never a
 link-preview fetcher (`isUnfurlAgent`).
+
+**Owner view, on every page.** The page menu has "Owner view" for the owner and the hub's admins signed in, never
+anyone else (a reader on their own link included). It opens this page's slice of the tile (each reader's card: sent,
+opened, came back, read time, comments) and its versions, and buttons that send exactly what the publisher's commands
+send (`ownerRequests` in `reader/owner-panel.tsx`): a new reader link with a name (`recipients add`), copy a reader's
+link, shut a link (`recipients revoke`), when the links close (`recipients expires`, or never), the Share settings
+sheet, unpublish (`publish --delete`) and delete (`--purge`), the last two after a confirm. The recipients listing
+carries each link's `addedAt`.
 
 ### What counts as a view
 

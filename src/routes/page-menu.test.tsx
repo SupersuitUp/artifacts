@@ -115,8 +115,8 @@ describe('the items each role gets on a public page', () => {
     expect(items(await page(dana))).toEqual(['share', 'sign-out'])
   })
   it('owner and admin: Share, Version history, Copy the markdown, Sign out', async () => {
-    expect(items(await page(owner))).toEqual(['share', 'history', 'markdown', 'view-as-reader', 'sign-out'])
-    expect(items(await page(admin))).toEqual(['share', 'history', 'markdown', 'view-as-reader', 'sign-out'])
+    expect(items(await page(owner))).toEqual(['share', 'owner-view', 'history', 'markdown', 'view-as-reader', 'sign-out'])
+    expect(items(await page(admin))).toEqual(['share', 'owner-view', 'history', 'markdown', 'view-as-reader', 'sign-out'])
   })
   it('Show / Hide comments only where shared comments are on', async () => {
     rec = { ...base, comments: 'anyone', state: { writers: 'anyone', visibility: 'private', slots: { comments: { shape: 'many', visibility: 'private', writers: 'anyone' } } } }
@@ -185,7 +185,7 @@ describe('Share by access level', () => {
     expect(items(await page(admin, {}, 'hunter2'))).toContain('share')
     expect(await carries(admin, `https://artifacts.example.com/${ID}?key=hunter2`, {}, 'hunter2')).toBe(true)
     // At the locked door too, so an admin can send the key without opening the page first.
-    expect(items(await page(admin))).toEqual(['share', 'sign-out'])
+    expect(items(await page(admin))).toEqual(['share', 'owner-view', 'sign-out'])
     expect(items(await page(null))).toEqual(['sign-in'])
   })
 })

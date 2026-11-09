@@ -45,4 +45,9 @@ describe('the hub host template', () => {
       expect(existsSync(join(hub, 'app', r)), r).toBe(true)
     }
   })
+  it('shows its owner the dashboard on the home (HubHome) and everyone else the plain front page', () => {
+    const home = readFileSync(join(hub, 'app/page.tsx'), 'utf8')
+    expect(home).toMatch(/hubRoutes\(\)\.HubHome\(\{ searchParams \}\)/)
+    expect(home).toContain('shares by link')
+  })
 })
