@@ -7,6 +7,8 @@ import { revalidatePath } from 'next/cache'
 import { notFound, redirect } from 'next/navigation'
 import { NextRequest, NextResponse } from 'next/server'
 import { isPublisherAuthed } from '../artifacts/auth.js'
+import { keyOrOwner, type OwnerAuth } from './owner-auth.js'
+import { ACTIVITY_MAX, activityOf, decodeCursor } from '../artifacts/activity.js'
 import { ARTIFACT_KINDS, parseArtifactSource, type ArtifactKind } from '../artifacts/front-matter.js'
 import { narrationText } from '../artifacts/narration.js'
 import { ArtifactMarkdown, type EmbedCtx } from '../artifacts/render.js'
@@ -289,6 +291,8 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
   const audioUrl = config.assets?.audioUrl ? (id: string, path: string) => config.assets!.audioUrl!(id, path) : undefined
   const publishAuth = { publishKey: config.publishKey, publisherSecret: config.publisherSecret, publisherHost: config.publisherHost }
   const authed = (request: Request) => isPublisherAuthed(request, publishAuth)
+  /** The owner panel's endpoints: the publish key, or the owner or an admin signed in (owner-auth.ts). */
+  const ownerAuth: OwnerAuth = { authed, readerSecret, isAdmin, siteUrl }
   const stateRoutes = createStateRoutes({
     store, state: config.state, readers: config.readers, readerSecret, recipients: config.recipients, recipientSecret: config.recipientSecret, publishKey: config.publishKey,
     publisherSecret: config.publisherSecret, publisherHost: config.publisherHost, pageUrl, signInOrigin, siteUrl,
@@ -296,7 +300,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
   })
   const recipientsRoutes = createRecipientsRoutes({
     store, recipients: config.recipients, recipientSecret: config.recipientSecret, publishKey: config.publishKey,
-    state: config.state, assets: config.assets, pageUrl, authed, readerSecret, signInOrigin, siteUrl, outcomes: config.outcomeThresholds,
+    state: config.state, assets: config.assets, pageUrl, authed, readerSecret, isAdmin, signInOrigin, siteUrl, outcomes: config.outcomeThresholds,
   })
   const personalRoutes = createPersonalRoutes({ store, personal: config.personal, readers: config.readers, readerSecret, pageUrl, signInOrigin, siteUrl, audioUrl })
   const voiceRoutes = createVoiceRoutes({
@@ -651,7 +655,12 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     // page they already get.
     const asReader = isAdmin(reader) && wantsReaderView(sp)
     const page = await render(true, asReader ? null : reader, asReader)
-    if (n === null && !asReader) void store.bumpViews(id)
+    // The count is readers': never the owner or an admin looking at their own page, never a link
+    // preview fetching it to draw a card (the same list the per-reader page uses).
+    if (n === null && !isAdmin(reader)) {
+      const ua = await (config.readHeader ?? defaultReadHeader)('user-agent').catch(() => undefined)
+      if (!(ua !== undefined && isUnfurlAgent(ua))) void store.bumpViews(id)
+    }
     return (
       <BrandGround pack={pack} mode={a.theme}>
         {remember ? <script dangerouslySetInnerHTML={{ __html: remember }} /> : null}
@@ -714,7 +723,8 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
       )
     }
     const page = await render(false, r)
-    if (n === null) void store.bumpViews(id)
+    // Readers only: the owner and admins open every gated page and are never its audience.
+    if (n === null && !isAdmin(r)) void store.bumpViews(id)
     return (
       <BrandGround pack={pack} mode={a.theme}>
         <style dangerouslySetInnerHTML={{ __html: NO_PRINT_CSS }} />
@@ -1277,7 +1287,8 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
   /** GET /api/artifacts/<id>/reads, publish key: who read it, for how long, how far, and every
    *  attempt to take it away or to open it without being let in. */
   async function READS(request: NextRequest, { params }: Params) {
-    if (!authed(request)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const refused = keyOrOwner(request, ownerAuth)
+    if (refused) return refused
     if (!config.readers) return NextResponse.json({ error: 'this host keeps no reader record' }, { status: 501 })
     const { id } = await params
     const a = ARTIFACT_ID.test(id) ? await store.get(id) : null
@@ -1290,7 +1301,12 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
   const keepsPrivateMedia = () => Boolean(config.assets?.putPrivate && config.assets.privateUrl)
 
   async function POST(request: NextRequest) {
-    if (!authed(request)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // Unpublishing is one of the owner panel's buttons, so it also takes the owner signed in (from
+    // this host's own pages); publishing a body stays the publish key's alone.
+    if (request.nextUrl.searchParams.get('unpublish') === '1') {
+      const refused = keyOrOwner(request, ownerAuth, { write: true })
+      if (refused) return refused
+    } else if (!authed(request)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     // `?unpublish=1`: take the page off the web and keep everything. On the publish route rather
     // than a route of its own so no host has a file to add, and so a host older than 0.48.0 refuses
     // the empty body with a 400 instead of doing anything at all: it can never be mistaken for a delete.
@@ -1473,7 +1489,8 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
   /** GET|POST /api/artifacts/<id>/versions, publish key: the history, and a note written onto one
    *  version after the fact. POST body: { version: number, note: string | null }. */
   async function VERSIONS(request: NextRequest, { params }: Params) {
-    if (!authed(request)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const refused = keyOrOwner(request, ownerAuth, { write: request.method !== 'GET', json: true })
+    if (refused) return refused
     const { id } = await params
     if (!store.history || !store.setNote) return NextResponse.json({ error: 'this store keeps no history' }, { status: 501 })
     const history = ARTIFACT_ID.test(id) ? await store.history(id) : null
@@ -1493,7 +1510,8 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
    *  than media nobody can find. The id is checked before anything is touched: a path-shaped id
    *  would widen the bucket prefix past one page. */
   async function DELETE(request: NextRequest, { params }: Params) {
-    if (!authed(request)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const refused = keyOrOwner(request, ownerAuth, { write: true })
+    if (refused) return refused
     const { id } = await params
     if (!ARTIFACT_ID.test(id) || !(await kept.get(id))) return NextResponse.json({ error: `no artifact with id ${id}` }, { status: 404 })
     let files = 0
@@ -1529,14 +1547,50 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     if (!store.list) return no('this store cannot list its pages', 501)
     const items = await store.list(kind as ArtifactKind)
     const pages = await Promise.all(items.map(async (p) => {
-      const line = { id: p.id, title: p.title, summary: p.summary, url: pageUrl(p.id), createdAt: p.createdAt, updatedAt: p.updatedAt }
-      if (kind !== 'broadcast') return { ...line, views: p.views }
       // A store that fails fails the list: a blank line would read as "kept, sent to nobody".
       const rec = config.recipients ? await config.recipients.get(p.id) : null
       const people = rec ? Object.values(rec.recipients).filter((r) => !r.owner) : []
+      // `readerLinks`: how many people hold a live link of their own (never the owner's), on every
+      // kind, so the owner's list can say which pages were sent to someone.
+      const line = { id: p.id, title: p.title, summary: p.summary, url: pageUrl(p.id), createdAt: p.createdAt, updatedAt: p.updatedAt, readerLinks: people.filter((r) => !r.revokedAt).length }
+      if (kind !== 'broadcast') return { ...line, views: p.views }
       return { ...line, expireAt: rec?.expireAt ?? null, keep: rec?.keep ?? false, readers: people.filter((r) => !r.revokedAt).length, revoked: people.filter((r) => r.revokedAt).length }
     }))
     return NextResponse.json({ kind, pages }, { headers: { 'cache-control': 'no-store' } })
+  }
+
+  /** GET /api/activity?since=<ISO>[&limit=<n>][&cursor=<c>]: every page's opens, button clicks and
+   *  comments after `since`, newest first, in one call (the owner's dashboard feed; before this it
+   *  was one /views call per page). At most ACTIVITY_MAX events (or `limit`); when there are more,
+   *  `more` is true and `cursor` continues from the last event given. Documents and broadcasts both.
+   *  Opens and clicks follow summarizeViews (never the owner's own link, never a render before the
+   *  send). The publish key, or the owner or an admin signed in. */
+  async function ACTIVITY(request: NextRequest) {
+    const refused = keyOrOwner(request, ownerAuth)
+    if (refused) return refused
+    const no = (error: string, status: number) => NextResponse.json({ error }, { status, headers: { 'cache-control': 'no-store' } })
+    const q = request.nextUrl.searchParams
+    const since = q.get('since') ?? ''
+    if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/.test(since) || Number.isNaN(Date.parse(since)))
+      return no('since must be an ISO 8601 time with a zone, like 2026-11-01T00:00:00Z', 400)
+    const l = q.get('limit')
+    if (l !== null && (!/^\d{1,4}$/.test(l) || Number(l) < 1 || Number(l) > ACTIVITY_MAX)) return no(`limit is 1 to ${ACTIVITY_MAX}`, 400)
+    const c = q.get('cursor')
+    const cursor = c === null ? null : decodeCursor(c)
+    if (c !== null && !cursor) return no('cursor is not one this host gave', 400)
+    if (!store.list) return no('this store cannot list its pages', 501)
+    const items = (await Promise.all(ARTIFACT_KINDS.map((k) => store.list!(k)))).flat()
+    const pages = await Promise.all(items.map(async (p) => {
+      const recipients = config.recipients ? await config.recipients.get(p.id) : null
+      const hasReaders = !!recipients && Object.keys(recipients.recipients).length > 0
+      const [views, entries] = await Promise.all([
+        hasReaders ? config.recipients!.views(p.id) : Promise.resolve([]),
+        config.state ? config.state.entries(p.id) : Promise.resolve([]),
+      ])
+      return { id: p.id, title: p.title, url: pageUrl(p.id), recipients, views, entries }
+    }))
+    const out = activityOf(pages, since, { limit: l === null ? ACTIVITY_MAX : Number(l), cursor })
+    return NextResponse.json({ since, now: new Date().toISOString(), ...out }, { headers: { 'cache-control': 'no-store' } })
   }
 
   /** For a host's proxy, ahead of the page: a per-reader page whose link was revoked or whose date
@@ -1567,5 +1621,5 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     return new Response(html, { status: 410, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'x-robots-tag': 'noindex, nofollow' } })
   }
 
-  return guardRouteTable({ Page, generateMetadata, VersionPage, generateVersionMetadata, VERSIONS, POST, GET, DELETE, LIST, shutPageResponse, PUT_ASSET, UPLOAD, SHARE_IMAGE, ENTER, LEAVE, TRACK, ACK, ASK, ACCESS, SETTINGS, READS, sweepReaders, TRANSCRIBE: voiceRoutes.TRANSCRIBE, ...stateRoutes, ...personalRoutes, ...recipientsRoutes, dynamic: 'force-dynamic' as const, maxDuration: 30 })
+  return guardRouteTable({ Page, generateMetadata, VersionPage, generateVersionMetadata, VERSIONS, POST, GET, DELETE, LIST, ACTIVITY, shutPageResponse, PUT_ASSET, UPLOAD, SHARE_IMAGE, ENTER, LEAVE, TRACK, ACK, ASK, ACCESS, SETTINGS, READS, sweepReaders, TRANSCRIBE: voiceRoutes.TRANSCRIBE, ...stateRoutes, ...personalRoutes, ...recipientsRoutes, dynamic: 'force-dynamic' as const, maxDuration: 30 })
 }

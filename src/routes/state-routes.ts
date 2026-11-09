@@ -21,6 +21,7 @@ import { createHmac, randomBytes } from 'node:crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { isPublisherAuthed } from '../artifacts/auth.js'
 import { ARTIFACT_ID_RE } from './ids.js'
+import { keyOrOwner } from './owner-auth.js'
 import { GRANT_COOKIE, decide, firstName, signInUrl, verifyGrant, type Reader } from '../artifacts/reader.js'
 import { isUnlocked, unlockCookieName } from '../artifacts/unlock.js'
 import { browserIdFor, ridCookieName, ridOfReaderKey, usableSecret } from '../artifacts/recipients.js'
@@ -401,7 +402,10 @@ export function createStateRoutes(ctx: StateRoutesContext) {
   }
 
   async function RESPONSES(req: NextRequest, { params }: Params) {
-    if (!isPublisherAuthed(req, ctx)) return json({ error: 'Unauthorized' }, 401)
+    // The publish key, or the owner or an admin signed in (the owner panel); removing a reader's
+    // answers with the grant must come from this host's own pages.
+    const refused = keyOrOwner(req, { authed: (r) => isPublisherAuthed(r, ctx), readerSecret: ctx.readerSecret, isAdmin: isOwner, siteUrl: ctx.siteUrl }, { write: req.method !== 'GET' })
+    if (refused) return refused
     if (!ctx.state) return json({ error: 'this host keeps no answers' }, 501)
     const { id } = await params
     const a = ARTIFACT_ID_RE.test(id) ? await ctx.store.get(id) : null
