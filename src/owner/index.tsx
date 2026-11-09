@@ -434,14 +434,13 @@ export function ArtifactsTile({ data, query: q, title, theme, back, notFound, ba
   return (
     <Shell c={c} title={title} back={homeHref} fetchedAt={data.fetchedAt} backRow={back}>
       <Counts c={c} data={data} now={now} />
-      <nav data-view-switch className="flex gap-2 px-5 pb-3 text-sm" aria-label="View">
-        <Link href={href(c, { ...q, view: undefined }, { tab: null, stage: null, n: null })} aria-current={!outcomes ? 'page' : undefined} className="rounded-full px-3 py-1.5" style={tab(!outcomes)}>Activity</Link>
+      {/* ONE row of tabs (Gary, 2026-11-09): two rows that both began with Activity read as a bug. Waiting on is a
+          tab on a phone only; from lg up it is its own column beside the feed. */}
+      <nav data-view-switch className="flex flex-wrap gap-2 px-5 pb-3 text-sm" aria-label="View">
+        <Link href={href(c, { ...q, view: undefined }, { tab: null, stage: null, n: null })} aria-current={!outcomes && !onWaiting ? 'page' : undefined} className="rounded-full px-3 py-1.5" style={tab(!outcomes && !onWaiting)}>Activity</Link>
+        <Link href={href(c, { ...q, view: undefined }, { tab: 'waiting', stage: null, n: null })} aria-current={!outcomes && onWaiting ? 'page' : undefined} className="rounded-full px-3 py-1.5 lg:hidden" style={tab(!outcomes && onWaiting)}>{`Waiting on${waitingCount ? ` (${waitingCount})` : ''}`}</Link>
         <Link href={href(c, { ...q, view: 'outcomes' }, { tab: null, n: null })} aria-current={outcomes ? 'page' : undefined} className="rounded-full px-3 py-1.5" style={tab(outcomes)}>Outcomes</Link>
       </nav>
-      {!outcomes && <nav data-tabs className="flex gap-2 px-5 pb-3 text-sm lg:hidden" aria-label="Views">
-        <Link href={href(c, q, { tab: null })} aria-current={!onWaiting ? 'page' : undefined} className="rounded-full px-3 py-1.5" style={tab(!onWaiting)}>Activity</Link>
-        <Link href={href(c, q, { tab: 'waiting' })} aria-current={onWaiting ? 'page' : undefined} className="rounded-full px-3 py-1.5" style={tab(onWaiting)}>{`Waiting on${waitingCount ? ` (${waitingCount})` : ''}`}</Link>
-      </nav>}
       <details className="mx-5 mb-3 rounded-2xl px-4 py-2 lg:hidden" style={card(t)} open={FILTER_KEYS.some((k) => q[k]) || undefined}>
         <summary className="text-sm" style={{ color: t.ink }}>Search and filters</summary>
         <div className="pb-2"><FilterForm c={c} data={data} q={q} /></div>

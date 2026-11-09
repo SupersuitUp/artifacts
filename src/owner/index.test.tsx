@@ -40,6 +40,14 @@ describe('ArtifactsTile', () => {
     expect([...d.querySelectorAll('[data-view="feed"] [data-event]')].map((e) => e.getAttribute('data-event'))).toContain('commented')
     expect([...d.querySelectorAll('[data-waiting]')].map((e) => e.getAttribute('data-waiting'))).toEqual(['Lee@plan'])
   })
+  it('draws ONE row of view tabs, Activity, Waiting on and Outcomes, never two rows that both say Activity', async () => {
+    const d = await render()
+    const rows = d.querySelectorAll('nav[data-view-switch], nav[data-tabs]')
+    expect(rows.length).toBe(1)
+    const labels = [...rows[0].querySelectorAll('a')].map((a) => a.textContent)
+    expect(labels).toEqual(['Activity', 'Waiting on (1)', 'Outcomes'])
+    expect(labels.filter((l) => l === 'Activity').length).toBe(1)
+  })
   it('points every link and the filter form at basePath, and draws in the theme', async () => {
     const d = await render({}, { basePath: '/owner', homeHref: '/hub' })
     expect(d.querySelector('[data-back]')!.getAttribute('href')).toBe('/hub')
