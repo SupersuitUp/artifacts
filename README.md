@@ -281,6 +281,25 @@ The answer also carries `share: { links, forward, comments, expires }` (0.57.0):
 `comments:` (`off` when unset), and `expires` the per-reader page's expiry or null. It is what a
 sender reads to say, before a reader's link exists, what that link will let its reader do.
 
+## The owner's view (`./analytics`, `./owner`)
+
+What readers did with the pages you sent, as one screen: this week's counts (opened of sent, goal met), the Activity
+feed, Waiting on (a send not opened after `quietDays`), the outcome board (not opened, opened, read, came back, acted)
+with each card's goal, one page's readers and one person's timeline. Every number is `summarizeViews`', so it never
+counts an open differently from the hub's own views route.
+
+- `@supersuit/artifacts/analytics` is the rule, pure: `fetchSends(config, stores, now?)` reads the pages published in
+  the last `LOOKBACK_DAYS` (at most `MAX_PAGES`) through the stores you pass (`list`/`get` of the page store, `get`/`views`
+  of the recipients store, `entries` of the state store), and `activityFeed`, `waitingOn`, `countsOf`, `outcomeBoard`,
+  `readersOf`, `timelineOf`, `choicesOf`, `parseFilters`, `heatOf` and `OUTCOME_LABEL` turn the result into what is shown.
+  `config` is `{ site, pagePrefix, quietDays }`.
+- `@supersuit/artifacts/owner` is the screen, `ArtifactsTile`, a server component with no client script: every view is
+  chosen by the address. You pass the data, the query, the title, your theme (`card`, `ink`, `muted`, `hairline`,
+  `accentSoft`, `accentTint`, `danger`, `primary`, `onPrimary`, `heading`), your Back row (`back(href)`), `notFound`, and
+  optionally `basePath` (default `/artifacts`), `homeHref` and `draftHref(send)`. Who may see it is yours to decide.
+- It is drawn with Tailwind classes, so let Tailwind scan it: `@source "../../node_modules/@supersuit/artifacts/lib/owner";`
+  in your global CSS.
+
 ## Front matter
 
 ```markdown
