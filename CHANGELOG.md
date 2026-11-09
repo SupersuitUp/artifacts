@@ -3,6 +3,33 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## Unreleased
+
+**A recording that will not upload never holds back the typed comment, and the comment card's
+recorder is a small microphone.** On an iPhone, a reader typed a comment, recorded a voice note,
+and the card answered "The recording did not upload. Try again, or discard it and save the text."
+and saved nothing. The routes had answered 201; the browser's direct `PUT` to the private bucket
+failed because that bucket had no CORS rule (0.38.0 moved memos there and its REMEDY never said the
+private bucket now needs the `PUT` rule the public one had).
+
+- The words save on their own. A recording that did not upload is kept on the reader's device as a
+  note only they see, on the same passage, and a line says so. A signed-in reader's device notes go
+  up to their account on the next load, so that is also the retry. A recording with no words is
+  kept the same way. Only when the browser will not keep it either does the card refuse, saying so.
+- The "Record" button is a 44 px microphone icon (the Helm recorder's own glyph), labelled "Record
+  a voice note"; while recording it is a stop square labelled "Stop recording, m:ss", with the
+  clock beside it.
+- DETECTOR: a CORS preflight to the private bucket from your origin
+  (`curl -si -X OPTIONS -H 'Origin: https://<host>' -H 'Access-Control-Request-Method: PUT' -H 'Access-Control-Request-Headers: content-type,cache-control,x-goog-content-length-range' https://storage.googleapis.com/<private bucket>/x`)
+  answers with no `access-control-allow-origin` header.
+- REMEDY: give the private bucket the same CORS rule as the public one: `PUT` (and `GET`, `HEAD`)
+  from every artifacts origin the host serves, response headers `Content-Type`, `cache-control`,
+  `x-goog-content-length-range`. Then update to this version so a future failure keeps the words.
+- TESTS: `src/reader/voice-recorder.test.tsx` (an iPhone mp4 memo through the real upload chain
+  whose `PUT` rejects with Safari's "Load failed": the typed comment posts without audio, the card
+  closes, the recording is a device note; a words-less recording is kept on the device; the mic is
+  an icon with its labels and stop square).
+
 ## 0.63.0 (2026-11-08)
 
 **Ask for access.** A signed-in visitor turned away at a private page's door (a `links: per-reader`
