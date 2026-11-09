@@ -5,6 +5,16 @@ host can tell whether it is affected (DETECTOR), what a host does about it (REME
 
 ## Unreleased
 
+**The owner's view of a hub is in the package: `./analytics` (the rules) and `./owner` (`ArtifactsTile`, the screen).**
+They were a continent app's Artifacts tile, written in that app; they move here unchanged so the tile and a hub's own
+owner view (next) draw from one copy. Nothing about an existing route or page changes.
+
+- DETECTOR: an app that keeps its own copy of the tile's rules or screen (a local `artifact-analytics.ts`).
+- REMEDY: import `@supersuit/artifacts/analytics` and `@supersuit/artifacts/owner` instead, and add
+  `@source "../../node_modules/@supersuit/artifacts/lib/owner";` to the global CSS so Tailwind keeps the screen's classes.
+- TESTS: `src/analytics/index.test.ts` (the rules, moved with them), `src/owner/index.test.tsx` (the home, the
+  outcome board's draft links, one page, one person, `basePath`, the theme, and `notFound`).
+
 **A recording that will not upload never holds back the typed comment, and the comment card's
 recorder is a small microphone.** On an iPhone, a reader typed a comment, recorded a voice note,
 and the card answered "The recording did not upload. Try again, or discard it and save the text."

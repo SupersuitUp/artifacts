@@ -48,6 +48,14 @@
       "types": "./lib/gate.d.ts",
       "default": "./lib/gate.js"
     },
+    "./analytics": {
+      "types": "./lib/analytics/index.d.ts",
+      "default": "./lib/analytics/index.js"
+    },
+    "./owner": {
+      "types": "./lib/owner/index.d.ts",
+      "default": "./lib/owner/index.js"
+    },
     "./fonts/*": "./fonts/*",
     "./package.json": "./package.json"
   },
