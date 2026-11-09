@@ -1,7 +1,9 @@
 'use client'
 
 // Tap any image or video on a page and it fills the screen: pinch to zoom, drag to look around,
-// arrows and swipes to move through every picture and video on the page in order.
+// arrows and swipes to move through every picture and silent clip on the page in order. A clip with
+// sound opens from its expand button among the page's other clips with sound only, and shows the
+// clip and its own controls, nothing over them (supersuit-dev#2191).
 //
 // A phone cannot read a screenshot at the width of a column, and until now the page itself was the
 // only thing to pinch, which zooms the words and the bars with it. The viewer sits over the page in
@@ -68,10 +70,14 @@ export function MediaViewer() {
     let down: { x: number; y: number } | null = null
     const onDown = (e: Event) => { const p = e as PointerEvent; down = { x: p.clientX, y: p.clientY } }
     const show = (el: Element) => {
-      const items = pageItems()
-      const at = items.findIndex((i) => i.el === el)
-      if (at >= 0) setOpen({ items, at })
-      return at >= 0
+      const all = pageItems()
+      const hit = all.find((i) => i.el === el)
+      if (!hit) return false
+      // Two sets: pictures and silent clips, and clips with sound. A logo above a clip is not one of
+      // the clips, and must not make the only clip on the page read "2 of 2".
+      const items = all.filter((i) => i.controls === hit.controls)
+      setOpen({ items, at: items.indexOf(hit) })
+      return true
     }
     const target = (e: Event) => {
       const t = e.target
@@ -392,9 +398,10 @@ function Viewer({ items, start, onClose }: { items: Item[]; start: number; onClo
       </button>
       {items[at - 1] ? <button type="button" aria-label="Previous" onClick={() => go(-1)} style={arrow('left')}><Icon d="M15 5l-7 7 7 7" /></button> : null}
       {items[at + 1] ? <button type="button" aria-label="Next" onClick={() => go(1)} style={arrow('right')}><Icon d="M9 5l7 7-7 7" /></button> : null}
-      {item.alt ? (
-        // A clip's own controls hold the bottom of the screen, so its caption sits above them.
-        <div style={{ position: 'absolute', left: 16, right: 16, bottom: edge('bottom', item.controls ? 76 : 16), textAlign: 'center', fontSize: 14, lineHeight: 1.4, pointerEvents: 'none', textShadow: '0 1px 3px #000' }}>{item.alt}</div>
+      {item.alt && !item.controls ? (
+        // A clip with sound keeps its words as its label only: as a caption they repeat the heading
+        // above it and crowd the play bar (supersuit-dev#2191).
+        <div style={{ position: 'absolute', left: 16, right: 16, bottom: edge('bottom', 16), textAlign: 'center', fontSize: 14, lineHeight: 1.4, pointerEvents: 'none', textShadow: '0 1px 3px #000' }}>{item.alt}</div>
       ) : null}
     </div>
   )

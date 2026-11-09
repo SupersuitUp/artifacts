@@ -75,7 +75,7 @@ describe('opening', () => {
     await press(document.querySelectorAll('img')[1])
     expect(dialog()!.style.position).toBe('fixed')
     expect(shown().getAttribute('src')).toBe('/b.png')
-    expect(dialog()!.textContent).toContain('2 of 4')
+    expect(dialog()!.textContent).toContain('2 of 3')
     expect(dialog()!.textContent).toContain('Second')
   })
 
@@ -113,7 +113,7 @@ describe('opening', () => {
   it('centres the counter, clear of the buttons iOS puts in the top left of a clip', async () => {
     await mount()
     await openFirst()
-    const counter = Array.from(dialog()!.querySelectorAll<HTMLElement>('div')).find((d) => d.textContent === '1 of 4')!
+    const counter = Array.from(dialog()!.querySelectorAll<HTMLElement>('div')).find((d) => d.textContent === '1 of 3')!
     expect(counter.style.textAlign).toBe('center')
   })
 
@@ -131,7 +131,7 @@ describe('opening', () => {
     await press(linked)
     expect(dialog()).toBeNull()
     await openFirst()
-    expect(dialog()!.textContent).toContain('1 of 4')
+    expect(dialog()!.textContent).toContain('1 of 3')
   })
 
   it('does not open after a drag, which draws a comment box on the image', async () => {
@@ -181,7 +181,35 @@ describe('opening', () => {
     expect(dialog()).toBeNull()
     await press(v.parentElement!.querySelector('[data-artifact-expand]')!)
     expect((shown() as HTMLVideoElement).controls).toBe(true)
-    expect(dialog()!.textContent).toContain('4 of 4')
+  })
+
+  // supersuit-dev#2191: a clip with sound printed its words over its own play bar, and its counter
+  // counted the pictures on the page, so a logo and one clip read "2 of 2".
+  it('shows a clip with sound and its controls only: its words stay its label, never a caption', async () => {
+    await mount()
+    await press(document.querySelector('[data-artifact-expand]')!)
+    const v = shown() as HTMLVideoElement
+    expect(v.getAttribute('aria-label')).toBe('Fourth')
+    expect(dialog()!.textContent).not.toContain('Fourth')
+  })
+
+  it('opens the only clip with sound alone: no counter and no arrows, whatever pictures the page holds', async () => {
+    await mount()
+    await press(document.querySelector('[data-artifact-expand]')!)
+    expect(dialog()!.textContent).not.toMatch(/\d of \d/)
+    expect(button('Next')).toBeNull()
+    expect(button('Previous')).toBeNull()
+  })
+
+  it('counts and steps through the clips with sound as their own set', async () => {
+    await mount(`<img data-artifact-image src="/logo.png" alt="Logo">
+      <span><video data-artifact-media="x.mp4" src="/x.mp4" aria-label="One" controls></video></span>
+      <span><video data-artifact-media="y.mp4" src="/y.mp4" aria-label="Two" controls></video></span>`)
+    await press(document.querySelectorAll('[data-artifact-expand]')[1])
+    expect(dialog()!.textContent).toContain('2 of 2')
+    await press(button('Previous')!)
+    expect(shown().getAttribute('src')).toBe('/x.mp4')
+    expect(button('Previous')).toBeNull()
   })
 
   it('pauses a clip with sound on the page while the viewer plays it, so it is heard once', async () => {
@@ -202,7 +230,7 @@ describe('opening', () => {
 })
 
 describe('moving through the page', () => {
-  it('has arrows through every image and video in page order, stopping at each end', async () => {
+  it('has arrows through every picture and silent clip in page order, stopping at each end', async () => {
     await mount()
     await openFirst()
     expect(button('Previous')).toBeNull()
@@ -210,11 +238,9 @@ describe('moving through the page', () => {
     expect(shown().getAttribute('src')).toBe('/b.png')
     await press(button('Next')!)
     expect(shown().getAttribute('src')).toBe('/c.mp4')
-    await press(button('Next')!)
-    expect(shown().getAttribute('src')).toBe('/d.mp4')
     expect(button('Next')).toBeNull()
     await press(button('Previous')!)
-    expect(shown().getAttribute('src')).toBe('/c.mp4')
+    expect(shown().getAttribute('src')).toBe('/b.png')
   })
 
   it('draws no arrows for a page with one image', async () => {
@@ -259,8 +285,9 @@ describe('moving through the page', () => {
   })
 
   it('leaves a scrub on a video with controls to the controls', async () => {
-    await mount()
-    await press(document.querySelector('[data-artifact-expand]')!)
+    await mount(`<span><video data-artifact-media="x.mp4" src="/x.mp4" aria-label="One" controls></video></span>
+      <span><video data-artifact-media="d.mp4" src="/d.mp4" aria-label="Two" controls></video></span>`)
+    await press(document.querySelectorAll('[data-artifact-expand]')[1])
     await press(button('Previous')!)
     await press(button('Next')!)
     const v = shown()
