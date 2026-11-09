@@ -61,8 +61,12 @@ import { createVoiceRoutes } from './voice-routes.js'
 import type { PersonalStore } from '../artifacts/personal-store.js'
 import type { Transcriber } from '../artifacts/transcribe.js'
 import { guardRouteTable } from './backend-auth.js'
+import { fetchSends } from '../analytics/index.js'
+import { ArtifactsTile, themeFromPageVars, type HubPage } from '../owner/index.js'
 
 export type ArtifactRoutesConfig = {
+  /** HubHome's Waiting on: after how many days an unopened send is waiting. Default 3. */
+  ownerQuietDays?: number
   store: ArtifactStore
   /** Where readers' answers live. Without it every state route answers 501. */
   state?: StateStore
@@ -436,6 +440,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
         markdown={admin && source ? source : null}
         settings={admin ? settings ?? null : null}
         viewAsReader={admin && source ? `${pagePath(a.id)}?as=reader` : null}
+        ownerView={admin ? { id: a.id, title: a.title, url: pageUrl(a.id), home: `${siteUrl}/`, perReader: a.links === 'per-reader' } : null}
       />
     )
   }
@@ -1534,6 +1539,38 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     return NextResponse.json({ deleted: true, files })
   }
 
+  /** The hub's home for its owner or an admin signed in: the Artifacts tile (`../owner`) over the whole hub, read
+   *  from this host's own stores (the analytics rules, the same numbers GET /views and /api/activity answer with),
+   *  with every page listed under it. Null for anyone else, so the host draws its own plain front page. `?p=`,
+   *  `?who=` and the filters live on the home's own address. */
+  async function HubHome({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
+    const readCookie = config.readCookie ?? defaultReadCookie
+    const me = readerSecret() ? verifyGrant(readerSecret(), await readCookie(GRANT_COOKIE).catch(() => undefined)) : null
+    if (!isAdmin(me) || !store.list) return null
+    const sp = (await searchParams) ?? {}
+    const query: Record<string, string | undefined> = {}
+    for (const [k, v] of Object.entries(sp)) query[k] = Array.isArray(v) ? v[0] : v
+    const recipients: Pick<RecipientsStore, 'get' | 'views'> = config.recipients ?? { get: async () => null, views: async () => [] }
+    const [data, items] = await Promise.all([
+      fetchSends({ site: siteUrl, pagePrefix: prefix, quietDays: config.ownerQuietDays ?? 3 }, { pages: store, recipients, state: config.state ?? null }),
+      Promise.all(ARTIFACT_KINDS.map(async (k) => (await store.list!(k)).map((p) => ({ ...p, kind: k })))),
+    ])
+    const pages: HubPage[] = await Promise.all(items.flat().map(async (p) => {
+      const rec = await recipients.get(p.id)
+      const live = rec ? Object.values(rec.recipients).filter((r) => !r.owner && !r.revokedAt).length : 0
+      return { id: p.id, title: p.title, url: pageUrl(p.id), kind: p.kind, updatedAt: p.updatedAt, readerLinks: live, ...(p.kind === 'broadcast' ? {} : { views: p.views }) }
+    }))
+    return (
+      <BrandGround pack={pack}>
+        <div className="mx-auto flex min-h-screen max-w-6xl flex-col pt-20">
+          <ArtifactsTile data={data} query={query} title={`${owner}'s pages`} theme={themeFromPageVars(pack.type.display)} pages={pages}
+            basePath="/" homeHref="/" notFound={notFound}
+            back={(href) => (href === '/' && !query.p && !query.who ? null : <a data-back href={href} className="mb-2 inline-block text-sm underline" style={{ color: 'var(--a-muted)' }}>Back</a>)} />
+        </div>
+      </BrandGround>
+    )
+  }
+
   /** GET /api/artifacts?kind=document|broadcast: the owner's list of one kind, newest first, with
    *  no bodies. Documents and broadcasts are separate lists; `kind` defaults to document, so a
    *  documents list never carries a broadcast. A broadcast's line adds its expiry, whether it is
@@ -1621,5 +1658,5 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     return new Response(html, { status: 410, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'x-robots-tag': 'noindex, nofollow' } })
   }
 
-  return guardRouteTable({ Page, generateMetadata, VersionPage, generateVersionMetadata, VERSIONS, POST, GET, DELETE, LIST, ACTIVITY, shutPageResponse, PUT_ASSET, UPLOAD, SHARE_IMAGE, ENTER, LEAVE, TRACK, ACK, ASK, ACCESS, SETTINGS, READS, sweepReaders, TRANSCRIBE: voiceRoutes.TRANSCRIBE, ...stateRoutes, ...personalRoutes, ...recipientsRoutes, dynamic: 'force-dynamic' as const, maxDuration: 30 })
+  return guardRouteTable({ Page, HubHome, generateMetadata, VersionPage, generateVersionMetadata, VERSIONS, POST, GET, DELETE, LIST, ACTIVITY, shutPageResponse, PUT_ASSET, UPLOAD, SHARE_IMAGE, ENTER, LEAVE, TRACK, ACK, ASK, ACCESS, SETTINGS, READS, sweepReaders, TRANSCRIBE: voiceRoutes.TRANSCRIBE, ...stateRoutes, ...personalRoutes, ...recipientsRoutes, dynamic: 'force-dynamic' as const, maxDuration: 30 })
 }

@@ -14,7 +14,7 @@
 // - Any read by time window across pages: the stores answer one page at a time. So this reads the pages PUBLISHED in
 //   the last LOOKBACK_DAYS, at most MAX_PAGES of them, newest first, and says so on the screen. An open on an older
 //   page is not seen. Re-deriving either from the raw view sessions would re-implement the hub's before-send rule.
-import { ARTIFACT_KINDS, COMMENTS_SLOT, DEFAULT_GOAL, OUTCOMES, summarizeViews, type ArtifactGoal, type ArtifactListItem, type ArtifactStore, type Outcome, type RecipientsStore, type StateStore } from '../artifacts/index.js'
+import { ARTIFACT_KINDS, COMMENTS_SLOT, DEFAULT_GOAL, OUTCOMES, summarizeViews, type ArtifactGoal, type ArtifactListItem, type ArtifactStore, type Outcome, type RecipientSummary, type RecipientsStore, type StateStore } from '../artifacts/index.js'
 
 /** The hub a dashboard reads: its public address and page prefix (for links), and after how many days an unopened send
  *  is waiting. A continent's `artifacts` config is one. */
@@ -91,6 +91,25 @@ export interface Filters { q: string | null; person: string | null; page: string
 
 export const pageUrl = (cfg: Pick<AnalyticsConfig, 'site' | 'pagePrefix'>, id: string) => `${cfg.site}${cfg.pagePrefix}${encodeURIComponent(id)}`
 
+/** One reader's line from the module (summarizeViews, the same line GET /views answers with) as a Send on `page`.
+ *  `addedAt` is when the link was made (the recipients record's; a line from /views alone lacks it). Pure, so a
+ *  browser holding /views and /recipients draws the same send the dashboard does (the page's owner panel). */
+export function sendOfSummary(cfg: Pick<AnalyticsConfig, 'quietDays'>, page: { id: string; title: string; url: string }, s: RecipientSummary, addedAt: string): Send {
+  const sentFrom = s.sentAt ?? addedAt
+  return {
+    pageId: page.id, title: page.title || page.id, url: page.url, rid: s.rid, label: s.label,
+    personKey: s.group ? `group:${page.id}:${s.rid}` : (s.provenance?.subject ?? `name:${s.label.trim().toLowerCase()}`),
+    group: s.group, revoked: s.revoked, sentAt: s.sentAt, addedAt, sentFrom,
+    funnel: s.provenance?.funnel ?? null, fromStage: s.provenance?.stage ?? null, subject: s.provenance?.subject ?? null, sender: s.provenance?.actor ?? null,
+    opened: s.opened, firstOpenAt: s.firstOpenAt, cameBack: s.cameBack, activeSeconds: s.activeSeconds, plays: s.plays, devices: s.devices,
+    comments: s.comments.map((c) => ({ at: c.at, text: c.text })),
+    daysSinceSent: s.daysSinceSent, lastOpenAt: s.lastOpenAt, sessions: s.sessions,
+    opens: s.opens.map((o) => ({ at: o.at, activeSeconds: o.activeSeconds })), clicks: s.clicks.map((c) => ({ cta: c.cta, at: c.at })),
+    goal: s.goal, outcome: s.outcome, succeeded: s.succeeded,
+    quiet: s.outcome === 'not-opened' && !s.revoked && s.daysSinceSent !== null && s.daysSinceSent >= cfg.quietDays,
+  }
+}
+
 async function sendsOf(cfg: AnalyticsConfig, stores: HubStores, p: ArtifactListItem, now: Date): Promise<Send[]> {
   const rec = await stores.recipients.get(p.id)
   if (!rec || !Object.values(rec.recipients).some((r) => !r.owner)) return []
@@ -101,22 +120,8 @@ async function sendsOf(cfg: AnalyticsConfig, stores: HubStores, p: ArtifactListI
   const comments = entries.filter((e) => e.slot === COMMENTS_SLOT).map((e) => ({
     readerKey: e.readerKey, id: e.id, at: e.at, text: String((e.value as { body?: unknown } | null)?.body ?? ''),
   }))
-  return summarizeViews(rec, views, comments, { goal, now }).map((s): Send => {
-    const addedAt = rec.recipients[s.rid].addedAt
-    const sentFrom = s.sentAt ?? addedAt
-    return {
-      pageId: p.id, title: p.title || p.id, url: pageUrl(cfg, p.id), rid: s.rid, label: s.label,
-      personKey: s.group ? `group:${p.id}:${s.rid}` : (s.provenance?.subject ?? `name:${s.label.trim().toLowerCase()}`),
-      group: s.group, revoked: s.revoked, sentAt: s.sentAt, addedAt, sentFrom,
-      funnel: s.provenance?.funnel ?? null, fromStage: s.provenance?.stage ?? null, subject: s.provenance?.subject ?? null, sender: s.provenance?.actor ?? null,
-      opened: s.opened, firstOpenAt: s.firstOpenAt, cameBack: s.cameBack, activeSeconds: s.activeSeconds, plays: s.plays, devices: s.devices,
-      comments: s.comments.map((c) => ({ at: c.at, text: c.text })),
-      daysSinceSent: s.daysSinceSent, lastOpenAt: s.lastOpenAt, sessions: s.sessions,
-      opens: s.opens.map((o) => ({ at: o.at, activeSeconds: o.activeSeconds })), clicks: s.clicks.map((c) => ({ cta: c.cta, at: c.at })),
-      goal: s.goal, outcome: s.outcome, succeeded: s.succeeded,
-      quiet: s.outcome === 'not-opened' && !s.revoked && s.daysSinceSent !== null && s.daysSinceSent >= cfg.quietDays,
-    }
-  })
+  const where = { id: p.id, title: p.title, url: pageUrl(cfg, p.id) }
+  return summarizeViews(rec, views, comments, { goal, now }).map((s) => sendOfSummary(cfg, where, s, rec.recipients[s.rid].addedAt))
 }
 
 /** Every send on the pages published in the last LOOKBACK_DAYS (at most MAX_PAGES, newest first). Read-only. */
