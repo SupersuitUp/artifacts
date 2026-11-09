@@ -36,7 +36,8 @@ export type BrandPack = {
   narratorLabel?: (voice?: string) => string
   /** Optional full-page backdrop. Receives the page as children. */
   Wrapper?: ComponentType<{ children: ReactNode }>
-  /** Optional mark rendered once above the kicker. */
+  /** Optional mark, drawn small (32 px tall) above the kicker of every page and linking to the
+   *  host's front page, unless the page says `mark: none`. Also the hub front page's mark. */
   Mark?: ComponentType<{ className?: string }>
   /** How a page with no cover unfurls: the shell draws its title over these, so a link
    *  previews as the page rather than as the brand. Absent, the instance's static default

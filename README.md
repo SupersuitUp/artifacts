@@ -313,6 +313,7 @@ summary: Three bets, what each costs, and what we stop doing to afford them.
 | `forward` | `off`, `signed-in` or `open`: whether a reader of a per-reader page may make a link to pass it on (see Forward links). Absent is `off`. Needs `links: per-reader`. Sticky like `links` |
 | `history` | `everyone` or `admins`: who sees this page's version number and past versions, overriding the host's `history` for this one page (see Version history). Absent, the host decides. Refused as `everyone` on a per-reader page |
 | `goal` | What a send of the page is for: `read` (the default), `respond`, `ack`, or `click: <cta id>` (see Send outcomes). A republish without the line goes back to `read` |
+| `mark` | `none`: leave the brand mark off this page. A pack with a `Mark` shows it small (32 px tall) above the kicker of every page, linking to the host's front page; the cover and the unfurl stay the page's own. A republish without the line shows it again |
 | `change` | One line saying what this version changed (see Version history) |
 | `template` | `document` (the default, the read-along reader) or `broadcast` (one message card sent to several people; see Broadcasts) |
 

@@ -49,6 +49,8 @@ export type ArtifactRecord = {
   forward?: ForwardMode
   /** What a send of this page is for (front-matter `goal:`); absent is `read`. */
   goal?: ArtifactGoal
+  /** `mark: none`: the page leaves out the pack's mark; see ArtifactMeta.mark. */
+  mark?: 'none'
   /** The page's own `history:` line; absent, the host's setting decides. */
   history?: 'admins' | 'everyone'
   definitions?: Definition[]
@@ -281,6 +283,7 @@ async function saveArtifact(col: Col, input: SaveInput): Promise<SaveResult> {
     ...(input.meta.commentName ? { commentName: input.meta.commentName } : {}),
     ...(input.meta.forward ? { forward: input.meta.forward } : {}),
     ...(input.meta.goal ? { goal: input.meta.goal } : {}),
+    ...(input.meta.mark ? { mark: input.meta.mark } : {}),
     ...(input.meta.history ? { history: input.meta.history } : {}),
     ...(input.meta.definitions?.length ? { definitions: input.meta.definitions } : {}),
   }
@@ -335,6 +338,7 @@ async function saveArtifact(col: Col, input: SaveInput): Promise<SaveResult> {
       ...(input.meta.commentName ? {} : { commentName: FieldValue.delete() }),
       ...(input.meta.history ? {} : { history: FieldValue.delete() }),
       ...(input.meta.goal ? {} : { goal: FieldValue.delete() }),
+      ...(input.meta.mark ? {} : { mark: FieldValue.delete() }),
       ...(input.meta.definitions?.length ? {} : { definitions: FieldValue.delete() }),
     }
     // `voice: none` is the page declaring it has no audio. An update merges, so the recording it

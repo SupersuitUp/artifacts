@@ -436,12 +436,22 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
 
   /** The kicker over every title: the pack's line, then who the page is for. Never spoken: the
    *  whole paragraph is data-nospeak, and narrationText has no `to` to read. */
-  function Kicker({ to, brand }: { to?: string; brand: BrandPack }) {
+  function Kicker({ to, brand, mark }: { to?: string; brand: BrandPack; mark?: 'none' }) {
     return (
-      <p data-nospeak className="mb-4 text-[11px] font-medium uppercase tracking-[0.3em]" style={{ color: brand.accent }}>
-        {brand.kicker}
-        {to ? <span data-nospeak data-to>{` · For ${to}`}</span> : null}
-      </p>
+      <>
+        {/* The pack's mark, small, above the kicker (supersuit-dev#2151): a reader who opens a page
+            from a text sees whose page it is. Only a pack that HAS a mark draws one, so the default
+            look is unchanged; `mark: none` leaves it off one page. Never the cover or the unfurl. */}
+        {brand.Mark && mark !== 'none' ? (
+          <a data-nospeak data-page-mark href={`${siteUrl}/`} aria-label={brand.name} className="mb-4 inline-block max-w-full">
+            <brand.Mark className="h-8 w-auto max-w-full" />
+          </a>
+        ) : null}
+        <p data-nospeak className="mb-4 text-[11px] font-medium uppercase tracking-[0.3em]" style={{ color: brand.accent }}>
+          {brand.kicker}
+          {to ? <span data-nospeak data-to>{` · For ${to}`}</span> : null}
+        </p>
+      </>
     )
   }
 
@@ -588,7 +598,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
         <BrandGround pack={pack} mode={a.theme}>
           <Menu a={a} reader={reader} settings={await settingsFor(a, reader)} />
           <div className="mx-auto max-w-2xl px-6 pt-24 pb-8 text-center sm:pt-28">
-            <Kicker to={a.to} brand={brand} />
+            <Kicker to={a.to} brand={brand} mark={a.mark} />
             <h1 className="text-4xl sm:text-5xl" style={{ fontFamily: brand.type.display, color: brand.ink }}>
               {a.title}
             </h1>
@@ -630,7 +640,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     const d = config.readers ? decide(a.access!, reader, allow, isAdmin(reader)) : ({ open: false, why: 'signed-out' } as const)
     const header = (
       <div className="mx-auto max-w-2xl px-6 pt-24 pb-8 text-center sm:pt-28">
-        <Kicker to={a.to} brand={brand} />
+        <Kicker to={a.to} brand={brand} mark={a.mark} />
         <h1 className="text-4xl sm:text-5xl" style={{ fontFamily: brand.type.display, color: brand.ink }}>
           {a.title}
         </h1>
@@ -761,12 +771,12 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
           cover={pack.Cover ? (
             <pack.Cover
               title={title} subtitle={v.subtitle} summary={summary} to={v.to} markdown={v.markdown}
-              kicker={<Kicker to={v.to} brand={brand} />} meta={<VersionLine n={n} at={v.at} numbered />}
+              kicker={<Kicker to={v.to} brand={brand} mark={a.mark} />} meta={<VersionLine n={n} at={v.at} numbered />}
               version={n} showVersion updatedAt={v.at} createdAt={a.createdAt}
             />
           ) : (
             <div className={`mx-auto max-w-2xl px-6 ${top ? 'pt-10 sm:pt-12' : 'pt-10'} pb-8 text-center`}>
-              <Kicker to={v.to} brand={brand} />
+              <Kicker to={v.to} brand={brand} mark={a.mark} />
               <h1 className="text-4xl sm:text-5xl" style={{ fontFamily: brand.type.display, color: brand.ink }}>
                 {title}
               </h1>
@@ -897,12 +907,12 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
             const header = pack.Cover ? (
               <pack.Cover
                 title={a.title} subtitle={a.subtitle} summary={a.summary} to={a.to} markdown={a.markdown}
-                kicker={<Kicker to={a.to} brand={brand} />} meta={meta}
+                kicker={<Kicker to={a.to} brand={brand} mark={a.mark} />} meta={meta}
                 version={n} showVersion={seesHistory(a, reader)} updatedAt={a.updatedAt} createdAt={a.createdAt}
               />
             ) : (
               <div className={`mx-auto max-w-2xl px-6 ${top ? 'pt-24 sm:pt-28' : 'pt-12'} pb-8 text-center`}>
-                <Kicker to={a.to} brand={brand} />
+                <Kicker to={a.to} brand={brand} mark={a.mark} />
                 <h1 className="text-4xl sm:text-5xl" style={{ fontFamily: brand.type.display, color: brand.ink }}>
                   {a.title}
                 </h1>
