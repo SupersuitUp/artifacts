@@ -176,6 +176,46 @@ describe('owner bypass and settings', () => {
     expect(html).toContain(NO_LINK)
     expect(html).not.toContain('data-per-reader-sign-in')
   })
+  // Gary, 2026-11-08, on the old one-line door ("This page opens from the link it was sent with."):
+  // "I should be able to log in if I believe that I should have access, or there should be some
+  // kind of notification that you don't have permission." The door says what kind of page this is,
+  // what to do, and who the visitor is signed in as.
+  it('the no-link door says the page was shared with specific people and what to do', async () => {
+    const { recipients } = await seeded()
+    const html = renderToStaticMarkup(await createArtifactRoutes(cfg(null, recipients, { signInOrigin: 'https://signin.example.com' })).Page(props))
+    expect(NO_LINK).toBe('This page was shared with specific people.')
+    expect(html).toContain('own link')
+    expect(html).toContain('ask the person who sent it')
+    expect(html).toContain('Think you should have access?')
+    expect(html).not.toContain('opens from the link it was sent with')
+  })
+  it('a signed-in reader who was not sent the page is told which account, offered another, and the attempt is recorded', async () => {
+    const { recipients } = await seeded()
+    const dana = { uid: 'u3', email: 'dana@example.com', name: 'Dana', member: true }
+    const flag = vi.fn(async () => {})
+    const readers = { flag } as never
+    const html = renderToStaticMarkup(await createArtifactRoutes(cfg(dana, recipients, { signInOrigin: 'https://signin.example.com', readers })).Page(props))
+    expect(html).toContain('dana@example.com')
+    expect(html).toContain('was not shared with that account')
+    expect(html).toContain('Use a different account')
+    expect(html).toContain('/api/reader/leave?to=')
+    expect(html).toContain('This attempt was recorded')
+    expect(flag).toHaveBeenCalledWith(expect.objectContaining({ artifactId: 'abcd2345', kind: 'refused', reader: expect.objectContaining({ email: 'dana@example.com' }) }))
+  })
+  it('with no reader store, the door makes no claim that the attempt was recorded', async () => {
+    const { recipients } = await seeded()
+    const dana = { uid: 'u3', email: 'dana@example.com', name: 'Dana', member: true }
+    const html = renderToStaticMarkup(await createArtifactRoutes(cfg(dana, recipients, { readers: undefined })).Page(props))
+    expect(html).toContain('was not shared with that account')
+    expect(html).not.toContain('This attempt was recorded')
+  })
+  it('a revoked or expired link says to ask for a new one', async () => {
+    const { recipients, ada, link } = await seeded()
+    await recipients.revoke('abcd2345', [ada.rid])
+    const html = renderToStaticMarkup(await createArtifactRoutes(cfg(null, recipients)).Page({ ...props, searchParams: Promise.resolve({ r: link(ada.rid) }) }))
+    expect(html).toContain(UNAVAILABLE)
+    expect(html).toContain('ask the person who sent it for a new link')
+  })
   it('a revoked rid opened by cookie only is refused on the page', async () => {
     const { recipients, ada, link } = await seeded()
     await recipients.revoke('abcd2345', [ada.rid])

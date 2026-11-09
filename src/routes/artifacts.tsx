@@ -28,7 +28,8 @@ import { CommentLayer } from '../reader/comment-layer.js'
 import { ReaderWatch } from '../reader/reader-watch.js'
 import { UpdatedTime } from '../reader/updated-time.js'
 import { FeedbackWindow } from '../reader/feedback-window.js'
-import { perReaderGate, signInToAct, withPrivateUrls, NO_LINK, UNAVAILABLE } from './per-reader.js'
+import { perReaderGate, signInToAct, withPrivateUrls, UNAVAILABLE } from './per-reader.js'
+import { PerReaderDoor } from './per-reader-door.js'
 import { ridCookieName, mintRenderToken, usableSecret, isUnfurlAgent, RID_COOKIE_MAX_AGE } from '../artifacts/recipients.js'
 import type { RecipientsStore } from '../artifacts/recipients-store.js'
 import { PageMenu, type PageRole } from '../reader/page-menu.js'
@@ -526,14 +527,17 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
       const secret = usableSecret(config.recipientSecret?.())
       const g = await perReaderGate({ id, param, cookie: await readCookie(ridCookieName(id)).catch(() => undefined), secret, recipients: config.recipients })
       if (g.state === 'shut') {
+        // A signed-in visitor at the no-link door is a refusal like a gated page's: it goes on the
+        // page's record (and to the publisher's read alerts), and the door says so only when it did.
+        let recorded = false
+        if (g.why === 'no-link' && me && config.readers && !bot) {
+          recorded = await config.readers.flag({ artifactId: id, reader: me, kind: 'refused' }).then(() => true, () => false)
+          if (recorded) await emitReaderEvent({ kind: 'refused', reader: { email: me.email, name: me.name }, summary: null, entry: null }, a)
+        }
         return (
           <BrandGround pack={pack} mode={a.theme}>
-            <p data-per-reader-shut className="mx-auto max-w-xl px-6 pt-32 text-center text-lg opacity-80">{g.why === 'no-link' ? NO_LINK : UNAVAILABLE}</p>
-            {/* The owner and this hub's admins get through once signed in, so a signed-out visitor
-                at the no-link door is offered the way in rather than a dead end. */}
-            {g.why === 'no-link' && !me && signInOrigin
-              ? <p data-per-reader-sign-in className="mx-auto max-w-xl px-6 pt-4 text-center text-base opacity-70">Published this page or help run this site? <a className="underline" href={signInUrl(signInOrigin, pageUrl(id))}>Sign in</a></p>
-              : null}
+            <PerReaderDoor brand={brand} why={g.why} reader={me} recorded={recorded}
+              signInHref={signInOrigin ? signInUrl(signInOrigin, pageUrl(id)) : null} switchHref={switchUrl(id)} />
           </BrandGround>
         )
       }

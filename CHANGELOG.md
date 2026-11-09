@@ -3,6 +3,27 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.62.0 (2026-11-08)
+
+**The no-link door on a per-reader page says what it is and what to do.** A visitor opening a
+`links: per-reader` page without their link met one line, "This page opens from the link it was sent
+with.", which read as an error and offered nothing to a signed-in reader who was not sent it.
+
+- The door now says the page was shared with specific people, that each has their own link, and to
+  open it from the message it came in or ask the sender for theirs (`NO_LINK` is now the headline,
+  "This page was shared with specific people.").
+- Signed out (with `signInOrigin`): "Think you should have access? Sign in." as a button.
+- Signed in but not sent it: names the account, offers "Use a different account" (the same switch a
+  gated page uses), and records the attempt as a `refused` flag with a `refused` reader event, like a
+  gated page's refusal, so the publisher's read alerts can see it. The door says "This attempt was
+  recorded" only when the record was written. An unfurl fetcher records nothing.
+- A revoked or expired link adds "ask the person who sent it for a new link."
+- Nothing of the page (title, summary, body) is shown before the gate, as before.
+- DETECTOR: a per-reader page's bare address shows only "This page opens from the link it was sent with."
+- REMEDY: update. Nothing to configure. A host that matched the old `NO_LINK` text should read the constant.
+- TESTS: `src/routes/per-reader.test.tsx` (the door's words, the signed-in account and switch link,
+  the refusal recorded and claimed only when a reader store wrote it, the revoked-link line).
+
 ## 0.61.0 (2026-11-08)
 
 **Send outcomes: one success indicator for any send** (issue #12, item 1, and outcomes). A page declares a `goal` (`read` by default, `respond`, `ack`, or `{ click: <cta id> }`); a link titled `cta:<id>` is a CTA whose press the page records through `POST /seen` (`event: click`, under the beat, refused for an id the page does not carry); and every reader's line in `GET /views` and `summarizeViews` gains `lastOpenAt`, `sessions`, `opens`, `clicks`, `goal`, `outcome` (`not-opened`, `opened`, `read`, `returned`, `acted`), `succeeded` and `daysSinceSent`, all under the before-send rule. Thresholds are exported (`OUTCOME_READ_SECONDS` 30, `OUTCOME_RETURN_GAP_MS` one hour) and a host overrides them with `outcomeThresholds` on the routes, `summarizeViews`'s fourth argument, or `?readSeconds=` on `/views`. `ack` is new: the only acknowledgement before was the confidential page's agreement, keyed to a signed-in email, which a per-reader page cannot carry, so `ack` is a press of the CTA named `ack`. `GET /api/artifacts/<id>` answers `goal`. Existing fields are unchanged; a page with no goal reads as `read`; a view stored before clicks reads as none.

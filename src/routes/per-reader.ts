@@ -14,7 +14,9 @@ export function signInToAct(page: { forward?: string; commentName?: string }, li
   return link.group && page.commentName !== 'required' && (!!link.forwarded || (!!page.forward && page.forward !== 'off'))
 }
 export const UNAVAILABLE = 'This page is no longer available.'
-export const NO_LINK = 'This page opens from the link it was sent with.'
+/** The no-link door's headline. Until 0.62.0 it was the whole door ("This page opens from the
+ *  link it was sent with."), which told a visitor neither what kind of page this was nor what to do. */
+export const NO_LINK = 'This page was shared with specific people.'
 
 export async function perReaderGate(o: { id: string; param: string | undefined; cookie: string | undefined; secret: string | undefined; recipients: RecipientsStore | undefined; now?: number }): Promise<PerReaderOpen | PerReaderShut> {
   // An unset or empty secret verifies nothing: fail closed before any signature is compared.
