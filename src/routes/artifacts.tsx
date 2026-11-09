@@ -29,7 +29,7 @@ import { ReaderWatch } from '../reader/reader-watch.js'
 import { UpdatedTime } from '../reader/updated-time.js'
 import { FeedbackWindow } from '../reader/feedback-window.js'
 import { perReaderGate, signInToAct, withPrivateUrls, UNAVAILABLE } from './per-reader.js'
-import { PerReaderDoor } from './per-reader-door.js'
+import { PerReaderDoor, AskForAccess, ASK_NOTE_MAX } from './per-reader-door.js'
 import { ridCookieName, mintRenderToken, usableSecret, isUnfurlAgent, RID_COOKIE_MAX_AGE } from '../artifacts/recipients.js'
 import type { RecipientsStore } from '../artifacts/recipients-store.js'
 import { PageMenu, type PageRole } from '../reader/page-menu.js'
@@ -530,13 +530,14 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
         // A signed-in visitor at the no-link door is a refusal like a gated page's: it goes on the
         // page's record (and to the publisher's read alerts), and the door says so only when it did.
         let recorded = false
-        if (g.why === 'no-link' && me && config.readers && !bot) {
+        const asked = g.why === 'no-link' && me && config.readers ? await hasAsked(id, me.email) : false
+        if (g.why === 'no-link' && me && config.readers && !bot && !asked) {
           recorded = await config.readers.flag({ artifactId: id, reader: me, kind: 'refused' }).then(() => true, () => false)
           if (recorded) await emitReaderEvent({ kind: 'refused', reader: { email: me.email, name: me.name }, summary: null, entry: null }, a)
         }
         return (
           <BrandGround pack={pack} mode={a.theme}>
-            <PerReaderDoor brand={brand} why={g.why} reader={me} recorded={recorded}
+            <PerReaderDoor brand={brand} why={g.why} reader={me} recorded={recorded} pageId={id} canAsk={!!config.readers} asked={asked}
               signInHref={signInOrigin ? signInUrl(signInOrigin, pageUrl(id)) : null} switchHref={switchUrl(id)} />
           </BrandGround>
         )
@@ -653,7 +654,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
           <Menu a={a} reader={reader} shutOut={d.why === 'not-allowed'} settings={await settingsFor(a, reader)} />
           {header}
           {d.why === 'not-allowed'
-            ? <NotAllowedDoor brand={brand} reader={d.reader} signOutUrl={switchUrl(id)} />
+            ? <NotAllowedDoor brand={brand} reader={d.reader} signOutUrl={switchUrl(id)} ask={<AskForAccess brand={brand} pageId={id} canAsk asked={await hasAsked(id, d.reader.email)} />} />
             : <SignInDoor brand={brand} href={signInOrigin ? signInUrl(signInOrigin, here) : undefined} note={config.signInNote} />}
         </BrandGround>
       )
@@ -1026,6 +1027,42 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     res.headers.set('cache-control', 'no-store')
     res.headers.append('set-cookie', cookieLine('', 0))
     return res
+  }
+
+  /** Whether this visitor already asked for access to this page. A failed read reads as not asked. */
+  async function hasAsked(id: string, email: string): Promise<boolean> {
+    if (!config.readers) return false
+    try {
+      return (await config.readers.flags(id)).some((f) => f.kind === 'asked' && same(f.email, email))
+    } catch {
+      return false
+    }
+  }
+
+  /** POST /api/reader/ask: a signed-in visitor turned away at a private page's door asks the
+   *  publisher for access, with an optional note. A plain form post from AskForAccess. Recorded as
+   *  an `asked` flag and told to the host as an `asked` reader event (its read alerts), once per
+   *  visitor per page. Anyone the page already opens to, or a page that is not private, records
+   *  nothing. Always lands back on the page, whose door then says the request was passed on. */
+  async function ASK(request: NextRequest) {
+    const form = await request.formData().catch(() => null)
+    const id = String(form?.get('id') ?? '')
+    if (!ARTIFACT_ID.test(id)) return NextResponse.json({ error: 'no page' }, { status: 400 })
+    const back = NextResponse.redirect(`${siteUrl}${pagePath(id)}`, 303)
+    back.headers.set('cache-control', 'no-store')
+    if (!config.readers) return back
+    const reader = verifyGrant(readerSecret(), request.cookies.get(GRANT_COOKIE)?.value)
+    if (!reader || isAdmin(reader)) return back
+    const a = await store.get(id)
+    if (!a) return back
+    if (a.access) {
+      if (decide(a.access, reader, await config.readers.allowList(id), false).open) return back
+    } else if (a.links !== 'per-reader') return back
+    if (await hasAsked(id, reader.email)) return back
+    const note = String(form?.get('note') ?? '').trim().slice(0, ASK_NOTE_MAX) || null
+    const ok = await config.readers.flag({ artifactId: id, reader, kind: 'asked', ...(note ? { detail: note } : {}), country: request.headers.get('x-vercel-ip-country') ?? undefined }).then(() => true, () => false)
+    if (ok) await emitReaderEvent({ kind: 'asked', note, reader: { email: reader.email, name: reader.name }, summary: null, entry: null }, a)
+    return back
   }
 
   /** POST /api/reader/ack: the reader agrees to keep the page confidential. A plain form post
@@ -1486,5 +1523,5 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     return new Response(html, { status: 410, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'x-robots-tag': 'noindex, nofollow' } })
   }
 
-  return guardRouteTable({ Page, generateMetadata, VersionPage, generateVersionMetadata, VERSIONS, POST, GET, DELETE, LIST, shutPageResponse, PUT_ASSET, UPLOAD, SHARE_IMAGE, ENTER, LEAVE, TRACK, ACK, ACCESS, SETTINGS, READS, sweepReaders, TRANSCRIBE: voiceRoutes.TRANSCRIBE, ...stateRoutes, ...personalRoutes, ...recipientsRoutes, dynamic: 'force-dynamic' as const, maxDuration: 30 })
+  return guardRouteTable({ Page, generateMetadata, VersionPage, generateVersionMetadata, VERSIONS, POST, GET, DELETE, LIST, shutPageResponse, PUT_ASSET, UPLOAD, SHARE_IMAGE, ENTER, LEAVE, TRACK, ACK, ASK, ACCESS, SETTINGS, READS, sweepReaders, TRANSCRIBE: voiceRoutes.TRANSCRIBE, ...stateRoutes, ...personalRoutes, ...recipientsRoutes, dynamic: 'force-dynamic' as const, maxDuration: 30 })
 }

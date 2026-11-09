@@ -77,7 +77,7 @@ export function SignInDoor({ brand, href, note = DEFAULT_SIGN_IN_NOTE }: { brand
   )
 }
 
-export function NotAllowedDoor({ brand, reader, signOutUrl }: { brand: BrandPack; reader: Reader; signOutUrl: string }) {
+export function NotAllowedDoor({ brand, reader, signOutUrl, ask }: { brand: BrandPack; reader: Reader; signOutUrl: string; ask?: React.ReactNode }) {
   return (
     <div data-nospeak className="mx-auto max-w-sm px-6 pb-24 text-center text-sm">
       <p className="opacity-80">
@@ -85,6 +85,7 @@ export function NotAllowedDoor({ brand, reader, signOutUrl }: { brand: BrandPack
         If it was sent to a different address of yours, switch to that account.
       </p>
       <p className="mt-3 opacity-60">This attempt was recorded.</p>
+      {ask}
       <a href={signOutUrl} className="mt-5 inline-block underline" style={{ color: brand.accent }}>
         Use a different account
       </a>

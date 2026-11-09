@@ -6,6 +6,7 @@
 //
 //   first-open  the reader's first recorded visit
 //   refused     a signed-in person was turned away at the door; carries the account they tried
+//   asked       a signed-in person turned away asked the publisher for access, with an optional note
 //   finished    reached the end (maxScroll >= 90) AND read for at least a third of the page's
 //               reading time at WORDS_PER_MINUTE, so a thirty-second scroll is not a finished read
 //   came-back   a visit that started on a later local day than the first one
@@ -15,7 +16,7 @@
 // reads). The package knows nothing about where an alert goes; the host decides that.
 import type { ReaderSummary } from './readers-store.js'
 
-export const READ_ALERT_KINDS = ['first-open', 'refused', 'finished', 'came-back', 'quiet'] as const
+export const READ_ALERT_KINDS = ['first-open', 'refused', 'asked', 'finished', 'came-back', 'quiet'] as const
 export type ReadAlertKind = (typeof READ_ALERT_KINDS)[number]
 
 /** A normal adult reading pace, used to turn a page's word count into its reading time. */
@@ -67,6 +68,8 @@ export type ReadAlertInput = {
   summary?: Pick<ReaderSummary, 'sessions' | 'activeSeconds' | 'maxScroll' | 'firstSeen' | 'lastSeen'> & { lastStarted?: string } | null
   /** True when this evaluation is for a refusal at the door that just happened. */
   refusedAttempt?: boolean
+  /** True when this evaluation is for a request for access that just happened. */
+  askedAttempt?: boolean
   /** The page's reading time in seconds (`readSecondsFor`). Zero or absent: reaching the end is enough. */
   readSeconds?: number
   now: string | Date
@@ -101,6 +104,10 @@ export function readAlertsDue(input: ReadAlertInput): ReadAlert[] {
   const fresh = (at: string | undefined) => !!at && now - new Date(at).getTime() <= FRESH_HOURS * HOUR_MS
   const out: ReadAlert[] = []
 
+  if (input.askedAttempt) {
+    if (!sent.has('asked')) out.push({ kind: 'asked', ...base })
+    return out
+  }
   if (input.refusedAttempt) {
     if (!sent.has('refused')) out.push({ kind: 'refused', ...base })
     return out
@@ -130,10 +137,13 @@ export function readAlertsDue(input: ReadAlertInput): ReadAlert[] {
  *
  *  - `visit`: a reading heartbeat was recorded (`summary` is their record so far).
  *  - `refused`: a signed-in person was turned away at the door (`reader` is the account tried).
+ *  - `asked`: a signed-in person turned away asked for access (`note` is what they wrote, or null).
  *  - `sweep`: a listed reader, visited by `sweepReaders()` (a daily job) whether or not anything
  *    changed, so a host can notice what did NOT happen (quiet). */
 export type ReaderEvent = {
-  kind: 'visit' | 'refused' | 'sweep'
+  kind: 'visit' | 'refused' | 'asked' | 'sweep'
+  /** `asked` only: the visitor's note to the publisher, trimmed, at most ASK_NOTE_MAX characters. */
+  note?: string | null
   artifactId: string
   title: string
   /** The page's address, e.g. https://artifacts.example.com/abc23456. */

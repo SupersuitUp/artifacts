@@ -87,10 +87,11 @@ describe('quiet', () => {
 })
 
 it('every kind is at most once: replaying every evaluation with everything sent yields nothing', () => {
-  const all: ReadAlertKind[] = ['first-open', 'refused', 'finished', 'came-back', 'quiet']
+  const all: ReadAlertKind[] = ['first-open', 'refused', 'asked', 'finished', 'came-back', 'quiet']
   const back = opened({ sessions: 3, maxScroll: 100, activeSeconds: 900, firstSeen: '2026-10-06T15:00:00Z', lastStarted: '2026-10-07T16:00:00Z' })
   expect(due({ summary: back, sent: all })).toEqual([])
   expect(due({ refusedAttempt: true, sent: all })).toEqual([])
+  expect(due({ askedAttempt: true, sent: all })).toEqual([])
   expect(due({ summary: null, addedAt: '2026-10-04T00:00:00Z', sent: all })).toEqual([])
 })
 

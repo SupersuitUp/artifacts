@@ -93,6 +93,7 @@ The rest, each exporting the named handler(s) from `artifacts`:
 | `app/api/reader/enter/route.ts` | `GET` = `ENTER` |
 | `app/api/reader/leave/route.ts` | `GET` = `LEAVE` |
 | `app/api/reader/ack/route.ts` | `POST` = `ACK` |
+| `app/api/reader/ask/route.ts` | `POST` = `ASK` (a visitor turned away asks for access; 0.63.0) |
 | `app/api/reader/track/route.ts` | `POST` = `TRACK` |
 | `app/api/artifacts/[id]/resolve/route.ts` | `POST` = `RESOLVE` (see [resolving a thread](#resolving-a-thread)) |
 | `app/api/comments/route.ts` | `GET` = `COMMENTS_FEED` (see [the comments feed](#the-comments-feed)) |

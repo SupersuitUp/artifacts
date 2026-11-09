@@ -3,6 +3,27 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.63.0 (2026-11-08)
+
+**Ask for access.** A signed-in visitor turned away at a private page's door (a `links: per-reader`
+page without their link, or an `access:` page that was not shared with their account) can now ask
+the publisher for it, with an optional note of up to 500 characters (`ASK_NOTE_MAX`).
+
+- New route `POST /api/reader/ask` (`ASK`), a plain form post from the door. It records an `asked`
+  flag (the note as `detail`) and sends an `asked` reader event (`note` on `ReaderEvent`), once per
+  visitor per page. The owner, an admin, anyone the page already opens to, and a page that is not
+  private record nothing. It always lands back on the page.
+- After asking, the door says the request was passed on instead of showing the form again.
+- `READ_ALERT_KINDS` gains `asked` (`readAlertsDue({ askedAttempt: true })`, once per reader per page).
+- `summarize()` returns `asked`: who asked, their latest note and when. `FLAG_KINDS` gains `asked`.
+- The form shows only on a host with a reader store (`readers`), since a request needs somewhere to go.
+- DETECTOR: a signed-in visitor at a private page's door has no way to ask for it.
+- REMEDY: update, and mount `app/api/reader/ask/route.ts` (`POST` = `ASK`), as the hub template
+  now does. A host whose read-alert text switches on the alert kind adds a line for `asked`.
+- TESTS: `src/routes/ask-access.test.tsx` (the form on both doors, none signed out or without a
+  reader store, the asked state, the route's recording, note cap and refusals, the alert and the
+  summary), `src/artifacts/read-alerts.test.ts`, `test/hub-template.test.mjs` (the route ships).
+
 ## 0.62.0 (2026-11-08)
 
 **The no-link door on a per-reader page says what it is and what to do.** A visitor opening a

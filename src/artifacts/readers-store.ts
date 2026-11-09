@@ -14,7 +14,8 @@
 import { FieldValue, type Firestore } from 'firebase-admin/firestore'
 import type { AllowEntry, Reader } from './reader.js'
 
-export const FLAG_KINDS = ['save', 'print', 'copy', 'image', 'devtools', 'refused'] as const
+/** `refused`: turned away at the door. `asked`: asked the publisher for access, `detail` the note. */
+export const FLAG_KINDS = ['save', 'print', 'copy', 'image', 'devtools', 'refused', 'asked'] as const
 export type FlagKind = (typeof FLAG_KINDS)[number]
 
 export type SessionDoc = {
@@ -187,7 +188,13 @@ export function summarize(sessionDocs: SessionDoc[], flagDocs: FlagDoc[]) {
     by.set(s.email, r)
   }
   const refused = new Map<string, { email: string; name: string | null; attempts: number; lastAt: string }>()
+  // Who asked the publisher for access, the latest request each, newest first.
+  const asked = new Map<string, { email: string; name: string | null; note: string | null; at: string }>()
   for (const f of flagDocs.slice().sort((a, b) => a.at.localeCompare(b.at))) {
+    if (f.kind === 'asked') {
+      asked.set(f.email, { email: f.email, name: f.name, note: f.detail ?? null, at: f.at })
+      continue
+    }
     if (f.kind === 'refused') {
       const r = refused.get(f.email) ?? { email: f.email, name: f.name, attempts: 0, lastAt: f.at }
       r.attempts += 1
@@ -200,5 +207,6 @@ export function summarize(sessionDocs: SessionDoc[], flagDocs: FlagDoc[]) {
   return {
     readers: [...by.values()].sort((a, b) => b.lastSeen.localeCompare(a.lastSeen)),
     refused: [...refused.values()].sort((a, b) => b.lastAt.localeCompare(a.lastAt)),
+    asked: [...asked.values()].sort((a, b) => b.at.localeCompare(a.at)),
   }
 }
