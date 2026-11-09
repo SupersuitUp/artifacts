@@ -191,6 +191,20 @@ describe('the recorder in the card', () => {
     expect(box()).not.toBeNull()
   })
 
+  it('the control is a small microphone, never a word: "Record a voice note", then a stop square while recording', async () => {
+    stubStorage(); browser('iphone')
+    await mount(card(fakeHost().host))
+    expect(mic().getAttribute('aria-label')).toBe('Record a voice note')
+    expect(mic().textContent).not.toMatch(/record/i)
+    expect(mic().querySelector('svg[data-voice-icon="mic"]')).not.toBeNull()
+    await act(async () => { mic().click() }); await flush()
+    expect(mic().getAttribute('aria-label')).toMatch(/^Stop recording, 0:00$/)
+    expect(mic().querySelector('[data-voice-icon="stop"]')).not.toBeNull()
+    expect(mic().querySelector('svg[data-voice-icon="mic"]')).toBeNull()
+    await act(async () => { mic().click() }); await flush()
+    expect(mic().getAttribute('aria-label')).toBe('Record a voice note')
+  })
+
   it('stops itself at three minutes', async () => {
     stubStorage(); browser('chrome')
     vi.useFakeTimers({ toFake: ['setTimeout', 'setInterval', 'Date'] })
@@ -199,7 +213,8 @@ describe('the recorder in the card', () => {
     expect(recorders[0].state).toBe('recording')
     await act(async () => { vi.advanceTimersByTime(MAX_MEMO_MS - 1000) })
     expect(recorders[0].state).toBe('recording')
-    expect(mic().textContent).toContain('2:59')
+    expect(mic().getAttribute('aria-label')).toContain('2:59')
+    expect(document.querySelector('[data-voice-clock]')!.textContent).toBe('2:59')
     await act(async () => { vi.advanceTimersByTime(1000) }); await flush()
     expect(recorders[0].state).toBe('inactive')
     expect(stopTrack).toHaveBeenCalled()
@@ -287,6 +302,68 @@ describe('memos in the comment layer', () => {
     expect(sent.body).toMatchObject({ slot: 'comments', op: 'append', value: { audio: 'comments/Memo1234567890abcd.webm', transcript: 'host', body: 'the river runs north' } })
     // Uploaded once, on stop, and reused at save.
     expect(host.upload).toHaveBeenCalledTimes(1)
+  })
+
+  // Gary, 2026-11-09, iPhone Safari on artifacts.continentalworks.ai: the recording's PUT to the
+  // bucket failed (the private bucket had no CORS rule, so Safari's fetch rejected with "Load
+  // failed"), and the card then refused to save the typed words at all.
+  function iphoneUploadFails() {
+    const calls: { url: string; method: string; body?: unknown }[] = []
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      const method = init?.method ?? 'GET'
+      if (method === 'PUT') { calls.push({ url, method }); throw new TypeError('Load failed') }
+      const body = init?.body ? JSON.parse(String(init.body)) : undefined
+      calls.push({ url, method, body })
+      if (url.includes('/uploads/')) return new Response(JSON.stringify({ path: 'comments/x.m4a', uploadUrl: 'https://storage.example.com/put?sig=1', headers: { 'content-type': 'audio/mp4' } }), { status: 201 })
+      if (url.includes('/transcribe')) return new Response('{}', { status: 404 })
+      if (url.endsWith('/state') && method === 'POST') return new Response(JSON.stringify({ slots: { comments: { mine: [{ id: 'c9', at: '2026-11-09T00:00:00Z', value: body.value }], shared: [] } } }), { status: 200 })
+      if (url.endsWith('/state')) return new Response(JSON.stringify({ slots: { comments: { mine: [], shared: [] } } }), { status: 200 })
+      return new Response('{}', { status: 404 })
+    }))
+    return calls
+  }
+  const notice = () => document.querySelector('[data-comment-notice]')?.textContent ?? ''
+
+  it('iPhone: a recording that will not upload never blocks the typed comment; the words save and the recording stays on the device', async () => {
+    stubStorage(); browser('iphone'); const calls = iphoneUploadFails()
+    const { m, store } = memStore()
+    await mountLayer({ audioStore: store, comments: 'anyone', canShare: true })
+    await openCard()
+    await type('This line is the one to change')
+    await act(async () => { mic().click() }); await flush()
+    await act(async () => { mic().click() }); await flush()
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)) })
+    expect(calls.some((c) => c.method === 'PUT')).toBe(true)
+    await act(async () => { document.querySelector<HTMLButtonElement>('[data-comment-save]')!.click() }); await flush()
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)) })
+    const sent = calls.find((c) => c.method === 'POST' && c.url.endsWith('/state'))
+    expect(sent?.body).toMatchObject({ slot: 'comments', op: 'append', value: { body: 'This line is the one to change' } })
+    expect((sent!.body as { value: Record<string, unknown> }).value.audio).toBeUndefined()
+    // The card closed: the comment is saved, nothing is left to resend.
+    expect(document.querySelector('[data-comment-card]')).toBeNull()
+    const notes = deviceNotes('abc23456')
+    expect(notes).toHaveLength(1)
+    expect(notes[0].value.audio).toMatch(/^device\/[A-Za-z0-9_-]+\.m4a$/)
+    expect(m.get(notes[0].value.audio!)?.type).toBe('audio/mp4')
+    expect(notice()).toContain('Your comment is saved')
+    expect(notice()).toContain('kept on this device')
+  })
+
+  it('a recording with no words that will not upload is kept on the device, never lost', async () => {
+    stubStorage(); browser('bare'); const calls = iphoneUploadFails()
+    const { m, store } = memStore()
+    await mountLayer({ audioStore: store, comments: 'anyone', canShare: true })
+    await openCard()
+    await act(async () => { mic().click() }); await flush()
+    await act(async () => { mic().click() }); await flush()
+    await act(async () => { document.querySelector<HTMLButtonElement>('[data-comment-save]')!.click() }); await flush()
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)) })
+    expect(calls.filter((c) => c.method === 'POST' && c.url.endsWith('/state'))).toEqual([])
+    expect(document.querySelector('[data-comment-card]')).toBeNull()
+    const notes = deviceNotes('abc23456')
+    expect(notes).toHaveLength(1)
+    expect(m.has(notes[0].value.audio!)).toBe(true)
+    expect(notice()).toContain('kept on this device')
   })
 
   it('on sign-in, a device memo is uploaded to the reader\'s account, the note names it there, and it leaves the device', async () => {

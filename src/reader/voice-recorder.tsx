@@ -187,15 +187,23 @@ export function VoiceRecorder({ onStart, onLive, onStop, onError, accent = 'curr
   }
 
   if (!supported) return null
+  // A small microphone, never a word (Gary, 2026-11-09: "a little microphone button is superior to
+  // a button that says record"). The glyph is the Helm recorder's own (helm2 golden/recorder), so
+  // the two surfaces draw one microphone; while recording it is a stop square with the clock beside
+  // it. A 44 px target, the size the Helm settled on for a mic inside a text box.
   return (
-    <div data-voice-recorder className="mt-2 text-[13px] text-[color:var(--a-strong)]">
-      <button type="button" data-voice-mic aria-pressed={recording} onClick={() => (recording ? stop() : void start())}
-        className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium"
-        style={recording ? { borderColor: accent, background: accent, color: 'var(--a-on-accent, currentColor)' } : { borderColor: accent, color: accent }}>
-        <span aria-hidden>{recording ? '■' : '●'}</span>
-        {recording ? `Stop · ${clock(elapsed)}` : 'Record'}
+    <div data-voice-recorder className="mt-1 flex items-center gap-2 text-[13px] text-[color:var(--a-strong)]">
+      <button type="button" data-voice-mic aria-pressed={recording}
+        aria-label={recording ? `Stop recording, ${clock(elapsed)}` : 'Record a voice note'}
+        onClick={() => (recording ? stop() : void start())}
+        className="-ml-2 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full"
+        style={recording ? { background: accent, color: 'var(--a-on-accent, currentColor)' } : { color: accent }}>
+        {recording
+          ? <span data-voice-icon="stop" aria-hidden className="h-3 w-3 rounded-[3px]" style={{ background: 'currentColor' }} />
+          : <svg data-voice-icon="mic" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3" /></svg>}
       </button>
-      {live && note ? <p data-voice-live-note className="m-0 mt-1 text-xs opacity-70">{LIVE_LINE}</p> : null}
+      {recording ? <span data-voice-clock aria-hidden className="text-xs tabular-nums opacity-80">{clock(elapsed)}</span> : null}
+      {live && note ? <p data-voice-live-note className="m-0 text-xs opacity-70">{LIVE_LINE}</p> : null}
     </div>
   )
 }

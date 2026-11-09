@@ -53,6 +53,10 @@ const HASH = /^#comment-([A-Za-z0-9_-]{1,128})$/
 
 /** The entry id a `#comment-<id>` hash names, or null. */
 const commentHashId = (hash: string): string | null => HASH.exec(hash)?.[1] ?? null
+/** What the reader is told when a recording did not upload but nothing was lost. */
+export const STRANDED_KEPT = 'Your comment is saved. The recording did not upload, so it is kept on this device as a note only you see.'
+export const STRANDED_ALONE = 'The recording did not upload, so it is kept on this device as a note only you see.'
+export const STRANDED_LOST = 'Your comment is saved. The recording did not upload, and this browser would not keep it.'
 /** The line a resolved thread collapses to. */
 export const resolvedLine = (r: CommentResolution) => (r.note ? `Resolved: ${r.note}` : 'Resolved')
 const resolvedOf = (item: Item) => (item.kind === 'shared' ? resolutionOf(item.value) : null)
@@ -141,6 +145,8 @@ export function CommentLayer({
   // Whether the shared comments have arrived, so a link to one this reader cannot see can say so.
   const [loaded, setLoaded] = useState(false)
   const [missing, setMissing] = useState(false)
+  /** A line the reader is told once something saved differently than they asked (a recording kept on the device). */
+  const [notice, setNotice] = useState<string | null>(null)
   const [serverNotes, setServerNotes] = useState<Item[]>([])
   const [device, setDevice] = useState<Item[]>([])
   const [onServer, setOnServer] = useState(signedIn)
@@ -447,15 +453,40 @@ export function CommentLayer({
    *  there, uploaded now when the reader switched between Share and Just for me after recording. */
   const memoPath = async (m: SavedMemo, scope: 'comment' | 'personal') =>
     m.uploaded?.scope === scope ? m.uploaded.path : host.upload(m.memo, scope)
-  const LOST = 'The recording did not upload. Try again, or discard it and save the text.'
+  const LOST = 'The recording did not upload, and this browser would not keep it. Discard it and save the text.'
+  /** A recording the page would not take, kept as a device note on the same passage instead. A
+   *  signed-in reader's device notes go up to their account on the next load (the sign-in move
+   *  above), so this is also the retry; a reader who is not signed in keeps it here, playable. */
+  const keepOnDevice = async (memo: SavedMemo, anchor: Anchor): Promise<boolean> => {
+    const key = `device/${newMemoId()}.${audioExtFor(memo.memo.mime) ?? 'webm'}`
+    if (!(await audioDb.put(key, memo.memo.blob))) return false
+    addDeviceNote(artifactId, { anchor, body: '', version, audio: key })
+    refreshDevice()
+    return true
+  }
 
   const saveNew = async (body: string, share: boolean, d: Draft, memo?: SavedMemo, by?: string): Promise<string | null> => {
     const value: CommentValue = { anchor: d.anchor, body, version, ...(memo?.transcript ? { transcript: memo.transcript } : {}), ...(share && by ? { by } : {}) }
     const toDevice = !share && !(signedIn && onServer)
+    // A recording that did not upload never holds the words back (Gary, 2026-11-09, iPhone: the
+    // bucket refused the PUT and the typed comment could not be saved at all). The words save on
+    // their own and the recording is kept on this device, saying so.
+    let stranded: SavedMemo | null = null
     if (memo && !toDevice) {
       const path = await memoPath(memo, share ? 'comment' : 'personal')
-      if (!path) return LOST
-      value.audio = path
+      if (path) value.audio = path
+      else {
+        stranded = memo
+        delete value.transcript
+      }
+    }
+    if (stranded && !body.trim()) {
+      // Nothing but the recording: it becomes a note only this reader sees, on this device.
+      if (!(await keepOnDevice(stranded, d.anchor))) return LOST
+      setNotice(STRANDED_ALONE)
+      document.getSelection()?.removeAllRanges()
+      setDraft(null)
+      return null
     }
     if (memo && toDevice) {
       // Not signed in: the recording stays in this browser with the note, and never leaves it.
@@ -476,6 +507,7 @@ export function CommentLayer({
       addDeviceNote(artifactId, value)
       refreshDevice()
     }
+    if (stranded) setNotice((await keepOnDevice(stranded, d.anchor)) ? STRANDED_KEPT : STRANDED_LOST)
     document.getSelection()?.removeAllRanges()
     setDraft(null)
     return null
@@ -546,6 +578,15 @@ export function CommentLayer({
             <a data-comment-missing-sign-in href={signInBack(signIn)} className="mt-3 inline-block rounded-full px-4 py-1.5 font-medium no-underline"
               style={{ background: accent, color: 'var(--a-on-accent, #111)' }}>Sign in</a>
           ) : null}
+        </div>
+      ) : null}
+      {notice ? (
+        <div data-comment-notice role="status"
+          className="fixed inset-x-3 top-3 z-50 mx-auto max-w-sm rounded-xl border border-[color:var(--a-line-strong)] bg-[color:var(--a-surface)] p-4 font-sans text-sm leading-snug text-[color:var(--a-strong)] shadow-xl">
+          <div className="flex items-start gap-3">
+            <p className="m-0 flex-1">{notice}</p>
+            <button type="button" aria-label="Close" onClick={() => setNotice(null)} className="-mr-1 -mt-1 px-1 text-lg leading-none opacity-60">×</button>
+          </div>
         </div>
       ) : null}
       {showPins ? layout.placed.map(({ item, left, top, box }) => (

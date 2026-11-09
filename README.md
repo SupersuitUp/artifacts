@@ -858,9 +858,13 @@ type Ctx = { params: Promise<{ id: string }> }
 export function POST(request: NextRequest, ctx: Ctx) { return artifacts.TRANSCRIBE(request, ctx) }
 ```
 
-The bucket also needs CORS allowing `PUT` from the site's origin with the `content-type`,
-`cache-control` and `x-goog-content-length-range` headers, since the reader's browser uploads
-directly.
+The PRIVATE bucket (`privateBucket`, where memos live since 0.38.0) needs CORS allowing `PUT`
+from the site's origin with the `content-type`, `cache-control` and `x-goog-content-length-range`
+headers, since the reader's browser uploads directly. Without it every recording fails in the
+browser (Safari says "Load failed") while the routes answer 201; the typed words still save, and
+the recording is kept on the reader's device as a note only they see. Check it with a preflight:
+`curl -si -X OPTIONS -H 'Origin: https://<your host>' -H 'Access-Control-Request-Method: PUT' -H 'Access-Control-Request-Headers: content-type,cache-control,x-goog-content-length-range' https://storage.googleapis.com/<private bucket>/x`
+must answer with an `access-control-allow-origin` header.
 
 ### Resolving a thread
 
@@ -1068,7 +1072,7 @@ media: private
 
 The private bucket must be a different bucket from the public one (passing the same bucket twice throws), with uniform bucket-level access, public access prevention enforced, and object access granted only to the host's own service account. The page signs a V4 read URL per private file on every render that passed the per-reader gate, valid `PRIVATE_READ_TTL_MS` (one hour); a revoked or expired link renders nothing and mints nothing. A reader revoked after a render can keep loading a URL already handed to them for at most that hour. Expiry's `deletePage` clears the page from both buckets.
 
-If the publisher uploads straight to the private bucket from a browser (`?private=1` on `UPLOAD`), give that bucket a CORS rule allowing `PUT` from your origin with the `content-type` and `cache-control` headers; a reader's browser playing a signed URL needs `GET` (and `HEAD`) from your origin only if your player fetches it with CORS.
+Readers' voice memos are uploaded from the reader's browser straight to the private bucket, so give that bucket a CORS rule allowing `PUT` from your origin with the `content-type`, `cache-control` and `x-goog-content-length-range` headers (the publisher's `?private=1` uploads need the same rule); a reader's browser playing a signed URL needs `GET` (and `HEAD`) from your origin only if your player fetches it with CORS.
 
 Routes (spread into your route files by `createArtifactRoutes`): `RECIPIENTS`, `VIEWS`, `SEEN`, and `sweepExpired`.
 
