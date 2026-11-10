@@ -3,6 +3,14 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## Unreleased
+
+**The owner tile is short on a phone: one list at a time.** Gary, 2026-11-09, on the live hub dashboard: "It's like a giant scroll. That feels unscalable." Below Tailwind's `lg` the tabs are Needs you (the default: sends waiting past `quietDays` and readers' comments from the last 30 days), Activity, Pages (with a title search, `pq`) and Outcomes, chosen by `tab=needs|activity|pages` and `view=outcomes`, and only the chosen list shows; Pages no longer sits under the feed. Every phone list shows 10 rows and a Show more (`n`) that adds 10. The opened and waiting counts are links (Outcomes and Needs you). From `lg` up the columns, the 30-row pages and Load more are as before. `tab=waiting` (the old Waiting on tab) now opens Needs you. New exports: `needsYou`, `NeedsItem`, `PHONE_PAGE_SIZE` (`./analytics`). Measured with invented sample data at 390x844: Needs you 1.75 screens, Activity 1.73, Pages 1.45, Outcomes 2.18.
+
+- DETECTOR: an owner opening the hub home or the continent app's Artifacts tile on a phone.
+- REMEDY: none for a host; it ships in `ArtifactsTile`. A host's Tailwind must keep scanning `lib/owner` (it now uses `max-lg:hidden`, Tailwind 3.2 or later).
+- TESTS: `src/owner/index.test.tsx` (one list per phone tab, Needs you default and empty state, 10 rows then Show more, counts are links, desktop columns unchanged), `src/routes/hub-home.test.tsx` (Pages tab and title search).
+
 ## 0.64.1 (2026-11-09)
 
 0.64.0 was tagged and never published: its publish run refused two tests. The Owner view inputs now name `NO_ZOOM_FONT` where `no-zoom.test.ts` reads it (they already used it through a shared style), and `settings.test.tsx` expects the menu with Owner view. TESTS: `src/reader/no-zoom.test.ts`, `src/routes/settings.test.tsx`; full suite 1365 passed.

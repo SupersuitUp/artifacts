@@ -291,13 +291,17 @@ counts an open differently from the hub's own views route.
 
 - `@supersuit/artifacts/analytics` is the rule, pure: `fetchSends(config, stores, now?)` reads the pages published in
   the last `LOOKBACK_DAYS` (at most `MAX_PAGES`) through the stores you pass (`list`/`get` of the page store, `get`/`views`
-  of the recipients store, `entries` of the state store), and `activityFeed`, `waitingOn`, `countsOf`, `outcomeBoard`,
+  of the recipients store, `entries` of the state store), and `activityFeed`, `waitingOn`, `needsYou` (waiting sends and recent comments, the phone's first list), `countsOf`, `outcomeBoard`,
   `readersOf`, `timelineOf`, `choicesOf`, `parseFilters`, `heatOf` and `OUTCOME_LABEL` turn the result into what is shown.
   `config` is `{ site, pagePrefix, quietDays }`.
 - `@supersuit/artifacts/owner` is the screen, `ArtifactsTile`, a server component with no client script: every view is
   chosen by the address. You pass the data, the query, the title, your theme (`card`, `ink`, `muted`, `hairline`,
   `accentSoft`, `accentTint`, `danger`, `primary`, `onPrimary`, `heading`), your Back row (`back(href)`), `notFound`, and
   optionally `basePath` (default `/artifacts`), `homeHref` and `draftHref(send)`. Who may see it is yours to decide.
+- On a phone (under Tailwind's `lg`) it shows one list at a time: Needs you (the default), Activity, Pages (when you
+  pass `pages`, with a title search, `pq`) and Outcomes, chosen by `tab=needs|activity|pages` and `view=outcomes`.
+  Each phone list shows `PHONE_PAGE_SIZE` (10) rows and a Show more (`n`); from `lg` up the columns and `PAGE_SIZE` are
+  as before. The opened and waiting counts link to Outcomes and Needs you.
 - It is drawn with Tailwind classes, so let Tailwind scan it: `@source "../../node_modules/@supersuit/artifacts/lib/owner";`
   in your global CSS.
 - `pages` (optional) lists every page of the hub under the home (`HubPage`: id, title, url, kind, updatedAt,
