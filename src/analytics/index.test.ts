@@ -3,7 +3,7 @@
 // counts, one page's readers and one person's timeline. Firestore is never touched.
 import { describe, expect, it } from 'vitest'
 import { createMemoryStateStore, memoryRecipientsStore, type ArtifactListItem, type RecipientsStore } from '../artifacts/index.js'
-import { activityFeed, countsOf, fetchSends, filterSends, heatOf, MAX_PAGES, OUTCOME_LABEL, outcomeBoard, pageUrl, parseFilters, timelineOf, waitingOn, type AnalyticsConfig, type HubStores } from './index.js'
+import { activityFeed, countsOf, fetchSends, filterSends, heatOf, MAX_PAGES, needsYou, OUTCOME_LABEL, outcomeBoard, pageUrl, parseFilters, timelineOf, waitingOn, type AnalyticsConfig, type HubStores } from './index.js'
 import { OUTCOMES } from '../artifacts/index.js'
 
 // The hub the tile reads: where its pages live, and after how many days an unopened send is waiting.
@@ -210,5 +210,29 @@ describe('the hub config and the labels', () => {
   })
   it('names every outcome the module measures', () => {
     expect(Object.keys(OUTCOME_LABEL)).toEqual([...OUTCOMES])
+  })
+})
+
+// NEEDS YOU LEAVES OUT A COMMENT ONCE IT IS HANDLED (Gary, 2026-11-09: "fix whatever you need to fix"). A comment
+// whose thread the owner resolved, or that the owner replied to after it was written, no longer needs them; a reader
+// writing again after the reply brings the thread back.
+describe('needsYou and handled comments', () => {
+  it('lists an open comment, not a resolved one or one the owner already answered', async () => {
+    const h = await hubOf()
+    const state = h.state!
+    const [dee, eve, fay] = await h.recipients.add('plan', [{ label: 'Dee' }, { label: 'Eve' }, { label: 'Fay' }])
+    await h.recipients.setSent!('plan', [dee.rid, eve.rid, fay.rid], ago(5))
+    const w = (rid: string, name: string) => ({ key: `r:${rid}`, name, anonymous: false })
+    await state.append({ artifactId: 'plan', slot: 'comments', writer: w(dee.rid, 'Dee'), value: { body: 'Still open.' } })
+    const e = await state.append({ artifactId: 'plan', slot: 'comments', writer: w(eve.rid, 'Eve'), value: { body: 'Resolved one.' } }) as { id: string }
+    await state.setResolved!({ artifactId: 'plan', slot: 'comments', entryId: e.id, resolved: { at: new Date().toISOString(), by: 'owner' } })
+    const f = await state.append({ artifactId: 'plan', slot: 'comments', writer: w(fay.rid, 'Fay'), value: { body: 'Answered one.' } }) as { id: string }
+    await new Promise((r) => setTimeout(r, 5))
+    await state.append({ artifactId: 'plan', slot: 'comments', writer: { key: 'owner', name: 'Me', anonymous: false }, value: { body: 'Thanks.', parent: f.id, publisher: true } })
+    const { sends } = await fetchSends(cfg(), h, new Date())
+    const texts = needsYou(sends, parseFilters({}), new Date(), 50).items.filter((i) => i.kind === 'comment').map((i) => (i as { event: { text: string } }).event.text)
+    expect(texts).toContain('Still open.')
+    expect(texts).not.toContain('Resolved one.')
+    expect(texts).not.toContain('Answered one.')
   })
 })

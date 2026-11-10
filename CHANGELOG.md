@@ -3,7 +3,9 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
-## Unreleased
+## 0.65.0 (2026-11-09)
+
+**Needs you leaves out a handled comment.** A reader's comment no longer needs the owner once its thread is resolved, or once the publisher replied in its thread after it; a reader writing again brings it back. Comments carry `handled` on `Send`. DETECTOR: Gary, reviewing the phone dashboard. REMEDY: `handledBy` in `src/analytics/index.ts`. TESTS: `src/analytics/index.test.ts`.
 
 **The owner tile is short on a phone: one list at a time.** Gary, 2026-11-09, on the live hub dashboard: "It's like a giant scroll. That feels unscalable." Below Tailwind's `lg` the tabs are Needs you (the default: sends waiting past `quietDays` and readers' comments from the last 30 days), Activity, Pages (with a title search, `pq`) and Outcomes, chosen by `tab=needs|activity|pages` and `view=outcomes`, and only the chosen list shows; Pages no longer sits under the feed. Every phone list shows 10 rows and a Show more (`n`) that adds 10. The opened and waiting counts are links (Outcomes and Needs you). From `lg` up the columns, the 30-row pages and Load more are as before. `tab=waiting` (the old Waiting on tab) now opens Needs you. New exports: `needsYou`, `NeedsItem`, `PHONE_PAGE_SIZE` (`./analytics`). Measured with invented sample data at 390x844: Needs you 1.75 screens, Activity 1.73, Pages 1.45, Outcomes 2.18.
 

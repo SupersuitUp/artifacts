@@ -15,6 +15,7 @@
 //   the last LOOKBACK_DAYS, at most MAX_PAGES of them, newest first, and says so on the screen. An open on an older
 //   page is not seen. Re-deriving either from the raw view sessions would re-implement the hub's before-send rule.
 import { ARTIFACT_KINDS, COMMENTS_SLOT, DEFAULT_GOAL, OUTCOMES, summarizeViews, type ArtifactGoal, type ArtifactListItem, type ArtifactStore, type Outcome, type RecipientSummary, type RecipientsStore, type StateStore } from '../artifacts/index.js'
+import { resolutionOf } from '../artifacts/comments.js'
 
 /** The hub a dashboard reads: its public address and page prefix (for links), and after how many days an unopened send
  *  is waiting. A continent's `artifacts` config is one. */
@@ -61,7 +62,7 @@ export interface Send {
   sentFrom: string
   opened: boolean; firstOpenAt: string | null; cameBack: boolean
   activeSeconds: number; plays: number; devices: number
-  comments: { at: string; text: string }[]
+  comments: { at: string; text: string; handled?: boolean }[]
   /** The module's: whole days since the recorded send, or null when no send was recorded. */
   daysSinceSent: number | null
   /** The module's: when the last session began, how many sessions, and when each began. */
@@ -119,11 +120,34 @@ async function sendsOf(cfg: AnalyticsConfig, stores: HubStores, p: ArtifactListI
     stores.recipients.views(p.id), stores.state ? stores.state.entries(p.id) : Promise.resolve([]), stores.pages.get(p.id),
   ])
   const goal = page?.goal ?? DEFAULT_GOAL
-  const comments = entries.filter((e) => e.slot === COMMENTS_SLOT).map((e) => ({
-    readerKey: e.readerKey, id: e.id, at: e.at, text: String((e.value as { body?: unknown } | null)?.body ?? ''),
+  const thread = entries.filter((e) => e.slot === COMMENTS_SLOT)
+  const comments = thread.map((e) => ({
+    readerKey: e.readerKey, id: e.id, parent: ((e.value as { parent?: unknown } | null)?.parent as string | undefined) ?? null,
+    at: e.at, text: String((e.value as { body?: unknown } | null)?.body ?? ''),
   }))
   const where = { id: p.id, title: p.title, url: pageUrl(cfg, p.id) }
-  return summarizeViews(rec, views, comments, { goal, now }).map((s) => sendOfSummary(cfg, where, s, rec.recipients[s.rid].addedAt))
+  const handled = handledBy(thread)
+  return summarizeViews(rec, views, comments, { goal, now }).map((s) => {
+    const send = sendOfSummary(cfg, where, s, rec.recipients[s.rid].addedAt)
+    return { ...send, comments: send.comments.map((c, i) => (handled(s.comments[i]) ? { ...c, handled: true } : c)) }
+  })
+}
+
+/**
+ * Whether a reader's comment is handled (Gary, 2026-11-09): its thread was resolved after it was written, or the
+ * publisher replied in its thread after it. A reader writing again after either is news, so it is not handled.
+ */
+function handledBy(thread: readonly { id: string; at: string; value: unknown }[]) {
+  const byId = new Map(thread.map((e) => [e.id, e]))
+  const publisherReplies = thread.filter((e) => (e.value as { publisher?: unknown } | null)?.publisher === true)
+  return (c: { id: string | null; parent: string | null; at: string } | undefined): boolean => {
+    if (!c) return false
+    const root = c.parent ?? c.id
+    if (!root) return false
+    const resolved = resolutionOf(byId.get(root)?.value)
+    if (resolved && resolved.at >= c.at) return true
+    return publisherReplies.some((r) => (r.value as { parent?: unknown }).parent === root && r.at > c.at)
+  }
 }
 
 /** Every send on the pages published in the last LOOKBACK_DAYS (at most MAX_PAGES, newest first). Read-only. */
@@ -202,7 +226,7 @@ export function needsYou(sends: readonly Send[], f: Filters, now: Date = new Dat
   for (const s of filterSends(sends, f)) {
     if (s.quiet) all.push({ kind: 'waiting', at: s.sentFrom, send: s })
     for (const c of s.comments) {
-      if (c.at < since) continue
+      if (c.at < since || c.handled) continue
       all.push({ kind: 'comment', at: c.at, event: { kind: 'commented', at: c.at, pageId: s.pageId, title: s.title, url: s.url, personKey: s.personKey, label: s.label, text: c.text } })
     }
   }
