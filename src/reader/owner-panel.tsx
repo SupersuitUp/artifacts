@@ -202,7 +202,7 @@ export function OwnerPanel({ view, phone, vars, onClose, onCopy, onShareSettings
           <form onSubmit={onAdd} style={section}>
             <p style={legend}>New reader link</p>
             <div style={{ display: 'flex', gap: 8 }}>
-              <input data-owner-new-label aria-label="Who the link is for" placeholder="Their name" value={label} onChange={(e) => setLabel(e.target.value)} style={input} />
+              <input data-owner-new-label aria-label="Who the link is for" placeholder="Their name" value={label} onChange={(e) => setLabel(e.target.value)} style={{ ...input, ...NO_ZOOM_FONT }} />
               <button type="submit" data-owner-action="add" disabled={busy} style={btn}>Make link</button>
             </div>
             {made ? (
@@ -219,7 +219,7 @@ export function OwnerPanel({ view, phone, vars, onClose, onCopy, onShareSettings
             <p style={legend}>When the links close</p>
             <p style={{ ...muted, margin: '0 0 8px' }}>{data?.expireAt ? `Every link closes ${day(data.expireAt)}.` : 'The links do not close.'}</p>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-              <input type="date" data-owner-expires-date aria-label="The day the links close" value={closes} onChange={(e) => setCloses(e.target.value)} style={{ ...input, flex: '1 1 9rem' }} />
+              <input type="date" data-owner-expires-date aria-label="The day the links close" value={closes} onChange={(e) => setCloses(e.target.value)} style={{ ...input, ...NO_ZOOM_FONT, flex: '1 1 9rem' }} />
               <button type="button" data-owner-action="expires" disabled={busy} onClick={onExpires} style={btn}>Set</button>
               <button type="button" data-owner-action="keep" disabled={busy} onClick={() => void act(ownerRequests.expires(view.id, null), 'The links stay open')} style={btn}>Never close</button>
             </div>

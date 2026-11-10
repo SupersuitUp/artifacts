@@ -3,7 +3,11 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
-## 0.64.0 (2026-11-09)
+## 0.64.1 (2026-11-09)
+
+0.64.0 was tagged and never published: its publish run refused two tests. The Owner view inputs now name `NO_ZOOM_FONT` where `no-zoom.test.ts` reads it (they already used it through a shared style), and `settings.test.tsx` expects the menu with Owner view. TESTS: `src/reader/no-zoom.test.ts`, `src/routes/settings.test.tsx`; full suite 1365 passed.
+
+## 0.64.0 (2026-11-09, never published)
 
 **One row of view tabs on the owner tile.** On a phone the tile drew two rows that both began with Activity; it now draws Activity, Waiting on (phone only) and Outcomes in one row. DETECTOR: an operator reviewing the hub dashboard. REMEDY: one nav in `src/owner/index.tsx`. TESTS: `src/owner/index.test.tsx`.
 
