@@ -3,7 +3,9 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
-## Unreleased
+## 0.64.0 (2026-11-09)
+
+**One row of view tabs on the owner tile.** On a phone the tile drew two rows that both began with Activity; it now draws Activity, Waiting on (phone only) and Outcomes in one row. DETECTOR: an operator reviewing the hub dashboard. REMEDY: one nav in `src/owner/index.tsx`. TESTS: `src/owner/index.test.tsx`.
 
 **A hub's home is its owner's dashboard, and every page has an Owner view.** New `HubHome({ searchParams })` in the
 route table: for the owner or an admin signed in, the Artifacts tile over the whole hub with every page listed under it

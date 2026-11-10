@@ -304,7 +304,7 @@ describe('memos in the comment layer', () => {
     expect(host.upload).toHaveBeenCalledTimes(1)
   })
 
-  // Gary, 2026-11-09, iPhone Safari on artifacts.continentalworks.ai: the recording's PUT to the
+  // An operator, 2026-11-09, iPhone Safari on a hub: the recording's PUT to the
   // bucket failed (the private bucket had no CORS rule, so Safari's fetch rejected with "Load
   // failed"), and the card then refused to save the typed words at all.
   function iphoneUploadFails() {
