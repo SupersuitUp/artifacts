@@ -16,16 +16,21 @@
 // the app says (`draftHref`). Nothing here drafts or sends.
 //
 // From Tailwind's lg breakpoint (1024px) the filters sit on the left; the Activity view puts the feed in the centre and
-// Waiting on on the right, the outcome view spans the kanban across the rest. Under it the Activity view is the feed
-// with Waiting on as a tab, the outcome view one stage at a time behind stage tabs with counts, and the filters are
-// folded under a summary. The main is `data-wide`, so a layout can drop its phone-width cap at lg. The class names are
+// Waiting on on the right, the outcome view spans the kanban across the rest, and the page list sits under the columns.
+// UNDER lg (a phone) the screen is ONE LIST AT A TIME (Gary, 2026-11-09: "It's like a giant scroll ... Feels
+// overwhelming"): the tabs are Needs you (the default: sends waiting and recent comments), Activity, Pages (when the
+// app passes `pages`; a title search on top, `pq`) and Outcomes, `tab=needs|activity|pages` in the address, and only
+// the chosen list shows. Every phone list shows PHONE_PAGE_SIZE rows and a Show more that adds as many again (`n`);
+// the rows past it are drawn and hidden below lg, so the desktop still shows PAGE_SIZE with its own Load more. The
+// counts on top are links (waiting opens Needs you, opened opens Outcomes). The outcome view is one stage at a time
+// behind stage tabs with counts, and the filters are folded under a summary. The main is `data-wide`, so a layout can drop its phone-width cap at lg. The class names are
 // Tailwind's: an app that draws this must let Tailwind scan this package's `lib/owner` (`@source`).
 import Link from 'next/link'
 import type { CSSProperties, ReactNode } from 'react'
 import { OUTCOMES, type ArtifactGoal, type Outcome } from '../artifacts/index.js'
 import {
-  activityFeed, choicesOf, countsOf, FEED_DAYS, heatOf, OUTCOME_LABEL, outcomeBoard, PAGE_SIZE, parseFilters, readersOf, timelineOf, waitingOn,
-  type FeedEvent, type Filters, type Send, type Sends,
+  activityFeed, choicesOf, countsOf, FEED_DAYS, heatOf, needsYou, OUTCOME_LABEL, outcomeBoard, PAGE_SIZE, parseFilters, PHONE_PAGE_SIZE, readersOf,
+  timelineOf, waitingOn, type FeedEvent, type Filters, type NeedsItem, type Send, type Sends,
 } from '../analytics/index.js'
 
 /** The colours and display face the screen draws in, from the app's own theme. */
@@ -82,6 +87,11 @@ export function themeFromPageVars(display?: string): ArtifactsTileTheme {
 
 type Query = Record<string, string | undefined>
 interface Ctx { t: ArtifactsTileTheme; base: string }
+/** On a phone: the rows a list shows (`n`, else PHONE_PAGE_SIZE). Rows from this index on are drawn for the desktop only. */
+interface Phone { limit: number }
+const cls = (...xs: (string | false | null | undefined)[]) => xs.filter(Boolean).join(' ')
+/** A row a phone does not show yet (past its Show more); the desktop shows it as before. */
+const pastPhone = (ph: Phone, i: number) => i >= ph.limit && 'max-lg:hidden'
 
 const DAY = 86_400_000
 const day = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '')
@@ -138,25 +148,32 @@ function goalWords(g: ArtifactGoal): string {
 const card = (t: ArtifactsTileTheme, flag = false) => ({ backgroundColor: t.card, boxShadow: `inset 0 0 0 1px ${flag ? t.danger : t.hairline}` })
 const linkStyle = (t: ArtifactsTileTheme) => ({ color: t.ink, textDecoration: 'underline', textDecorationColor: t.hairline, textUnderlineOffset: '3px' })
 
-function Counts({ c, data, now }: { c: Ctx; data: Sends; now: Date }) {
+function Counts({ c, data, q, now }: { c: Ctx; data: Sends; q: Query; now: Date }) {
   const { t } = c
   const n = countsOf(data.sends, now)
   const box = 'rounded-2xl px-4 py-3'
+  // Opened and waiting are links to the list behind them; drawn as before, so a desktop sees no change.
+  const asLink = { textDecoration: 'none' }
   return (
     <div data-view="counts" className="grid grid-cols-3 gap-2 px-5 pb-4">
       <p data-count="pages" className={box} style={card(t)}><span className="block text-2xl" style={{ ...t.heading, color: t.ink }}>{n.pagesSentThisWeek}</span><span className="text-xs" style={{ color: t.muted }}>{n.pagesSentThisWeek === 1 ? 'page' : 'pages'} sent this week</span></p>
-      <p data-count="opened" className={box} style={card(t)}><span className="block text-2xl" style={{ ...t.heading, color: t.ink }}>{`${n.openedThisWeek} of ${n.sentThisWeek}`}</span><span className="text-xs" style={{ color: t.muted }}>{`opened · ${n.succeededThisWeek} met its goal`}</span></p>
-      <p data-count="waiting" className={box} style={card(t, n.waiting > 0)}><span className="block text-2xl" style={{ ...t.heading, color: n.waiting ? t.danger : t.ink }}>{n.waiting}</span><span className="text-xs" style={{ color: t.muted }}>waiting after {days(data.quietDays)}</span></p>
+      <Link data-count="opened" href={href(c, { ...q, view: 'outcomes' }, { tab: null, stage: null, n: null })} className={`block ${box}`} style={{ ...card(t), ...asLink }}><span className="block text-2xl" style={{ ...t.heading, color: t.ink }}>{`${n.openedThisWeek} of ${n.sentThisWeek}`}</span><span className="text-xs" style={{ color: t.muted }}>{`opened · ${n.succeededThisWeek} met its goal`}</span></Link>
+      <Link data-count="waiting" href={href(c, { ...q, view: undefined }, { tab: 'needs', stage: null, n: null })} className={`block ${box}`} style={{ ...card(t, n.waiting > 0), ...asLink }}><span className="block text-2xl" style={{ ...t.heading, color: n.waiting ? t.danger : t.ink }}>{n.waiting}</span><span className="text-xs" style={{ color: t.muted }}>waiting after {days(data.quietDays)}</span></Link>
     </div>
   )
 }
 
-function Sent({ c, e, now }: { c: Ctx; e: FeedEvent; now: Date }) {
+/** The phone's Show more under a list: the next PHONE_PAGE_SIZE rows, at `to`. Hidden from lg up. */
+function ShowMore({ c, to, className = 'mt-3 inline-block' }: { c: Ctx; to: string; className?: string }) {
+  return <Link data-show-more href={to} className={`${className} text-sm underline lg:hidden`} style={{ color: c.t.muted }}>Show more</Link>
+}
+
+function Sent({ c, e, now, rowClass }: { c: Ctx; e: FeedEvent; now: Date; rowClass?: string | false }) {
   const { t } = c
   const person = <Link href={personHref(c, e.personKey)} style={{ ...linkStyle(t), ...t.heading }}>{e.label}</Link>
   const page = <Link href={pageHref(c, e.pageId)} style={{ ...linkStyle(t), ...t.heading }}>{e.title}</Link>
   return (
-    <li data-event="sent" data-link-made={String(!!e.linkMade)} className="py-3" style={{ boxShadow: `inset 0 -1px 0 ${t.hairline}` }}>
+    <li data-event="sent" data-link-made={String(!!e.linkMade)} className={cls('py-3', rowClass)} style={{ boxShadow: `inset 0 -1px 0 ${t.hairline}` }}>
       <p className="text-[15px]" style={{ color: t.ink }}>
         {e.linkMade ? <>Link made for {person} to {page}</> : <>You {e.group ? 'shared' : 'sent'} {page} {e.group ? 'with' : 'to'} {person}</>}
       </p>
@@ -165,9 +182,9 @@ function Sent({ c, e, now }: { c: Ctx; e: FeedEvent; now: Date }) {
   )
 }
 
-function Event({ c, e, now }: { c: Ctx; e: FeedEvent; now: Date }) {
+function Event({ c, e, now, rowClass, needs }: { c: Ctx; e: FeedEvent; now: Date; rowClass?: string | false; needs?: boolean }) {
   const { t } = c
-  if (e.kind === 'sent') return <Sent c={c} e={e} now={now} />
+  if (e.kind === 'sent') return <Sent c={c} e={e} now={now} rowClass={rowClass} />
   const what = e.kind === 'opened' ? 'opened' : e.kind === 'clicked' ? `pressed “${e.cta}” on` : 'commented on'
   const more = e.kind === 'opened'
     ? [
@@ -177,7 +194,7 @@ function Event({ c, e, now }: { c: Ctx; e: FeedEvent; now: Date }) {
     ].filter(Boolean)
     : []
   return (
-    <li data-event={e.kind} className="py-3" style={{ boxShadow: `inset 0 -1px 0 ${t.hairline}` }}>
+    <li data-event={e.kind} data-needs={needs ? 'comment' : undefined} className={cls('py-3', rowClass)} style={{ boxShadow: `inset 0 -1px 0 ${t.hairline}` }}>
       <p className="text-[15px]" style={{ color: t.ink }}>
         <Link href={personHref(c, e.personKey)} style={{ ...linkStyle(t), ...t.heading }}>{e.label}</Link>{` ${what} `}
         <Link href={pageHref(c, e.pageId)} style={{ ...linkStyle(t), ...t.heading }}>{e.title}</Link>
@@ -188,7 +205,7 @@ function Event({ c, e, now }: { c: Ctx; e: FeedEvent; now: Date }) {
   )
 }
 
-function Feed({ c, data, f, q, now, className }: { c: Ctx; data: Sends; f: Filters; q: Query; now: Date; className: string }) {
+function Feed({ c, data, f, q, now, className, ph }: { c: Ctx; data: Sends; f: Filters; q: Query; now: Date; className: string; ph: Phone }) {
   const { t } = c
   const feed = activityFeed(data.sends, f, now)
   return (
@@ -196,9 +213,10 @@ function Feed({ c, data, f, q, now, className }: { c: Ctx; data: Sends; f: Filte
       <h2 className="text-xl" style={{ ...t.heading, color: t.ink }}>Activity</h2>
       <p className="text-xs" style={{ color: t.muted }}>{`The last ${FEED_DAYS} days, newest first`}</p>
       {feed.events.length ? (
-        <ul>{feed.events.map((e, i) => <Event key={`${e.kind}-${e.pageId}-${e.personKey}-${e.at}-${i}`} c={c} e={e} now={now} />)}</ul>
+        <ul>{feed.events.map((e, i) => <Event key={`${e.kind}-${e.pageId}-${e.personKey}-${e.at}-${i}`} c={c} e={e} now={now} rowClass={pastPhone(ph, i)} />)}</ul>
       ) : <p className="mt-3 text-sm" style={{ color: t.muted }}>Nothing opened or commented on here in the last {FEED_DAYS} days.</p>}
-      {feed.more && <Link data-more href={href(c, q, { n: String(f.limit + PAGE_SIZE), tab: null })} className="mt-3 inline-block text-sm underline" style={{ color: t.muted }}>Load more</Link>}
+      {(feed.more || feed.events.length > ph.limit) && <ShowMore c={c} to={href(c, q, { n: String(ph.limit + PHONE_PAGE_SIZE), tab: 'activity' })} />}
+      {feed.more && <Link data-more href={href(c, q, { n: String(f.limit + PAGE_SIZE), tab: null })} className="mt-3 hidden text-sm underline lg:inline-block" style={{ color: t.muted }}>Load more</Link>}
     </section>
   )
 }
@@ -225,6 +243,35 @@ function Waiting({ c, data, f, q, now, className }: { c: Ctx; data: Sends; f: Fi
         </ul>
       ) : <p className="mt-3 text-sm" style={{ color: t.muted }}>Nobody is waiting: everything sent has been opened, or was sent too recently to flag.</p>}
       {w.more && <Link data-more href={href(c, q, { n: String(f.limit + PAGE_SIZE), tab: 'waiting' })} className="mt-3 inline-block text-sm underline" style={{ color: t.muted }}>Load more</Link>}
+    </section>
+  )
+}
+
+/** The phone's first list: what is waiting on the owner (sends past quietDays) and the readers' recent comments. */
+function NeedsYou({ c, data, f, q, now, ph }: { c: Ctx; data: Sends; f: Filters; q: Query; now: Date; ph: Phone }) {
+  const { t } = c
+  const needs = needsYou(data.sends, f, now, ph.limit)
+  const row = (it: NeedsItem, i: number) => {
+    if (it.kind === 'comment') return <Event key={`c-${it.event.pageId}-${it.event.personKey}-${it.at}-${i}`} c={c} e={it.event} now={now} needs />
+    const s = it.send
+    return (
+      <li key={`w-${s.pageId}-${s.rid}`} data-needs="waiting" data-waiting-on={`${s.label}@${s.pageId}`} className="py-3" style={{ boxShadow: `inset 0 -1px 0 ${t.hairline}` }}>
+        <p className="text-[15px]" style={{ color: t.ink }}>
+          <Link href={personHref(c, s.personKey)} style={{ ...linkStyle(t), ...t.heading }}>{s.label}</Link>{' has not opened '}
+          <Link href={pageHref(c, s.pageId)} style={{ ...linkStyle(t), ...t.heading }}>{s.title}</Link>
+        </p>
+        <p className="mt-0.5 text-sm" style={{ color: t.danger }}>{`${s.sentAt ? 'sent' : 'link made'} ${day(s.sentFrom)}, ${ago(s.sentFrom, now)}`}</p>
+      </li>
+    )
+  }
+  return (
+    <section data-view="needs" className="px-5 lg:hidden" aria-label="Needs you">
+      <h2 className="text-xl" style={{ ...t.heading, color: t.ink }}>Needs you</h2>
+      <p className="text-xs" style={{ color: t.muted }}>{`Not opened after ${days(data.quietDays)}, and comments from the last ${FEED_DAYS} days, newest first`}</p>
+      {needs.items.length
+        ? <ul>{needs.items.map(row)}</ul>
+        : <p className="mt-3 text-sm" style={{ color: t.muted }}>Nothing needs you. Everything sent has been opened or is too recent to flag, and nobody has commented lately.</p>}
+      {needs.more && <ShowMore c={c} to={href(c, q, { n: String(ph.limit + PHONE_PAGE_SIZE), tab: 'needs' })} />}
     </section>
   )
 }
@@ -273,13 +320,13 @@ function FilterForm({ c, data, q }: { c: Ctx; data: Sends; q: Query }) {
   )
 }
 
-function BoardCard({ c, s, quietDays, now, draft }: { c: Ctx; s: Send; quietDays: number; now: Date; draft: string | null }) {
+function BoardCard({ c, s, quietDays, now, draft, rowClass }: { c: Ctx; s: Send; quietDays: number; now: Date; draft: string | null; rowClass?: string | false }) {
   const { t } = c
   const heatBorder = [t.hairline, t.accentSoft, t.danger, t.danger] as const
   const heat = s.outcome === 'not-opened' ? heatOf(s.daysSinceSent, quietDays) : 0
   const hot = heat >= 2
   return (
-    <li data-card={`${s.label}@${s.pageId}`} data-succeeded={String(s.succeeded)} data-heat={heat} className="rounded-xl px-3 py-2.5"
+    <li data-card={`${s.label}@${s.pageId}`} data-succeeded={String(s.succeeded)} data-heat={heat} className={cls('rounded-xl px-3 py-2.5', rowClass)}
       style={{ backgroundColor: heat === 3 ? `color-mix(in srgb, ${t.danger} 8%, transparent)` : t.card, boxShadow: `inset 0 0 0 ${hot ? 2 : 1}px ${s.outcome === 'not-opened' ? heatBorder[heat] : s.succeeded ? t.primary : t.hairline}` }}>
       <div className="flex items-baseline justify-between gap-2">
         <Link href={personHref(c, s.personKey)} className="text-base leading-snug" style={{ ...linkStyle(t), ...t.heading }}>{s.label}</Link>
@@ -298,7 +345,7 @@ function BoardCard({ c, s, quietDays, now, draft }: { c: Ctx; s: Send; quietDays
   )
 }
 
-function Board({ c, data, f, q, now, draftHref }: { c: Ctx; data: Sends; f: Filters; q: Query; now: Date; draftHref?: (s: Send) => string | null }) {
+function Board({ c, data, f, q, now, draftHref, ph }: { c: Ctx; data: Sends; f: Filters; q: Query; now: Date; draftHref?: (s: Send) => string | null; ph: Phone }) {
   const { t } = c
   const columns = outcomeBoard(data.sends, f)
   const stage = (OUTCOMES as readonly string[]).includes(q.stage ?? '') ? q.stage as Outcome : 'not-opened'
@@ -322,9 +369,10 @@ function Board({ c, data, f, q, now, draftHref }: { c: Ctx; data: Sends; f: Filt
               <p data-suggestion className="mt-1 text-xs" style={{ color: t.ink }}>{SUGGESTION[col.outcome](data.quietDays)}</p>
             </header>
             {col.sends.length
-              ? <ul className="flex flex-col gap-2">{col.sends.map((s) => <BoardCard key={`${s.pageId}-${s.rid}`} c={c} s={s} quietDays={data.quietDays} now={now} draft={draftHref ? draftHref(s) : null} />)}</ul>
+              ? <ul className="flex flex-col gap-2">{col.sends.map((s, i) => <BoardCard key={`${s.pageId}-${s.rid}`} c={c} s={s} quietDays={data.quietDays} now={now} draft={draftHref ? draftHref(s) : null} rowClass={pastPhone(ph, i)} />)}</ul>
               : <p className="px-1 text-sm" style={{ color: t.muted }}>None here.</p>}
-            {col.more && <Link data-more href={href(c, q, { n: String(f.limit + PAGE_SIZE) })} className="mt-2 px-1 text-sm underline" style={{ color: t.muted }}>Load more</Link>}
+            {(col.more || col.sends.length > ph.limit) && <ShowMore c={c} to={href(c, q, { n: String(ph.limit + PHONE_PAGE_SIZE), stage: q.stage ?? null })} className="mt-2 px-1" />}
+            {col.more && <Link data-more href={href(c, q, { n: String(f.limit + PAGE_SIZE) })} className="mt-2 hidden px-1 text-sm underline lg:block" style={{ color: t.muted }}>Load more</Link>}
           </section>
         ))}
       </div>
@@ -354,17 +402,29 @@ export function ReaderCard({ s, theme, children }: { s: Send; theme: ArtifactsTi
   return <SendCard c={{ t: theme, base: '' }} s={s} title={s.label} attr={{ 'data-reader': s.label }}>{children}</SendCard>
 }
 
-function PageList({ c, pages, sends }: { c: Ctx; pages: HubPage[]; sends: readonly Send[] }) {
+function PageList({ c, pages, sends, q, ph, className }: { c: Ctx; pages: HubPage[]; sends: readonly Send[]; q: Query; ph: Phone; className: string }) {
   const { t } = c
   const withReaders = new Set(sends.map((s) => s.pageId))
+  const words = q.pq?.trim().slice(0, 100) || ''
   const sorted = [...pages].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id))
+    .filter((p) => !words || (p.title || p.id).toLowerCase().includes(words.toLowerCase()))
+  const total = pages.length === 1 ? '1 page' : `${pages.length} pages`
+  const fieldStyle = { backgroundColor: t.card, color: t.ink, boxShadow: `inset 0 0 0 1px ${t.hairline}` }
   return (
-    <section data-view="pages" className="mt-8 px-5" aria-label="Pages">
+    <section data-view="pages" className={className} aria-label="Pages">
       <h2 className="text-xl" style={{ ...t.heading, color: t.ink }}>Pages</h2>
-      <p className="text-xs" style={{ color: t.muted }}>{`Every page on this hub, ${pages.length === 1 ? '1 page' : `${pages.length} pages`}, last changed first`}</p>
+      {/* The phone's title search: a GET form, so the server filters and the address can be shared. */}
+      <form data-page-search method="get" action={c.base} className="mt-2 mb-1 flex gap-2 lg:hidden" role="search">
+        <input type="hidden" name="tab" value="pages" />
+        <input name="pq" type="search" defaultValue={words} placeholder="Search page titles" aria-label="Search page titles" className="block w-full min-w-0 rounded-xl px-3 py-2" style={fieldStyle} />
+        <button type="submit" className="shrink-0 rounded-full px-4 py-2 text-sm" style={{ backgroundColor: t.primary, color: t.onPrimary }}>Find</button>
+      </form>
+      <p className="text-xs" style={{ color: t.muted }}>{words
+        ? `${sorted.length === 1 ? '1 page' : `${sorted.length} pages`} of ${total} with “${words}” in the title, last changed first`
+        : `Every page on this hub, ${total}, last changed first`}</p>
       {sorted.length ? (
-        <ul className="lg:grid lg:grid-cols-2 lg:gap-x-8">{sorted.map((p) => (
-          <li key={p.id} data-hub-page={p.id} className="py-3" style={{ boxShadow: `inset 0 -1px 0 ${t.hairline}` }}>
+        <ul className="lg:grid lg:grid-cols-2 lg:gap-x-8">{sorted.map((p, i) => (
+          <li key={p.id} data-hub-page={p.id} className={cls('py-3', pastPhone(ph, i))} style={{ boxShadow: `inset 0 -1px 0 ${t.hairline}` }}>
             <p className="text-[15px]" style={{ color: t.ink }}>
               <a href={p.url} style={{ ...linkStyle(t), ...t.heading, overflowWrap: 'anywhere' }}>{p.title || p.id}</a>
             </p>
@@ -378,7 +438,8 @@ function PageList({ c, pages, sends }: { c: Ctx; pages: HubPage[]; sends: readon
             </p>
           </li>
         ))}</ul>
-      ) : <p className="mt-3 text-sm" style={{ color: t.muted }}>Nothing is published here yet.</p>}
+      ) : <p className="mt-3 text-sm" style={{ color: t.muted }}>{words ? `No page title has “${words}” in it.` : 'Nothing is published here yet.'}</p>}
+      {sorted.length > ph.limit && <ShowMore c={c} to={href(c, q, { tab: 'pages', pq: words || null, n: String(ph.limit + PHONE_PAGE_SIZE) })} />}
     </section>
   )
 }
@@ -428,20 +489,27 @@ export function ArtifactsTile({ data, query: q, title, theme, back, notFound, ba
 
   const f = parseFilters(q)
   const outcomes = q.view === 'outcomes'
-  const onWaiting = q.tab === 'waiting'
+  // The phone's list. `tab=waiting` is the old Waiting on tab's address, now part of Needs you.
+  const phoneTab = outcomes ? 'outcomes' : q.tab === 'activity' ? 'activity' : q.tab === 'pages' && pages ? 'pages' : 'needs'
+  const ph: Phone = { limit: /^\d+$/.test(q.n ?? '') && Number(q.n) >= 1 && Number(q.n) <= 1000 ? f.limit : PHONE_PAGE_SIZE }
+  const phoneOnly = (on: boolean) => (on ? '' : 'hidden lg:block')
   const tab = (on: boolean) => ({ backgroundColor: on ? t.primary : t.card, color: on ? t.onPrimary : t.ink, boxShadow: `inset 0 0 0 1px ${on ? t.primary : t.hairline}` })
-  const waitingCount = waitingOn(data.sends, f, Infinity).items.length
+  const needsCount = needsYou(data.sends, f, now, 0).total
+  const home = { ...q, view: undefined }
   return (
     <Shell c={c} title={title} back={homeHref} fetchedAt={data.fetchedAt} backRow={back}>
-      <Counts c={c} data={data} now={now} />
-      {/* ONE row of tabs (Gary, 2026-11-09): two rows that both began with Activity read as a bug. Waiting on is a
-          tab on a phone only; from lg up it is its own column beside the feed. */}
+      <Counts c={c} data={data} q={q} now={now} />
+      {/* ONE row of tabs (Gary, 2026-11-09): two rows that both began with Activity read as a bug. On a phone the row is
+          Needs you, Activity, Pages and Outcomes, one list each; from lg up it is Activity and Outcomes as before, and
+          the phone's Activity is a link of its own so each size marks its own current tab. */}
       <nav data-view-switch className="flex flex-wrap gap-2 px-5 pb-3 text-sm" aria-label="View">
-        <Link href={href(c, { ...q, view: undefined }, { tab: null, stage: null, n: null })} aria-current={!outcomes && !onWaiting ? 'page' : undefined} className="rounded-full px-3 py-1.5" style={tab(!outcomes && !onWaiting)}>Activity</Link>
-        <Link href={href(c, { ...q, view: undefined }, { tab: 'waiting', stage: null, n: null })} aria-current={!outcomes && onWaiting ? 'page' : undefined} className="rounded-full px-3 py-1.5 lg:hidden" style={tab(!outcomes && onWaiting)}>{`Waiting on${waitingCount ? ` (${waitingCount})` : ''}`}</Link>
+        <Link href={href(c, home, { tab: 'needs', stage: null, n: null })} aria-current={phoneTab === 'needs' ? 'page' : undefined} className="rounded-full px-3 py-1.5 lg:hidden" style={tab(phoneTab === 'needs')}>{`Needs you${needsCount ? ` (${needsCount})` : ''}`}</Link>
+        <Link href={href(c, home, { tab: 'activity', stage: null, n: null })} aria-current={phoneTab === 'activity' ? 'page' : undefined} className="rounded-full px-3 py-1.5 lg:hidden" style={tab(phoneTab === 'activity')}>Activity</Link>
+        <Link href={href(c, home, { tab: null, stage: null, n: null })} aria-current={!outcomes ? 'page' : undefined} className="hidden rounded-full px-3 py-1.5 lg:inline-block" style={tab(!outcomes)}>Activity</Link>
+        {pages && <Link href={href(c, home, { tab: 'pages', stage: null, n: null })} aria-current={phoneTab === 'pages' ? 'page' : undefined} className="rounded-full px-3 py-1.5 lg:hidden" style={tab(phoneTab === 'pages')}>Pages</Link>}
         <Link href={href(c, { ...q, view: 'outcomes' }, { tab: null, n: null })} aria-current={outcomes ? 'page' : undefined} className="rounded-full px-3 py-1.5" style={tab(outcomes)}>Outcomes</Link>
       </nav>
-      <details className="mx-5 mb-3 rounded-2xl px-4 py-2 lg:hidden" style={card(t)} open={FILTER_KEYS.some((k) => q[k]) || undefined}>
+      <details className={cls('mx-5 mb-3 rounded-2xl px-4 py-2 lg:hidden', phoneTab === 'pages' && 'hidden')} style={card(t)} open={FILTER_KEYS.some((k) => q[k]) || undefined}>
         <summary className="text-sm" style={{ color: t.ink }}>Search and filters</summary>
         <div className="pb-2"><FilterForm c={c} data={data} q={q} /></div>
       </details>
@@ -450,14 +518,15 @@ export function ArtifactsTile({ data, query: q, title, theme, back, notFound, ba
           <h2 className="text-xl" style={{ ...t.heading, color: t.ink }}>Filters</h2>
           <FilterForm c={c} data={data} q={q} />
         </aside>
-        {outcomes ? <Board c={c} data={data} f={f} q={q} now={now} draftHref={draftHref} /> : (
+        {outcomes ? <Board c={c} data={data} f={f} q={q} now={now} draftHref={draftHref} ph={ph} /> : (
           <>
-            <Feed c={c} data={data} f={f} q={q} now={now} className={onWaiting ? 'hidden lg:block' : ''} />
-            <Waiting c={c} data={data} f={f} q={q} now={now} className={onWaiting ? '' : 'hidden lg:block'} />
+            <Feed c={c} data={data} f={f} q={q} now={now} className={phoneOnly(phoneTab === 'activity')} ph={ph} />
+            <Waiting c={c} data={data} f={f} q={q} now={now} className="hidden lg:block" />
           </>
         )}
       </div>
-      {pages ? <PageList c={c} pages={pages} sends={data.sends} /> : null}
+      {phoneTab === 'needs' && <NeedsYou c={c} data={data} f={f} q={q} now={now} ph={ph} />}
+      {pages ? <PageList c={c} pages={pages} sends={data.sends} q={q} ph={ph} className={cls(phoneOnly(phoneTab === 'pages'), 'px-5 lg:mt-8')} /> : null}
     </Shell>
   )
 }

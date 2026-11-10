@@ -57,6 +57,22 @@ describe('HubHome', () => {
     expect(d.querySelector('[data-hub-page="note2345"] a[href="https://artifacts.example.com/note2345"]')).not.toBeNull()
     expect(d.querySelector('[data-hub-page="plan2345"]')!.textContent).toContain('2 reader links')
   })
+  it('puts Pages behind its own phone tab, with a search box that filters by title, and keeps the list under the columns on a desktop', async () => {
+    const onPhone = (el: Element) => { for (let e: Element | null = el; e; e = e.parentElement) { const c = (e.getAttribute('class') ?? '').split(/\s+/); if (c.includes('hidden') || c.includes('max-lg:hidden')) return false } return true }
+    const home = (await html(owner))!
+    // The phone opens on Needs you; Pages is a tab, not a list under the feed.
+    expect(onPhone(home.querySelector('[data-view="pages"]')!)).toBe(false)
+    expect([...home.querySelectorAll('nav[data-view-switch] a')].filter(onPhone).map((a) => a.textContent)).toEqual(['Needs you (1)', 'Activity', 'Pages', 'Outcomes'])
+    const tab = (await html(owner, { tab: 'pages' }))!
+    expect(onPhone(tab.querySelector('[data-view="pages"]')!)).toBe(true)
+    expect(onPhone(tab.querySelector('[data-view="needs"]') ?? tab.createElement('i'))).toBe(tab.querySelector('[data-view="needs"]') === null)
+    const form = tab.querySelector('[data-view="pages"] form[data-page-search]')!
+    expect(form.getAttribute('method')).toBe('get')
+    expect(form.querySelector('input[name="tab"]')!.getAttribute('value')).toBe('pages')
+    const found = (await html(owner, { tab: 'pages', pq: 'Broad' }))!
+    expect([...found.querySelectorAll('[data-hub-page]')].map((e) => e.getAttribute('data-hub-page'))).toEqual(['cast2345'])
+    expect((found.querySelector('form[data-page-search] input[name="pq"]') as HTMLInputElement).getAttribute('value')).toBe('Broad')
+  })
   it('an admin gets it too, and ?p= opens one page\'s readers on the home', async () => {
     const d = (await html(admin, { p: 'plan2345' }))!
     expect([...d.querySelectorAll('[data-reader]')].map((e) => e.getAttribute('data-reader'))).toEqual(['Kim', 'Lee'])

@@ -32,6 +32,8 @@ export const LOOKBACK_DAYS = 90
 export const MAX_PAGES = 60
 /** Lines on one screen of the feed or of Waiting on, until "load more". */
 export const PAGE_SIZE = 30
+/** Lines of one list on a phone (below Tailwind's lg), until "show more" adds this many again. */
+export const PHONE_PAGE_SIZE = 10
 
 /** The hub's stores this tile reads, and only the read methods of each. */
 export interface HubStores {
@@ -186,6 +188,26 @@ export function activityFeed(sends: readonly Send[], f: Filters, now: Date = new
 export function waitingOn(sends: readonly Send[], f: Filters, limit = f.limit): { items: Send[]; more: boolean } {
   const all = filterSends(sends, f).filter((s) => s.quiet).sort((a, b) => b.sentFrom.localeCompare(a.sentFrom))
   return { items: all.slice(0, limit), more: all.length > limit }
+}
+
+/** One line of Needs you: a send still waiting, or a reader's comment from the last FEED_DAYS. */
+export type NeedsItem = { kind: 'waiting'; at: string; send: Send } | { kind: 'comment'; at: string; event: FeedEvent }
+
+/** Needs you, the phone's first list: the sends waiting (as waitingOn) and the readers' comments of the last FEED_DAYS,
+ *  newest first, the first `limit` of them. The module records no reply to a comment, so a comment stays here until it
+ *  ages out of the window. */
+export function needsYou(sends: readonly Send[], f: Filters, now: Date = new Date(), limit = f.limit): { items: NeedsItem[]; more: boolean; total: number } {
+  const since = new Date(now.getTime() - FEED_DAYS * DAY).toISOString()
+  const all: NeedsItem[] = []
+  for (const s of filterSends(sends, f)) {
+    if (s.quiet) all.push({ kind: 'waiting', at: s.sentFrom, send: s })
+    for (const c of s.comments) {
+      if (c.at < since) continue
+      all.push({ kind: 'comment', at: c.at, event: { kind: 'commented', at: c.at, pageId: s.pageId, title: s.title, url: s.url, personKey: s.personKey, label: s.label, text: c.text } })
+    }
+  }
+  all.sort((a, b) => b.at.localeCompare(a.at) || (a.kind === b.kind ? 0 : a.kind === 'comment' ? -1 : 1))
+  return { items: all.slice(0, limit), more: all.length > limit, total: all.length }
 }
 
 /** The counts on top: pages sent in the last 7 days and their sends, how many of those were opened, and all waiting. */
