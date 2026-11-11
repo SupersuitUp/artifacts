@@ -6,11 +6,16 @@
 //
 //   npx -p @supersuit/artifacts supersuit-transcript-fence note.m4a [--language en] [--model M] [--gap 1.5] [--body]
 //
+// Exit codes: 0 the fence is printed; 1 the transcriber failed or wrote nothing; 2 usage, or no such file;
+// 3 no local transcriber; 4 the transcriber heard no words (every line it wrote was made up over noise or silence).
+// Each line dropped as made up is printed to stderr ("dropped a made-up line at 8.64 s: <words>"), so it can be checked.
+//
 // Correct any word afterwards (a name, a phrase in another language); keep its two times.
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, readdirSync, rmSync, existsSync } from 'node:fs'
+import { mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { transcriptFenceFromWords, wordsFromWhisperJson } from '../artifacts/voice-note.js'
 
 const USAGE = 'usage: supersuit-transcript-fence <audio file> [--language en] [--model <whisper model>] [--gap <seconds>] [--body]'
@@ -20,8 +25,33 @@ function arg(args: string[], name: string): string | undefined {
   return i >= 0 ? args[i + 1] : undefined
 }
 
-function has(cmd: string): boolean {
-  return spawnSync('sh', ['-c', `command -v ${cmd}`], { stdio: 'ignore' }).status === 0
+/** Whether `cmd` is on PATH: `where` on Windows (which has no sh), `command -v` elsewhere. */
+export function findCommand(cmd: string, platform: NodeJS.Platform = process.platform, run: typeof spawnSync = spawnSync): boolean {
+  if (!/^[A-Za-z0-9_.-]+$/.test(cmd)) return false
+  const r = platform === 'win32' ? run('where', [cmd], { stdio: 'ignore' }) : run('sh', ['-c', `command -v ${cmd}`], { stdio: 'ignore' })
+  return r.status === 0
+}
+
+/** The transcriber's arguments. Two of Whisper's own options keep a long recording honest: words are not carried from
+ *  one 30-second window into the next (that is how one line gets repeated forty times), and a line made up inside a
+ *  silence longer than two seconds is skipped. Measured on a five-minute take, 2026-11-11 (transcript-fence.test.ts). */
+export function transcriberArgs(cmd: 'mlx_whisper' | 'whisper', path: string, out: string, model: string, language: string | undefined): string[] {
+  const lang = language ? ['--language', language] : []
+  if (cmd === 'mlx_whisper') return [path, '--word-timestamps', 'True', '-f', 'json', '-o', out, '--model', model, '--condition-on-previous-text', 'False', '--hallucination-silence-threshold', '2', ...lang]
+  return [path, '--word_timestamps', 'True', '--output_format', 'json', '--output_dir', out, '--model', model, '--condition_on_previous_text', 'False', '--hallucination_silence_threshold', '2', ...lang]
+}
+
+/** Exit 4: the recording held no words (distinct from 1, a transcriber that failed), so a caller never matches text. */
+export const NO_WORDS_EXIT = 4
+
+/** The whole result for one whisper JSON: the exit code, what goes to stdout, and what goes to stderr (one line for
+ *  each segment dropped as made up, then "heard no words" when nothing is left). */
+export function fenceFromWhisper(json: unknown, opts: { gap: number; body: boolean }): { code: number; stdout: string; stderr: string } {
+  let stderr = ''
+  const words = wordsFromWhisperJson(json, { onDrop: (at, text) => { stderr += `dropped a made-up line at ${at.toFixed(2)} s: ${text}\n` } })
+  const body = transcriptFenceFromWords(words, { paragraphGap: opts.gap })
+  if (!body) return { code: NO_WORDS_EXIT, stdout: '', stderr: stderr + 'the transcriber heard no words\n' }
+  return { code: 0, stdout: opts.body ? body : '```transcript\n' + body + '```\n', stderr }
 }
 
 function main(argv: string[]): number {
@@ -41,12 +71,12 @@ function main(argv: string[]): number {
   const out = mkdtempSync(join(tmpdir(), 'transcript-fence-'))
   try {
     let r
-    if (has('mlx_whisper')) {
+    if (findCommand('mlx_whisper')) {
       const model = arg(args, '--model') ?? 'mlx-community/whisper-large-v3-turbo'
-      r = spawnSync('mlx_whisper', [path, '--word-timestamps', 'True', '-f', 'json', '-o', out, '--model', model, ...(language ? ['--language', language] : [])], { stdio: ['ignore', 'ignore', 'inherit'] })
-    } else if (has('whisper')) {
+      r = spawnSync('mlx_whisper', transcriberArgs('mlx_whisper', path, out, model, language), { stdio: ['ignore', 'ignore', 'inherit'] })
+    } else if (findCommand('whisper')) {
       const model = arg(args, '--model') ?? 'turbo'
-      r = spawnSync('whisper', [path, '--word_timestamps', 'True', '--output_format', 'json', '--output_dir', out, '--model', model, ...(language ? ['--language', language] : [])], { stdio: ['ignore', 'ignore', 'inherit'] })
+      r = spawnSync('whisper', transcriberArgs('whisper', path, out, model, language), { stdio: ['ignore', 'ignore', 'inherit'] })
     } else {
       process.stderr.write('no local transcriber found: install mlx-whisper (pip install mlx-whisper, Apple Silicon) or openai-whisper (pip install openai-whisper)\n')
       return 3
@@ -60,16 +90,15 @@ function main(argv: string[]): number {
       process.stderr.write('the transcriber wrote no JSON\n')
       return 1
     }
-    const body = transcriptFenceFromWords(wordsFromWhisperJson(JSON.parse(readFileSync(join(out, json), 'utf8'))), { paragraphGap: gap })
-    if (!body) {
-      process.stderr.write('the transcriber heard no words\n')
-      return 1
-    }
-    process.stdout.write(args.includes('--body') ? body : '```transcript\n' + body + '```\n')
-    return 0
+    const r2 = fenceFromWhisper(JSON.parse(readFileSync(join(out, json), 'utf8')), { gap, body: args.includes('--body') })
+    if (r2.stderr) process.stderr.write(r2.stderr)
+    if (r2.stdout) process.stdout.write(r2.stdout)
+    return r2.code
   } finally {
     rmSync(out, { recursive: true, force: true })
   }
 }
 
-process.exitCode = main(process.argv)
+// Run only when started as a program (the package's bin, or a vendored copy run with node), never on import.
+const entry = process.argv[1] ? (() => { try { return pathToFileURL(realpathSync(process.argv[1])).href } catch { return '' } })() : ''
+if (entry === import.meta.url) process.exitCode = main(process.argv)

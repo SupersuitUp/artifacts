@@ -138,3 +138,142 @@ describe('the voice note in a browser', () => {
     expect(button.getAttribute('aria-label')).toBe('Pause voice note: Robin, to the family')
   })
 })
+
+const REC = NOTE.replace('![Robin, to the family](https://cdn.example.com/x/hello.abc12345.m4a)', '![sound: The bug](https://cdn.example.com/x/take.abc12345.mp4)')
+
+describe('a recording on the page', () => {
+  it('draws a video above its words: inline, nothing fetched beyond its size, no native bar, no autoplay', () => {
+    const doc = new DOMParser().parseFromString(html(REC), 'text/html')
+    const note = doc.querySelector('[data-artifact-voicenote]')!
+    const video = note.querySelector('video')!
+    expect(note.querySelector('audio')).toBeNull()
+    expect(video.getAttribute('src')).toBe('https://cdn.example.com/x/take.abc12345.mp4')
+    expect(video.getAttribute('data-artifact-media')).toBe('take.abc12345.mp4')
+    expect(video.getAttribute('preload')).toBe('metadata')
+    expect(video.hasAttribute('playsinline')).toBe(true)
+    expect(video.hasAttribute('controls')).toBe(false)
+    expect(video.hasAttribute('autoplay')).toBe(false)
+    expect(note.textContent).toContain('Recording')
+    expect(note.querySelector('button')!.getAttribute('aria-label')).toBe('Play recording: The bug')
+    expect([...note.querySelectorAll('[data-vn-at]')].map((b) => [b.getAttribute('data-vn-at'), b.textContent])).toEqual([['0', '0:00'], ['2', '0:02']])
+  })
+  // Regression guard: this passes before the change too; it pins that the audio note stays as it was.
+  it('an audio note has no time stamps, as before', () => {
+    expect(html(NOTE)).not.toContain('data-vn-at')
+  })
+})
+
+describe('a recording in a browser', () => {
+  let root: Root
+  let host: HTMLDivElement
+  let play: ReturnType<typeof vi.fn>
+  let pause: ReturnType<typeof vi.fn>
+  beforeEach(() => {
+    play = vi.fn(function (this: HTMLMediaElement) { this.dispatchEvent(new Event('play')); return Promise.resolve() })
+    pause = vi.fn()
+    Object.defineProperty(HTMLMediaElement.prototype, 'play', { configurable: true, value: play })
+    Object.defineProperty(HTMLMediaElement.prototype, 'pause', { configurable: true, value: pause })
+    host = document.createElement('div'); document.body.appendChild(host); root = createRoot(host)
+  })
+  afterEach(() => { act(() => root.unmount()); host.remove() })
+
+  it('a time stamp seeks to its paragraph and plays', () => {
+    act(() => root.render(<ArtifactMarkdown markdown={REC} />))
+    const video = host.querySelector('video')!
+    Object.defineProperty(video, 'readyState', { configurable: true, value: 4 })
+    act(() => { host.querySelector<HTMLButtonElement>('[data-vn-at="2"]')!.click() })
+    expect(video.currentTime).toBe(2)
+    expect(play).toHaveBeenCalled()
+  })
+  it('a click on the video toggles play', () => {
+    act(() => root.render(<ArtifactMarkdown markdown={REC} />))
+    act(() => { host.querySelector('video')!.click() })
+    expect(play).toHaveBeenCalledTimes(1)
+  })
+  // Regression guard: the audio path already paused others, so this passes before the change too.
+  it('starting it pauses a voice note already playing elsewhere on the page', () => {
+    const other = document.createElement('audio'); document.body.appendChild(other)
+    Object.defineProperty(other, 'paused', { configurable: true, value: false })
+    act(() => root.render(<ArtifactMarkdown markdown={REC} />))
+    act(() => { host.querySelector<HTMLButtonElement>('[data-artifact-voicenote] button')!.click() })
+    expect(pause.mock.instances).toContain(other)
+    other.remove()
+  })
+  // R10: the lit-word logic is shared with the audio note, so this can pass before the change; it guards the video path.
+  it('seeked inside one word, a recording lights exactly that word', () => {
+    act(() => root.render(<ArtifactMarkdown markdown={REC} />))
+    const video = host.querySelector('video')!
+    Object.defineProperty(video, 'readyState', { configurable: true, value: 4 })
+    act(() => { host.querySelector<HTMLButtonElement>('[data-vn-at="0"]')!.click() })
+    act(() => { video.currentTime = 1.2; video.dispatchEvent(new Event('seeked')) })
+    const lit = [...host.querySelectorAll('.vn-word-lit')]
+    expect(lit).toHaveLength(1)
+    expect(lit[0].textContent).toBe('hope')
+  })
+  it('starting a voice note pauses a recording playing elsewhere on the page', () => {
+    const other = document.createElement('video'); document.body.appendChild(other)
+    Object.defineProperty(other, 'paused', { configurable: true, value: false })
+    act(() => root.render(<ArtifactMarkdown markdown={NOTE} />))
+    act(() => { host.querySelector<HTMLButtonElement>('[data-artifact-voicenote] button')!.click() })
+    expect(pause.mock.instances).toContain(other)
+    other.remove()
+  })
+})
+
+// A five-minute screen recording (2026-11-11, "make sure the review page works for multi minute videos"): sixty
+// paragraphs of words, one of them an address with no spaces. A late paragraph seeks and lights, and no word can push
+// the page wider than a phone.
+describe('a five-minute recording', () => {
+  const lines: string[] = []
+  for (let p = 0; p < 60; p++) {
+    if (p) lines.push('')
+    for (let w = 0; w < 12; w++) {
+      const s = p * 5 + w * 0.3
+      const word = p === 30 && w === 0 ? 'https://example.com/a/very/long/address/with/no/spaces/at/all/that/runs/on/and/on' : `p${p}w${w}`
+      lines.push(`${s.toFixed(2)} ${(s + 0.25).toFixed(2)} ${word}`)
+    }
+  }
+  const LONG = ['![sound: Five minutes](https://cdn.example.com/x/take.abc12345.mp4)', '', '```transcript', ...lines, '```'].join('\n')
+  let root: Root
+  let host: HTMLDivElement
+  beforeEach(() => {
+    Object.defineProperty(HTMLMediaElement.prototype, 'play', { configurable: true, value: vi.fn(function (this: HTMLMediaElement) { this.dispatchEvent(new Event('play')); return Promise.resolve() }) })
+    Object.defineProperty(HTMLMediaElement.prototype, 'pause', { configurable: true, value: vi.fn() })
+    host = document.createElement('div'); document.body.appendChild(host); root = createRoot(host)
+  })
+  afterEach(() => { act(() => root.unmount()); host.remove() })
+
+  it('the last paragraph seeks there and lights its first word', () => {
+    act(() => root.render(<ArtifactMarkdown markdown={LONG} />))
+    expect(host.querySelectorAll('[data-vn-paragraph]')).toHaveLength(60)
+    const video = host.querySelector('video')!
+    Object.defineProperty(video, 'readyState', { configurable: true, value: 4 })
+    act(() => { host.querySelector<HTMLButtonElement>('[data-vn-at="295"]')!.click() })
+    expect(video.currentTime).toBe(295)
+    act(() => { video.currentTime = 295.1; video.dispatchEvent(new Event('seeked')) })
+    expect([...host.querySelectorAll('.vn-word-lit')].map((w) => w.textContent)).toEqual(['p59w0'])
+    expect(host.querySelector('[data-vn-at="295"]')!.textContent).toBe('4:55')
+  })
+  it('a word with no spaces wraps inside a phone-wide page instead of pushing it wider', () => {
+    act(() => root.render(<ArtifactMarkdown markdown={LONG} />))
+    const words = host.querySelectorAll('[data-vn-paragraph] > span')
+    expect(words).toHaveLength(60)
+    // A flex item's text never shrinks below its longest word unless it may (min-w-0) and may break inside a word.
+    for (const w of words) expect(w.className).toMatch(/\bmin-w-0\b.*\[overflow-wrap:anywhere\]|\[overflow-wrap:anywhere\].*\bmin-w-0\b/)
+  })
+  // Measured 2026-11-11 in this test's browser: 926 ms a tick when every tick redrew the 3,000 words of a 20-minute
+  // take, 4 ms once the words are drawn once. The bound is wide so a slow machine never fails it; a redraw would.
+  it('twenty minutes of words: the clock ticking does not redraw them', () => {
+    const many: string[] = []
+    for (let p = 0; p < 250; p++) { if (p) many.push(''); for (let w = 0; w < 12; w++) { const s = p * 4.8 + w * 0.3; many.push(`${s.toFixed(2)} ${(s + 0.25).toFixed(2)} w${p}x${w}`) } }
+    act(() => root.render(<ArtifactMarkdown markdown={['![sound: Twenty minutes](https://cdn.example.com/x/take.abc12345.mp4)', '', '```transcript', ...many, '```'].join('\n')} />))
+    const video = host.querySelector('video')!
+    Object.defineProperty(video, 'readyState', { configurable: true, value: 4 })
+    act(() => { host.querySelector<HTMLButtonElement>('[data-vn-at="0"]')!.click() })
+    const t0 = performance.now()
+    for (let i = 1; i <= 20; i++) act(() => { video.currentTime = i * 50; video.dispatchEvent(new Event('timeupdate')) })
+    expect((performance.now() - t0) / 20).toBeLessThan(100)
+    // At 16:40 the word being said is the sixth of paragraph 209, and it alone is lit.
+    expect([...host.querySelectorAll('.vn-word-lit')].map((w) => w.textContent)).toEqual(['w208x5'])
+  })
+})

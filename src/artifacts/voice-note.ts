@@ -22,6 +22,11 @@ export const TRANSCRIPT_LANG = 'transcript'
 /** `![caption](x.mp3)` / `.m4a` is a clip the reader plays. */
 export const AUDIO_SRC = /\.(mp3|m4a)(?:[?#].*)?$/i
 export const isAudioSrc = (src: unknown): src is string => typeof src === 'string' && AUDIO_SRC.test(src)
+/** `![caption](x.mp4)` above a transcript is a recording: the same note, with its picture. */
+export const VIDEO_SRC = /\.mp4(?:[?#].*)?$/i
+export const isVideoSrc = (src: unknown): src is string => typeof src === 'string' && VIDEO_SRC.test(src)
+export type NoteKind = 'audio' | 'video'
+const SOUND = /^sound:\s*/i
 
 /** A page this long is a book, not a voice note. */
 export const MAX_TRANSCRIPT_WORDS = 20000
@@ -63,11 +68,18 @@ export function parseTranscriptFence(value: string, line: number):
   return { ok: true, paragraphs }
 }
 
-/** The audio image a paragraph holds and nothing else (whitespace aside), or null. */
-export function soleAudio(n: RootContent | undefined): Image | null {
+/** The audio or video image a paragraph holds and nothing else (whitespace aside), with its kind, or null. */
+export function soleMedia(n: RootContent | undefined): { image: Image; kind: NoteKind } | null {
   if (!n || n.type !== 'paragraph') return null
   const kids = (n as Paragraph).children.filter((c) => !(c.type === 'text' && !c.value.trim()))
-  return kids.length === 1 && kids[0].type === 'image' && isAudioSrc(kids[0].url) ? kids[0] : null
+  if (kids.length !== 1 || kids[0].type !== 'image') return null
+  const image = kids[0]
+  return isAudioSrc(image.url) ? { image, kind: 'audio' } : isVideoSrc(image.url) ? { image, kind: 'video' } : null
+}
+/** The audio image a paragraph holds and nothing else, or null. */
+export function soleAudio(n: RootContent | undefined): Image | null {
+  const m = soleMedia(n)
+  return m?.kind === 'audio' ? m.image : null
 }
 
 type Parent = { children: RootContent[] }
@@ -93,8 +105,8 @@ export function scanVoiceNotes(tree: Root, offset: number): { ok: true; count: n
     if (error) return
     const line = (fence.position?.start.line ?? 1) + offset
     if (fence.meta?.trim()) { error = `line ${line}: the transcript block takes no name`; return }
-    if (!soleAudio(above)) {
-      error = `line ${line}: a transcript belongs directly under its voice note: put an audio line like ![caption](note.m4a) right above it`
+    if (!soleMedia(above)) {
+      error = `line ${line}: a transcript belongs directly under its voice note: put an audio line like ![caption](note.m4a), or a video line like ![caption](take.mp4), right above it`
       return
     }
     const r = parseTranscriptFence(fence.value, line)
@@ -105,7 +117,7 @@ export function scanVoiceNotes(tree: Root, offset: number): { ok: true; count: n
 }
 
 /** What the renderer draws for one voice note. */
-export type VoiceNoteBlock = { src: string; label: string; paragraphs: TranscriptParagraphs }
+export type VoiceNoteBlock = { src: string; label: string; paragraphs: TranscriptParagraphs; kind: NoteKind }
 
 /** Replaces each audio line + transcript pair with one node the renderer draws as a voice note,
  *  keeping the audio line's position so its comment anchor (blocksOf) is unchanged. A pair that
@@ -117,10 +129,10 @@ export function remarkVoiceNotes(found: VoiceNoteBlock[]) {
       const out: RootContent[] = []
       for (const n of p.children) {
         const above = out[out.length - 1]
-        const audio = n.type === 'code' && n.lang === TRANSCRIPT_LANG && !n.meta?.trim() ? soleAudio(above) : null
-        const r = audio ? parseTranscriptFence((n as Code).value, 0) : null
-        if (audio && r?.ok) {
-          found.push({ src: audio.url, label: audio.alt ?? '', paragraphs: r.paragraphs })
+        const media = n.type === 'code' && n.lang === TRANSCRIPT_LANG && !n.meta?.trim() ? soleMedia(above) : null
+        const r = media ? parseTranscriptFence((n as Code).value, 0) : null
+        if (media && r?.ok) {
+          found.push({ src: media.image.url, label: (media.image.alt ?? '').replace(SOUND, ''), paragraphs: r.paragraphs, kind: media.kind })
           out[out.length - 1] = {
             type: 'artifactVoiceNote',
             position: above!.position,
@@ -160,19 +172,50 @@ export function transcriptFenceFromWords(words: TimedWord[], opts: { paragraphGa
   return lines.length ? lines.join('\n') + '\n' : ''
 }
 
+/** Whisper's own line for a failed decode (its `logprob_threshold`). */
+const FAILED_DECODE = -1
+/** Faster than anyone speaks: more words than this in each second of the segment. */
+const SQUEEZED_WORDS_PER_SECOND = 10
+/** Below this mean word probability (strictly), Whisper is unsure of the words it squeezed together. */
+const UNSURE = 0.7
+
+/** A segment Whisper made up over noise or silence. Either Whisper's own skip rule (a failed decode with
+ *  `no_speech_prob` over 0.6), or two or more words packed faster than speech that Whisper is not sure of (a failed
+ *  decode, or a mean word probability under 0.7): "I'm going to go to the next video." and "Thank you." in 0.16 s
+ *  over nine seconds of rumble, 2026-11-11. A low score alone, or fast words Whisper is sure of, are kept: that is
+ *  real mumbling, or real words with poor timing. */
+function madeUp(seg: Record<string, unknown>, words: TimedWord[], probs: number[]): boolean {
+  const lp = typeof seg.avg_logprob === 'number' ? seg.avg_logprob : 0
+  if (lp < FAILED_DECODE && typeof seg.no_speech_prob === 'number' && seg.no_speech_prob > 0.6) return true
+  if (words.length < 2) return false
+  const span = words[words.length - 1].end - words[0].start
+  if (words.length / Math.max(span, 0.01) <= SQUEEZED_WORDS_PER_SECOND) return false
+  const meanProb = probs.length === words.length ? probs.reduce((a, b) => a + b, 0) / probs.length : 1
+  return lp < FAILED_DECODE || meanProb < UNSURE
+}
+
 /** The timed words in a whisper JSON result (`segments[].words[]`, written by `mlx_whisper` or
- *  `whisper` with word timestamps on). Anything else in the file is ignored. */
-export function wordsFromWhisperJson(json: unknown): TimedWord[] {
+ *  `whisper` with word timestamps on), less any segment Whisper made up (see madeUp). Anything
+ *  else in the file is ignored. `onDrop` hears each dropped segment (where it starts, its words), so
+ *  a caller can show what was left out and a drop can be checked. */
+export function wordsFromWhisperJson(json: unknown, opts: { onDrop?: (at: number, text: string) => void } = {}): TimedWord[] {
   const segments = (json as { segments?: unknown })?.segments
   if (!Array.isArray(segments)) return []
   const out: TimedWord[] = []
   for (const seg of segments) {
     const words = (seg as { words?: unknown })?.words
     if (!Array.isArray(words)) continue
+    const timed: TimedWord[] = []
+    const probs: number[] = []
     for (const w of words) {
-      const { word, start, end } = (w ?? {}) as Record<string, unknown>
-      if (typeof word === 'string' && typeof start === 'number' && typeof end === 'number') out.push({ word, start, end })
+      const { word, start, end, probability } = (w ?? {}) as Record<string, unknown>
+      if (typeof word === 'string' && typeof start === 'number' && typeof end === 'number') {
+        timed.push({ word, start, end })
+        if (typeof probability === 'number') probs.push(probability)
+      }
     }
+    if (!madeUp(seg as Record<string, unknown>, timed, probs)) out.push(...timed)
+    else if (timed.length && opts.onDrop) opts.onDrop(timed[0].start, timed.map((w) => w.word.trim()).filter(Boolean).join(' '))
   }
   return out
 }

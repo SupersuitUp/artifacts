@@ -11,8 +11,13 @@
 //
 // iPhone Safari: no autoplay, `preload="none"` (nothing fetched until play), `playsinline`. A seek
 // asked for before the clip has loaded waits for its metadata, since Safari drops it otherwise.
-// `data-artifact-media` stays on the <audio>, so play tracking counts it like any clip.
-import { useEffect, useMemo, useRef, useState } from 'react'
+// `data-artifact-media` stays on the <audio> or <video>, so play tracking counts it like any clip.
+//
+// A note of kind "video" (a screen recording) draws the video above its words, with no native bar:
+// the same button and seek line drive it, a click on the picture toggles play, and each paragraph
+// opens with its time, a button that seeks there.
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject, type SyntheticEvent } from 'react'
+import type { NoteKind } from '../artifacts/voice-note.js'
 import { begunCount, litDeclarations, litWordIndex, type WordTiming } from '../reader/karaoke.js'
 
 const CSS =
@@ -28,7 +33,7 @@ function fmt(t: number) {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
 }
 
-export function VoiceNote({ src, label, media, paragraphs, block }: {
+export function VoiceNote({ src, label, media, paragraphs, block, kind = 'audio' }: {
   src: string
   label: string
   /** The stored file's name, for play tracking. */
@@ -36,8 +41,9 @@ export function VoiceNote({ src, label, media, paragraphs, block }: {
   paragraphs: WordTiming[][]
   /** The comment anchor the audio line carried. */
   block?: Record<string, string>
+  kind?: NoteKind
 }) {
-  const audioRef = useRef<HTMLAudioElement>(null)
+  const mediaRef = useRef<HTMLMediaElement | null>(null)
   const rootRef = useRef<HTMLDivElement>(null)
   const words = useMemo(() => paragraphs.flat(), [paragraphs])
   const spans = useRef<HTMLSpanElement[]>([])
@@ -51,7 +57,7 @@ export function VoiceNote({ src, label, media, paragraphs, block }: {
 
   /** Light the word at the audio's current time; touch only the spans whose state changed. */
   const sync = () => {
-    const a = audioRef.current
+    const a = mediaRef.current
     if (!a) return
     const now = a.currentTime
     setT(now)
@@ -89,21 +95,21 @@ export function VoiceNote({ src, label, media, paragraphs, block }: {
   })
 
   const play = () => {
-    const a = audioRef.current
+    const a = mediaRef.current
     if (!a) return
     start()
     // One voice at a time: the narration or another note stops when this one starts.
-    for (const other of Array.from(document.querySelectorAll('audio'))) if (other !== a && !other.paused) other.pause()
+    for (const other of Array.from(document.querySelectorAll<HTMLMediaElement>('audio, video'))) if (other !== a && !other.paused) other.pause()
     void a.play()?.catch?.(() => setPlaying(false))
   }
   const toggle = () => {
-    const a = audioRef.current
+    const a = mediaRef.current
     if (!a) return
     if (a.paused) play()
     else a.pause()
   }
   const seekTo = (s: number) => {
-    const a = audioRef.current
+    const a = mediaRef.current
     if (!a) return
     start()
     const go = () => {
@@ -114,8 +120,27 @@ export function VoiceNote({ src, label, media, paragraphs, block }: {
     else a.addEventListener('loadedmetadata', go, { once: true })
   }
 
-  let k = 0
-  spans.current = []
+  // What an <audio> and a <video> share: the same clock, the same lit word, the same duration.
+  const shared = {
+    ref: (el: HTMLMediaElement | null) => { mediaRef.current = el },
+    src,
+    playsInline: true,
+    'data-artifact-media': media,
+    onPlay: () => { start(); setPlaying(true) },
+    onPause: () => { setPlaying(false); sync() },
+    onEnded: () => { setPlaying(false); sync() },
+    onTimeUpdate: sync,
+    onSeeked: sync,
+    onLoadedMetadata: (e: SyntheticEvent<HTMLMediaElement>) => { const d = e.currentTarget.duration; if (Number.isFinite(d)) setDuration(d) },
+    onDurationChange: (e: SyntheticEvent<HTMLMediaElement>) => { const d = e.currentTarget.duration; if (Number.isFinite(d)) setDuration(d) },
+  }
+
+  // The words are drawn once, not on every tick of the clock: a twenty-minute take has thousands of them, and the
+  // clock ticks every frame while it plays. The lighting touches the spans directly (sync), so they need no redraw.
+  const actions = useRef({ seekTo, play })
+  actions.current = { seekTo, play }
+  const onWord = useCallback((s: number) => { actions.current.seekTo(s); actions.current.play() }, [])
+
   return (
     <div
       {...block}
@@ -126,27 +151,34 @@ export function VoiceNote({ src, label, media, paragraphs, block }: {
       className="my-8 rounded-xl border border-[color:var(--a-line)] bg-[color:var(--a-surface)] px-5 pb-5 pt-4 shadow-sm"
     >
       <style>{CSS}</style>
-      <audio
-        ref={audioRef}
-        src={src}
-        preload="none"
-        playsInline
-        data-artifact-media={media}
-        onPlay={() => { start(); setPlaying(true) }}
-        onPause={() => { setPlaying(false); sync() }}
-        onEnded={() => { setPlaying(false); sync() }}
-        onTimeUpdate={sync}
-        onSeeked={sync}
-        onLoadedMetadata={(e) => { const d = e.currentTarget.duration; if (Number.isFinite(d)) setDuration(d) }}
-        onDurationChange={(e) => { const d = e.currentTarget.duration; if (Number.isFinite(d)) setDuration(d) }}
-      />
-      <span className="block text-[11px] uppercase tracking-[0.2em] text-[color:var(--a-accent)]">Voice note</span>
+      {kind !== 'video' ? (
+        <audio {...shared} preload="none" />
+      ) : null}
+      <span className="block text-[11px] uppercase tracking-[0.2em] text-[color:var(--a-accent)]">{kind === 'video' ? 'Recording' : 'Voice note'}</span>
       {label ? <span className="mt-1 block font-serif text-lg italic text-[color:var(--a-strong)]">{label}</span> : null}
+      {kind === 'video' ? (
+        <div className="relative mt-3 overflow-hidden rounded-lg border border-[color:var(--a-line)] bg-black leading-[0]">
+          <video
+            {...shared}
+            preload="metadata"
+            onClick={toggle}
+            className="block h-auto w-full cursor-pointer"
+          />
+          <span
+            aria-hidden="true"
+            className={`pointer-events-none absolute inset-0 flex items-center justify-center bg-black/10 transition-opacity duration-200 ${playing ? 'opacity-0' : 'opacity-100'}`}
+          >
+            <span className="flex h-14 w-14 items-center justify-center rounded-full bg-[color:var(--a-accent)] text-[color:var(--a-on-accent)]">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
+            </span>
+          </span>
+        </div>
+      ) : null}
       <div className="mt-3 flex items-center gap-3">
         <button
           type="button"
           onClick={toggle}
-          aria-label={`${playing ? 'Pause' : 'Play'} voice note${label ? `: ${label}` : ''}`}
+          aria-label={`${playing ? 'Pause' : 'Play'} ${kind === 'video' ? 'recording' : 'voice note'}${label ? `: ${label}` : ''}`}
           className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[color:var(--a-accent)] text-[color:var(--a-on-accent)]"
         >
           {playing ? (
@@ -167,9 +199,36 @@ export function VoiceNote({ src, label, media, paragraphs, block }: {
         />
         <span className="shrink-0 font-mono text-xs tabular-nums text-[color:var(--a-muted)]">{fmt(t)} / {fmt(total)}</span>
       </div>
-      <div className="mt-4 leading-relaxed text-[color:var(--a-body)]">
-        {paragraphs.map((p, pi) => (
-          <p key={pi} data-vn-paragraph className="my-2">
+      <Words paragraphs={paragraphs} kind={kind} spans={spans} onWord={onWord} />
+    </div>
+  )
+}
+
+/** Every paragraph of the words, with a time stamp first on a recording. Memoized: drawn again only when the words change. */
+const Words = memo(function Words({ paragraphs, kind, spans, onWord }: {
+  paragraphs: WordTiming[][]
+  kind: NoteKind
+  spans: MutableRefObject<HTMLSpanElement[]>
+  onWord(s: number): void
+}) {
+  let k = 0
+  spans.current = []
+  return (
+    <div className="mt-4 leading-relaxed text-[color:var(--a-body)]">
+      {paragraphs.map((p, pi) => (
+        <p key={pi} data-vn-paragraph className={kind === 'video' ? 'my-2 flex items-baseline gap-[0.6rem]' : 'my-2'}>
+          {kind === 'video' && p.length ? (
+            <button
+              type="button"
+              data-vn-at={String(p[0].s)}
+              onClick={() => onWord(p[0].s)}
+              className="-ml-1 min-h-7 shrink-0 rounded px-1 py-[0.15rem] font-mono text-xs tabular-nums text-[color:var(--a-accent)] hover:bg-[color:var(--a-surface-strong)]"
+            >
+              {fmt(p[0].s)}
+            </button>
+          ) : null}
+          {/* min-w-0 and overflow-wrap: a word with no spaces (an address) wraps instead of widening a phone's page. */}
+          <span className="min-w-0 [overflow-wrap:anywhere]">
             {p.map((w, wi) => {
               const i = k++
               return (
@@ -178,16 +237,16 @@ export function VoiceNote({ src, label, media, paragraphs, block }: {
                   <span
                     ref={(el) => { if (el) spans.current[i] = el }}
                     className="vn-word"
-                    onClick={() => { seekTo(w.s); play() }}
+                    onClick={() => onWord(w.s)}
                   >
                     {w.w}
                   </span>
                 </span>
               )
             })}
-          </p>
-        ))}
-      </div>
+          </span>
+        </p>
+      ))}
     </div>
   )
-}
+})

@@ -256,7 +256,7 @@ function baseComponents(block: BlockAttr, figure?: FigureFor, checklists?: Check
     const v = at === undefined ? undefined : voiceNotes?.[Number(at)]
     // Any other div (a section body, a definition) is drawn as it would be with no override.
     if (!v) return <div {...props} />
-    return <VoiceNote src={artifactUrlTransform(v.src)} label={v.label} media={mediaName(v.src)} paragraphs={v.paragraphs} block={block(node) as Record<string, string>} />
+    return <VoiceNote src={artifactUrlTransform(v.src)} label={v.label} media={mediaName(v.src)} paragraphs={v.paragraphs} kind={v.kind} block={block(node) as Record<string, string>} />
   },
   p: ({ node, children }) => {
     // An image alone in its paragraph that the pack draws itself replaces the paragraph, so the

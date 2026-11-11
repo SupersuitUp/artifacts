@@ -2,6 +2,10 @@ import { describe, it, expect } from 'vitest'
 import { parseTranscriptFence, transcriptFenceFromWords, isAudioSrc, wordsFromWhisperJson } from './voice-note.js'
 import { parseArtifactSource } from './front-matter.js'
 import { blocksOf } from './widgets.js'
+import { remarkVoiceNotes, type VoiceNoteBlock } from './voice-note.js'
+import { unified } from 'unified'
+import remarkParse from 'remark-parse'
+import type { Root } from 'mdast'
 
 // A voice note is an ordinary audio line followed by a ```transcript fence of timed words. The
 // publisher needs no change; the fence is checked here, at publish, with the line the author sees.
@@ -104,5 +108,69 @@ describe('wordsFromWhisperJson', () => {
     const json = { text: 'x', segments: [{ words: [{ word: ' Hello', start: 0, end: 0.3, probability: 0.9 }, { word: 3 }] }, { words: [{ word: ' friend.', start: 0.62, end: 0.88 }] }, {}] }
     expect(wordsFromWhisperJson(json)).toEqual([{ word: ' Hello', start: 0, end: 0.3 }, { word: ' friend.', start: 0.62, end: 0.88 }])
     expect(wordsFromWhisperJson(null)).toEqual([])
+  })
+  // A real take (2026-11-11): nine seconds of low rumble and clicks, no voice. whisper-large-v3-turbo invented
+  // "I'm going to go to the next video." and squeezed all eight words into the last 0.16 s (avg_logprob -1.77).
+  // large-v3 heard nothing. A failed decode with words packed faster than anyone speaks is not words.
+  it('drops a failed decode whose words are squeezed together (a hallucination)', () => {
+    const squeezed = ["I'm", 'going', 'to', 'go', 'to', 'the', 'next', 'video.'].map((w, i) => ({ word: ' ' + w, start: 8.64 + i * 0.02, end: 8.66 + i * 0.02 }))
+    const json = { segments: [{ start: 8.64, end: 8.8, avg_logprob: -1.77, no_speech_prob: 1e-10, words: squeezed }] }
+    expect(wordsFromWhisperJson(json)).toEqual([])
+  })
+  it('drops a segment whisper itself calls silence (no_speech_prob over 0.6 and a failed decode)', () => {
+    const json = { segments: [{ start: 0, end: 2, avg_logprob: -1.2, no_speech_prob: 0.8, words: [{ word: ' Thank', start: 0.2, end: 0.6 }, { word: ' you.', start: 0.6, end: 1 }] }] }
+    expect(wordsFromWhisperJson(json)).toEqual([])
+  })
+  // The same take with the windows not carried over (transcript-fence's flags): "Thank you." in 0.16 s, its first word
+  // at probability 0.27. Squeezed words Whisper itself is unsure of are not words either.
+  // The boundary, pinned: every word collapsed onto one instant (a 0 s span, so squeezed by any rate) at a mean word
+  // probability of exactly 0.7. "Unsure" is strictly under 0.7, so these words are KEPT: at the threshold Whisper is as
+  // sure as the rule asks, and a real word with poor timing is worth more than a dropped one.
+  it('keeps collapsed words at a mean probability of exactly 0.7 (the unsure line is strictly below it)', () => {
+    const at = { word: ' Okay', start: 4, end: 4, probability: 0.7 }
+    const json = { segments: [{ start: 4, end: 4, avg_logprob: -0.5, no_speech_prob: 0, words: [at, { ...at, word: ' then.' }] }] }
+    expect(wordsFromWhisperJson(json)).toHaveLength(2)
+    const under = { segments: [{ ...json.segments[0], words: json.segments[0].words.map((w) => ({ ...w, probability: 0.69 })) }] }
+    expect(wordsFromWhisperJson(under)).toEqual([])
+  })
+  it('tells onDrop each segment it drops, with where it started and its words, so a drop can be checked', () => {
+    const squeezed = ["I'm", 'going', 'to', 'go'].map((w, i) => ({ word: ' ' + w, start: 8.64 + i * 0.02, end: 8.66 + i * 0.02 }))
+    const real = { start: 1, end: 2, avg_logprob: -0.2, no_speech_prob: 0, words: [{ word: ' Hello', start: 1, end: 1.4 }, { word: ' there.', start: 1.5, end: 2 }] }
+    const dropped: Array<[number, string]> = []
+    const out = wordsFromWhisperJson({ segments: [real, { start: 8.64, end: 8.8, avg_logprob: -1.77, no_speech_prob: 0, words: squeezed }] }, { onDrop: (at, text) => dropped.push([at, text]) })
+    expect(out).toHaveLength(2)
+    expect(dropped).toEqual([[8.64, "I'm going to go"]])
+  })
+  it('drops squeezed words Whisper is unsure of, even when the segment scores well', () => {
+    const json = { segments: [{ start: 8.64, end: 8.8, avg_logprob: -0.6, no_speech_prob: 0, words: [{ word: ' Thank', start: 8.64, end: 8.64, probability: 0.27 }, { word: ' you.', start: 8.64, end: 8.8, probability: 0.998 }] }] }
+    expect(wordsFromWhisperJson(json)).toEqual([])
+  })
+  it('keeps quiet or mumbled real speech: a low score alone, or fast words alone, is not enough', () => {
+    const slowLow = { start: 0, end: 2, avg_logprob: -1.3, no_speech_prob: 0.1, words: [{ word: ' um', start: 0, end: 0.5 }, { word: ' yes', start: 1, end: 1.5 }] }
+    const fastSure = { start: 3, end: 3.3, avg_logprob: -0.2, no_speech_prob: 0, words: ['a', 'b', 'c', 'd'].map((w, i) => ({ word: ' ' + w, start: 3 + i * 0.05, end: 3.05 + i * 0.05, probability: 0.95 })) }
+    expect(wordsFromWhisperJson({ segments: [slowLow, fastSure] })).toHaveLength(6)
+  })
+})
+
+describe('a recording: an mp4 line above its words', () => {
+  const REC = NOTE.replace('![Robin, to the family](hello.m4a)', '![sound: The bug](take.mp4)')
+  it('publishes like a voice note', () => {
+    expect(parseArtifactSource(page(REC)).ok).toBe(true)
+  })
+  // Regression guard (R10): this already passes before the change, so it cannot go red; it pins the refusal wording.
+  it('a picture above a transcript is still refused, with the same words an older page saw', () => {
+    const r = parseArtifactSource(page('![a photo](x.png)\n\n```transcript\n0 1 hi\n```'))
+    expect(r).toEqual({ ok: false, error: expect.stringMatching(/a transcript belongs directly under its voice note.*audio line/) })
+  })
+  it('the block says it is a video, and its label drops the sound: mark', () => {
+    const found: VoiceNoteBlock[] = []
+    const tree = unified().use(remarkParse).parse(REC) as Root
+    remarkVoiceNotes(found)()(tree)
+    expect(found).toEqual([{ src: 'take.mp4', label: 'The bug', kind: 'video', paragraphs: expect.any(Array) }])
+  })
+  it('an audio note says it is audio', () => {
+    const found: VoiceNoteBlock[] = []
+    remarkVoiceNotes(found)()(unified().use(remarkParse).parse(NOTE) as Root)
+    expect(found[0].kind).toBe('audio')
   })
 })
