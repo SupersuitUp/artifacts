@@ -31,10 +31,10 @@ host can tell whether it is affected (DETECTOR), what a host does about it (REME
 - REMEDY: none for a host that stays on Google; the template hub ships the page and the pass route. Turning Microsoft on is Supersuit's `hub.mjs apply ... --sign-in microsoft`.
 - TESTS: `src/artifacts/sign-in.test.ts`, `test/local-sign-in.test.ts`.
 
-**A spreadsheet file page shows its first sheet.** A `template: file` page for an `.xlsx`, `.xls`, `.csv` or `.ods` file draws the first sheet as a read-only table in the reader's browser, with SheetJS CE 0.20.3 (Apache-2.0), vendored in `vendor/sheetjs` with its `LICENSE` and SHA-256 hashes. It shows the first 500 rows by 50 columns. The browser does not fetch a file over 10 MB; the line and Download stay. The server never loads SheetJS and never reads the file: the reader's browser fetches the private signed URL, so the private bucket needs a CORS rule that allows `GET`, `HEAD` and `PUT` from the hub's origins. Supersuit's hub setup sets it.
+**A spreadsheet file page shows its first sheet.** A `template: file` page for an `.xlsx`, `.xls`, `.csv` or `.ods` file draws the first sheet as a read-only table in the reader's browser, with SheetJS CE 0.20.3 (Apache-2.0), vendored in `vendor/sheetjs` with its `LICENSE` and SHA-256 hashes. It shows the first 500 rows by 50 columns. The browser does not fetch a file over 10 MB; the line and Download stay. The server never loads SheetJS and never reads the file: the reader's browser fetches the private signed URL, so the private bucket's CORS rule must allow `GET` and `HEAD` as well as `PUT` (see the README). Supersuit's hub setup sets it.
 
 - DETECTOR: a hub that serves a spreadsheet file page; the table does not draw and Download still works when the private bucket has no CORS rule for the hub's origin.
-- REMEDY: add the CORS rule to the private bucket (see the README). Nothing else for a host.
+- REMEDY: set the one CORS rule on the private bucket (README, "private bucket" CORS rule); a spreadsheet page needs `GET` and `HEAD` in it as well as `PUT`. Supersuit's hub setup sets it. Nothing else for a host.
 - TESTS: `src/artifacts/sheet-view.test.tsx`, `src/routes/file-page.test.tsx`.
 
 ## 0.66.0 (2026-11-11)

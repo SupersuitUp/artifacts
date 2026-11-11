@@ -18,9 +18,9 @@ Firestore), and optionally `@google-cloud/storage >= 7` for uploaded files.
 ## A deployable hub host, in the package
 
 `template/hub/` is a complete Next.js app that serves one operator's pages from a Google Cloud
-project they own (Firebase App Hosting, Firestore, Cloud Storage, Google and Microsoft sign-in on their own
-domain), configured entirely by environment variables. It ships in the tarball so anyone can
-deploy a hub without access to any private repository. Supersuit's `create-or-update-my-artifact-hub`
+project they own (Firebase App Hosting, Firestore, Cloud Storage, Google and Microsoft sign-in on
+their own domain), configured entirely by environment variables. It ships in the tarball so anyone
+can deploy a hub without access to any private repository. Supersuit's `create-or-update-my-artifact-hub`
 copies it out of the package, runs `npm install` and deploys it; its own
 [README](./template/hub/README.md) lists every variable. The template pins this package's own
 version (`npm version` keeps it in step), and `npm run test:template` packs the package, installs
@@ -381,7 +381,7 @@ A file page has no body, and no `access`, `password`, `state`, `comments`, `voic
 
 `UPLOAD` and `PUT_ASSET` take the file's bytes with `?private=1&file=1`. They answer 409 for a page that is not a file page and 400 without `private=1`. Page assets of a markdown page keep the nine types.
 
-A spreadsheet (`.xlsx`, `.xls`, `.csv`, `.ods`) shows its first sheet as a read-only table, the first 500 rows by 50 columns. The reader's browser draws it with a vendored SheetJS CE (`vendor/sheetjs`); the server never loads it. The browser fetches the signed URL itself, so the private bucket needs a CORS rule that allows `GET`, `HEAD` and `PUT` from the hub's origins (Supersuit's hub setup sets it). A file over 10 MB is not drawn; Download stays.
+A spreadsheet (`.xlsx`, `.xls`, `.csv`, `.ods`) shows its first sheet as a read-only table, the first 500 rows by 50 columns. The reader's browser draws it with a vendored SheetJS CE (`vendor/sheetjs`); the server never loads it. The browser fetches the signed URL itself, so a spreadsheet page needs `GET` and `HEAD` in the private bucket's CORS rule, as well as `PUT`; see [the one rule](#private-bucket-cors) (Supersuit's hub setup sets it). A file over 10 MB is not drawn; Download stays.
 
 ## Asks (`asks:`)
 
@@ -960,13 +960,23 @@ type Ctx = { params: Promise<{ id: string }> }
 export function POST(request: NextRequest, ctx: Ctx) { return artifacts.TRANSCRIBE(request, ctx) }
 ```
 
-The PRIVATE bucket (`privateBucket`, where memos live since 0.38.0) needs CORS allowing `PUT`
-from the site's origin with the `content-type`, `cache-control` and `x-goog-content-length-range`
-headers, since the reader's browser uploads directly. Without it every recording fails in the
-browser (Safari says "Load failed") while the routes answer 201; the typed words still save, and
-the recording is kept on the reader's device as a note only they see. Check it with a preflight:
+<a id="private-bucket-cors"></a>
+The PRIVATE bucket (`privateBucket`) needs ONE CORS rule, because the reader's browser talks to it
+directly: it uploads voice memos with `PUT`, and it fetches a spreadsheet's signed URL with `GET`
+and `HEAD` to draw the table. The publisher's `?private=1` uploads need the same rule.
+
+- Origins: the hub's own origins.
+- Methods: `GET`, `HEAD` and `PUT`.
+- Response headers: `Content-Type`, `Content-Length`, `Content-Range`, `Accept-Ranges`, `cache-control` and `x-goog-content-length-range`.
+- `maxAgeSeconds`: 3600.
+
+Supersuit's hub setup sets this rule on the private bucket. Without `PUT`, every recording fails in
+the browser (Safari says "Load failed") while the routes answer 201; the typed words still save, and
+the recording is kept on the reader's device as a note only they see. Without `GET` and `HEAD`, a
+spreadsheet page shows its line and Download but no table. Check the upload side with a preflight:
 `curl -si -X OPTIONS -H 'Origin: https://<your host>' -H 'Access-Control-Request-Method: PUT' -H 'Access-Control-Request-Headers: content-type,cache-control,x-goog-content-length-range' https://storage.googleapis.com/<private bucket>/x`
-must answer with an `access-control-allow-origin` header.
+must answer with an `access-control-allow-origin` header. For the table, send the same request with
+`Access-Control-Request-Method: GET`.
 
 ### Resolving a thread
 
@@ -1174,7 +1184,7 @@ media: private
 
 The private bucket must be a different bucket from the public one (passing the same bucket twice throws), with uniform bucket-level access, public access prevention enforced, and object access granted only to the host's own service account. The page signs a V4 read URL per private file on every render that passed the per-reader gate, valid `PRIVATE_READ_TTL_MS` (one hour); a revoked or expired link renders nothing and mints nothing. A reader revoked after a render can keep loading a URL already handed to them for at most that hour. Expiry's `deletePage` clears the page from both buckets.
 
-Readers' voice memos are uploaded from the reader's browser straight to the private bucket, so give that bucket a CORS rule allowing `PUT` from your origin with the `content-type`, `cache-control` and `x-goog-content-length-range` headers (the publisher's `?private=1` uploads need the same rule); a reader's browser playing a signed URL needs `GET` (and `HEAD`) from your origin only if your player fetches it with CORS.
+Readers' voice memos are uploaded from the reader's browser straight to the private bucket, so that bucket needs the CORS rule described under [the private bucket](#private-bucket-cors) (`PUT` for memos; a spreadsheet page needs `GET` and `HEAD` too).
 
 Routes (spread into your route files by `createArtifactRoutes`): `RECIPIENTS`, `VIEWS`, `SEEN`, and `sweepExpired`.
 
