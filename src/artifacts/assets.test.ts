@@ -259,3 +259,16 @@ describe('file types (any-file artifacts)', () => {
     for (const n of ['x.constructor', 'x.toString', 'x.valueOf']) expect(contentTypeFor(n), n).toBeUndefined()
   })
 })
+
+describe('privateUrl with download', () => {
+  const signed: unknown[] = []
+  const bucket = (name: string) => ({ name, file: (key: string) => ({ getSignedUrl: async (cfg: unknown) => { signed.push({ key, cfg }); return [`https://storage.example.com/${key}`] } }) })
+  it('signs response-content-disposition: attachment when asked, and nothing extra otherwise', async () => {
+    const a = createArtifactAssets(bucket('pub') as never, 'artifacts', { privateBucket: bucket('priv') as never })
+    await a.privateUrl!('fkpg2345', 'model.0123abcd.xlsx', { download: 'Pricing model.xlsx' })
+    await a.privateUrl!('fkpg2345', 'deck.0123abcd.pdf')
+    const [dl, open] = signed as { cfg: Record<string, unknown> }[]
+    expect(dl.cfg.responseDisposition).toBe(`attachment; filename="Pricing model.xlsx"; filename*=UTF-8''Pricing%20model.xlsx`)
+    expect(open.cfg.responseDisposition).toBeUndefined()
+  })
+})

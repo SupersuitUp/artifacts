@@ -45,7 +45,7 @@ export interface ArtifactAssets {
   /** After a signed private upload: `private:<stored name>`, or null if nothing arrived. */
   finishPrivateUpload?(id: string, name: string, digest: string): Promise<string | null>
   /** A V4 signed read URL for a stored private name, valid PRIVATE_READ_TTL_MS (one hour). */
-  privateUrl?(id: string, stored: string): Promise<string>
+  privateUrl?(id: string, stored: string, opts?: { download?: string }): Promise<string>
   /** Delete every object under `<prefix>/<id>/`, in the public bucket and the private one; returns how many. */
   deletePage?(id: string): Promise<number>
 }
@@ -290,9 +290,12 @@ export function createArtifactAssets(bucket: Bucket, prefix: string, options: Ar
       const [there] = await privateFile(id, stored).exists()
       return there ? `private:${stored}` : null
     },
-    async privateUrl(id, stored) {
+    async privateUrl(id, stored, opts = {}) {
       if (!PRIVATE_REF.test(`private:${stored}`)) throw new Error('not a private file name')
-      const [url] = await privateFile(id, stored).getSignedUrl({ version: 'v4', action: 'read', expires: Date.now() + PRIVATE_READ_TTL_MS })
+      const [url] = await privateFile(id, stored).getSignedUrl({ version: 'v4', action: 'read', expires: Date.now() + PRIVATE_READ_TTL_MS,
+        // A download is signed as one: the bucket answers it with `Content-Disposition: attachment`,
+        // so no file a reader fetches this way can run as a page (any-file artifacts, 2026-11-11).
+        ...(opts.download ? { responseDisposition: contentDisposition(opts.download) } : {}) })
       return url
     },
   }
