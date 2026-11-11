@@ -62,7 +62,7 @@ describe('front matter: template: broadcast', () => {
   it('still refuses a template it does not know', () => {
     const r = parseArtifactSource('---\ntitle: T\nsummary: S\ntemplate: poster\n---\nx\n')
     expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.error).toContain('document or broadcast')
+    if (!r.ok) expect(r.error).toContain('document, broadcast or file')
   })
 })
 

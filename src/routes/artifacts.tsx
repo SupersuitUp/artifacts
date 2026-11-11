@@ -1339,6 +1339,13 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
         parsed = again
       }
     }
+    // A file page stays a file page and a page stays a page: the bytes and the markdown are different
+    // things, and changing one into the other at the same link would hand readers something else.
+    if (id) {
+      const stored = await kept.get(id)
+      if (stored && (kindOf(stored) === 'file') !== (parsed.meta.template === 'file'))
+        return NextResponse.json({ error: kindOf(stored) === 'file' ? 'this page is a file page and stays one: publish the file again, or the markdown as a new page' : 'this page is not a file page: publish the file as a new page' }, { status: 409 })
+    }
     // Fail closed: private media needs a private store. Without one the media would have to sit in
     // the public bucket, which may carry a bucket-wide public read grant, so nothing is saved.
     // `media:` is sticky, so a stored page that already keeps private media counts too.
@@ -1589,7 +1596,8 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
       const people = rec ? Object.values(rec.recipients).filter((r) => !r.owner) : []
       // `readerLinks`: how many people hold a live link of their own (never the owner's), on every
       // kind, so the owner's list can say which pages were sent to someone.
-      const line = { id: p.id, title: p.title, summary: p.summary, url: pageUrl(p.id), createdAt: p.createdAt, updatedAt: p.updatedAt, readerLinks: people.filter((r) => !r.revokedAt).length }
+      const line = { id: p.id, title: p.title, summary: p.summary, url: pageUrl(p.id), createdAt: p.createdAt, updatedAt: p.updatedAt, readerLinks: people.filter((r) => !r.revokedAt).length,
+        ...(p.source ? { source: p.source, file: p.file } : {}) }
       if (kind !== 'broadcast') return { ...line, views: p.views }
       return { ...line, expireAt: rec?.expireAt ?? null, keep: rec?.keep ?? false, readers: people.filter((r) => !r.revokedAt).length, revoked: people.filter((r) => r.revokedAt).length }
     }))

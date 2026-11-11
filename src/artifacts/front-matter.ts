@@ -9,6 +9,7 @@ import { THEME_MODES, type ThemeMode } from '../brand/theme.js'
 import { parseDefinitions, type Definition } from './definitions.js'
 import { parseGoal, checkGoalAgainstBody, type ArtifactGoal } from './goal.js'
 import { parseLang, parseTranslations } from './language.js'
+import { parseFileBody, type FileBody } from './file-page.js'
 
 export type ArtifactMeta = {
   title: string
@@ -44,6 +45,8 @@ export type ArtifactMeta = {
   links?: 'per-reader'
   /** `media: private` in the file: body media are stored unlisted and served only to a valid reader. */
   privateMedia?: true
+  /** `template: file`: the one file this page is (file-page.ts). */
+  file?: FileBody
   /** What readers may put into the page. Content, like the body: a republish without it removes
    *  the slots from the page and KEEPS the answers already given. */
   state?: StateConfig
@@ -103,8 +106,8 @@ export const PAGE_HISTORY: readonly PageHistory[] = ['admins', 'everyone']
 /** What a page is. A broadcast is its own kind, not a document with extra flags: it renders as a
  *  message card, opens only through per-reader links, keeps its media private, has comments off
  *  and no narration by default, and expires 90 days after publish unless kept. */
-export type ArtifactKind = 'document' | 'broadcast'
-export const ARTIFACT_KINDS: readonly ArtifactKind[] = ['document', 'broadcast']
+export type ArtifactKind = 'document' | 'broadcast' | 'file'
+export const ARTIFACT_KINDS: readonly ArtifactKind[] = ['document', 'broadcast', 'file']
 
 /** Any media in a body: an image, a video or an audio clip, written as markdown image syntax. */
 const MEDIA_IN_BODY = /!\[[^\]]*\]\(\s*<?([^)\s>]+)/g
@@ -120,7 +123,7 @@ export const PACK_NAME = /^[a-z0-9][a-z0-9-]{0,39}$/
 /** The longest `to:` a page may carry: a name or two, never a sentence. */
 export const MAX_TO_CHARS = 60
 
-const KNOWN = new Set(['title', 'summary', 'subtitle', 'to', 'template', 'audience', 'cover', 'id', 'voice', 'narration', 'timings', 'narrationHash', 'password', 'access', 'state', 'theme', 'pack', 'toc', 'definitions', 'change', 'comments', 'comments_visible', 'links', 'media', 'comment_name', 'history', 'forward', 'goal', 'mark', 'lang', 'translations'])
+const KNOWN = new Set(['title', 'summary', 'subtitle', 'to', 'template', 'audience', 'cover', 'id', 'voice', 'narration', 'timings', 'narrationHash', 'password', 'access', 'state', 'theme', 'pack', 'toc', 'definitions', 'change', 'comments', 'comments_visible', 'links', 'media', 'comment_name', 'history', 'forward', 'goal', 'mark', 'lang', 'translations', 'file'])
 
 export function parseArtifactSource(
   text: string,
@@ -138,7 +141,7 @@ export function parseArtifactSource(
     if (typeof v !== 'string' || !v.trim()) return { ok: false, error: `front matter is missing ${k}` }
   }
   const template = d.template ?? opts.defaultKind ?? 'document'
-  if (!ARTIFACT_KINDS.includes(template as ArtifactKind)) return { ok: false, error: 'template must be document or broadcast' }
+  if (!ARTIFACT_KINDS.includes(template as ArtifactKind)) return { ok: false, error: 'template must be document, broadcast or file' }
   const meta: ArtifactMeta = {
     title: String(d.title).trim(),
     summary: String(d.summary).trim(),
@@ -151,6 +154,18 @@ export function parseArtifactSource(
     if (d.password !== undefined && d.password !== null) return { ok: false, error: 'a broadcast opens only through each person\'s own link: drop password' }
     if (d.comments_visible === 'readers') return { ok: false, error: 'a broadcast keeps each person\'s comments to the owner: drop comments_visible: readers' }
   }
+  // A file page IS its file: no body, no door, no comments, no narration and no cover. Per-reader
+  // links and private storage are what it is, whatever the file says or leaves out.
+  if (meta.template === 'file') {
+    for (const k of ['access', 'password', 'state', 'comments', 'voice', 'narration', 'timings', 'cover'] as const)
+      if (d[k] !== undefined && d[k] !== null) return { ok: false, error: `a file page holds one file: drop ${k}` }
+    if (content.trim()) return { ok: false, error: 'a file page holds one file: drop the body' }
+    const f = parseFileBody(d.file)
+    if (!f.ok) return { ok: false, error: f.error }
+    meta.file = f.file
+    meta.links = 'per-reader'
+    meta.privateMedia = true
+  } else if (d.file !== undefined && d.file !== null) return { ok: false, error: 'file: belongs to template: file' }
   for (const k of ['subtitle', 'audience', 'cover', 'id', 'voice', 'narration', 'timings', 'narrationHash', 'password'] as const) {
     const v = d[k]
     if (typeof v === 'string' && v) meta[k] = v
