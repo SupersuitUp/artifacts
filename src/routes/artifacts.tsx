@@ -19,7 +19,7 @@ import { cleanNote, kindOf, type ArtifactRecord, type ArtifactStore, type Versio
 import { effectiveWriters, shapeChanges } from '../artifacts/state.js'
 import { COMMENTS_SLOT, type CommentsMode } from '../artifacts/comments.js'
 import type { StateStore } from '../artifacts/state-store.js'
-import { ASSET_DIGEST, ASSET_NAME, contentTypeFor, type ArtifactAssets } from '../artifacts/assets.js'
+import { ASSET_DIGEST, ASSET_NAME, contentTypeFor, fileTypeFor, type ArtifactAssets } from '../artifacts/assets.js'
 import { BrandGround } from '../brand/wrapper.js'
 import { themedPack } from '../brand/theme.js'
 import { showToc, tocOf, TocInline, TocRail } from '../artifacts/toc.js'
@@ -1425,6 +1425,19 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     })
   }
 
+  /** THE SECOND RULE (any-file artifacts, 2026-11-11). `?file=1` is the body of a `template: file`
+   *  page: any type, stored with its own, in the private store only. Every other upload keeps the
+   *  nine page-asset types. Returns the content type, or the refusal. */
+  function typeForUpload(request: NextRequest, page: Rec, name: string, priv: boolean): { type: string } | { refused: NextResponse } {
+    if (request.nextUrl.searchParams.get('file') !== '1') {
+      const type = contentTypeFor(name)
+      return type ? { type } : { refused: NextResponse.json({ error: 'asset type not allowed; use webp, png, jpg, gif, mp3, mp4 or json' }, { status: 415 }) }
+    }
+    if (kindOf(page) !== 'file') return { refused: NextResponse.json({ error: 'file=1 is only for the body of a file page' }, { status: 409 }) }
+    if (!priv) return { refused: NextResponse.json({ error: 'the body of a file page is stored privately: add private=1' }, { status: 400 }) }
+    return { type: fileTypeFor(name) }
+  }
+
   /** PUT /api/artifacts/<id>/assets/<name>: raw bytes in, public URL out. 16 MiB cap. */
   async function PUT_ASSET(request: NextRequest, { params }: { params: Promise<{ id: string; name: string }> }) {
     if (!authed(request)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -1433,15 +1446,17 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     if (priv && !config.assets.putPrivate) return NextResponse.json({ error: NO_PRIVATE_STORE }, { status: 501 })
     const { id, name } = await params
     if (!ARTIFACT_ID.test(id)) return NextResponse.json({ error: `no artifact with id ${id}` }, { status: 404 })
-    if (!(await kept.get(id))) return NextResponse.json({ error: `no artifact with id ${id}` }, { status: 404 })
+    const page = await kept.get(id)
+    if (!page) return NextResponse.json({ error: `no artifact with id ${id}` }, { status: 404 })
     if (!ASSET_NAME.test(name)) return NextResponse.json({ error: 'asset name must be one path segment: letters, digits, dot, dash, underscore' }, { status: 400 })
-    const type = contentTypeFor(name)
-    if (!type) return NextResponse.json({ error: 'asset type not allowed; use webp, png, jpg, gif, mp3, mp4 or json' }, { status: 415 })
+    const t = typeForUpload(request, page, name, priv)
+    if ('refused' in t) return t.refused
+    const type = t.type
     const bytes = Buffer.from(await request.arrayBuffer())
     if (bytes.length === 0) return NextResponse.json({ error: 'empty body' }, { status: 400 })
     if (bytes.length > 16 * 1024 * 1024) return NextResponse.json({ error: 'asset over 16 MiB' }, { status: 413 })
     const url = priv ? await config.assets.putPrivate!(id, name, bytes, type) : await config.assets.put(id, name, bytes, type)
-    return NextResponse.json({ id, name, url }, { status: 201 })
+    return NextResponse.json({ id, name, url, type }, { status: 201 })
   }
 
   /**
@@ -1472,19 +1487,21 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     } else if (!assets?.signUpload || !assets.finishUpload) return NextResponse.json({ error: 'this host does not take direct uploads' }, { status: 501 })
     const { id, name } = await params
     if (!ARTIFACT_ID.test(id)) return NextResponse.json({ error: `no artifact with id ${id}` }, { status: 404 })
-    if (!(await kept.get(id))) return NextResponse.json({ error: `no artifact with id ${id}` }, { status: 404 })
+    const page = await kept.get(id)
+    if (!page) return NextResponse.json({ error: `no artifact with id ${id}` }, { status: 404 })
     if (!ASSET_NAME.test(name)) return NextResponse.json({ error: 'asset name must be one path segment: letters, digits, dot, dash, underscore' }, { status: 400 })
-    const type = contentTypeFor(name)
-    if (!type) return NextResponse.json({ error: 'asset type not allowed; use webp, png, jpg, gif, mp3, mp4 or json' }, { status: 415 })
+    const t = typeForUpload(request, page, name, priv)
+    if ('refused' in t) return t.refused
+    const type = t.type
     const digest = typeof body.digest === 'string' ? body.digest : ''
     if (!ASSET_DIGEST.test(digest)) return NextResponse.json({ error: 'digest must be the first 8 hex of the sha256 of the bytes' }, { status: 400 })
     if (body.done === true) {
       const url = priv ? await assets!.finishPrivateUpload!(id, name, digest) : await assets!.finishUpload!(id, name, digest)
       if (!url) return NextResponse.json({ error: 'nothing was uploaded to that url' }, { status: 409 })
-      return NextResponse.json({ id, name, url }, { status: 201 })
+      return NextResponse.json({ id, name, url, type }, { status: 201 })
     }
     const signed = priv ? await assets!.signPrivateUpload!(id, name, digest, type) : await assets!.signUpload!(id, name, digest, type)
-    return NextResponse.json({ id, name, ...signed }, { status: 201 })
+    return NextResponse.json({ id, name, type, ...signed }, { status: 201 })
   }
 
   /** GET /<id>/share.png: the page's title card. 404 when the pack draws none, so a

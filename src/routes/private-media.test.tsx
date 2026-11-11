@@ -19,7 +19,7 @@ describe('private uploads', () => {
     const r = createArtifactRoutes(testConfig({ assets: { put: async () => 'https://public.example.com/x', putPrivate: async (_id, name) => { stored.push(name); return `private:${name}` } } }))
     const res = await r.PUT_ASSET(put(), params)
     expect(res.status).toBe(201)
-    expect(await res.json()).toEqual({ id: 'abcd2345', name: 'river.mp4', url: 'private:river.mp4' })
+    expect(await res.json()).toMatchObject({ id: 'abcd2345', name: 'river.mp4', url: 'private:river.mp4' })
     expect(stored).toEqual(['river.mp4'])
   })
   it('PUT without ?private=1 still answers the public url', async () => {
