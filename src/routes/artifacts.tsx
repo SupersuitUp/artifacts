@@ -14,6 +14,8 @@ import { narrationText } from '../artifacts/narration.js'
 import { ArtifactMarkdown, type EmbedCtx } from '../artifacts/render.js'
 import { CHECKLIST_SLOT } from '../artifacts/checklist.js'
 import { ArtifactDoor } from '../artifacts/door.js'
+import { FileCard } from '../artifacts/file-card.js'
+import { fileLinks } from '../artifacts/file-page.js'
 import { isUnlocked, keyHash, unlockCookieName } from '../artifacts/unlock.js'
 import { cleanNote, kindOf, type ArtifactRecord, type ArtifactStore, type VersionEntry } from '../artifacts/store.js'
 import { effectiveWriters, shapeChanges } from '../artifacts/state.js'
@@ -557,7 +559,8 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     const render = (top: boolean, reader: Reader | null, untracked = false) => (n === null ? Body(a, { top, reader, untracked }) : VersionBody(a, n, { top, reader }))
     if (a.access) return GatedPage(a, id, render, n)
     const broadcast = kindOf(a) === 'broadcast'
-    if (a.links === 'per-reader' || broadcast) {
+    const isFile = kindOf(a) === 'file'
+    if (a.links === 'per-reader' || broadcast || isFile) {
       if (n !== null) notFound() // a past version of a per-reader page is never served
       const sp = (await searchParams) ?? {}
       const param = Array.isArray(sp.r) ? sp.r[0] : sp.r
@@ -573,7 +576,8 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
       if (isAdmin(me)) {
         const markdown = await media(a.markdown)
         const viewer = wantsReaderView(sp) ? null : me
-        const page = broadcast ? await BroadcastCard({ ...a, markdown }, { reader: viewer, bot, untracked: true }) : await Body({ ...a, markdown }, { top: true, reader: viewer, untracked: true })
+        const page = isFile ? await FilePage(a, { reader: viewer, bot, untracked: true })
+          : broadcast ? await BroadcastCard({ ...a, markdown }, { reader: viewer, bot, untracked: true }) : await Body({ ...a, markdown }, { top: true, reader: viewer, untracked: true })
         return <BrandGround pack={pack} mode={a.theme}>{viewer ? null : <ViewingAsReader back={pagePath(id)} />}{page}</BrandGround>
       }
       const secret = usableSecret(config.recipientSecret?.())
@@ -600,8 +604,8 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
         : null
       const perReader = bot ? undefined : { rid: g.rid, sig: g.sig, label: g.label, note: g.note, owner: g.owner, group: g.group, forwarded: g.forwarded, closesAt: g.closesAt, token: mintRenderToken(secret!, id, g.rid) }
       const markdown = await media(a.markdown)
-      const body = broadcast
-        ? await BroadcastCard({ ...a, markdown }, { reader: null, perReader, bot })
+      const body = isFile ? await FilePage(a, { reader: null, perReader, bot })
+        : broadcast ? await BroadcastCard({ ...a, markdown }, { reader: null, perReader, bot })
         : await Body({ ...a, markdown }, { top: true, reader: null, perReader })
       return (
         <BrandGround pack={pack} mode={a.theme}>
@@ -840,6 +844,22 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
         >
           <ArtifactMarkdown markdown={v.markdown} embeds={embeds} definitions={a.definitions} checklist={{ artifactId: a.id, accent: brand.accent }} Section={pack.Section} figure={pack.figure} />
         </Framed>
+      </>
+    )
+  }
+
+  /** A `template: file` page (any-file artifacts): the thin page, its reader's quiet-view and analytics. */
+  async function FilePage(a: Rec, { reader, perReader, bot, untracked = false }: { reader: Reader | null; bot: boolean; untracked?: boolean; perReader?: { rid: string; sig: string; label: string; note: string | null; owner: boolean; group: boolean; forwarded?: boolean; closesAt: string | null; token: string } }) {
+    const { brand } = lookOf(a)
+    const privateUrl = config.assets?.privateUrl?.bind(config.assets)
+    // A fetcher gets the title and never a signed URL, as on every per-reader page.
+    const links = bot || !privateUrl || !a.file ? null : await fileLinks(a.id, a.file, privateUrl)
+    const label = perReader && !perReader.group && !perReader.owner ? perReader.label : null
+    return (
+      <>
+        <FileCard owner={owner} title={a.title} label={label} file={a.file ?? null} links={links} display={brand.type.display} updatedAt={a.updatedAt} />
+        {perReader && !perReader.owner ? <QuietView id={a.id} rid={perReader.rid} sig={perReader.sig} token={perReader.token} /> : null}
+        {await Analytics(a, { reader, perReader, untracked, bot })}
       </>
     )
   }
