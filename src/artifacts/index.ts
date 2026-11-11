@@ -4,7 +4,7 @@ export { narrationText, narrationTextFromMarkdown, normalizeWord } from './narra
 export { createArtifactStore, newArtifactId, cleanNote, kindOf, listOfKind, MAX_CHANGE_NOTE_CHARS, type ArtifactListItem, type ArtifactStore, type ArtifactRecord, type SaveResult, type SaveInput, type VersionEntry, type VersionRecord } from './store.js'
 export { isPublishAuthed, isPublisherAuthed, type PublishAuth } from './auth.js'
 export { mintPublisherPass, verifyPublisherPass, PUBLISHER_PASS_TTL_SECONDS, type Publisher } from './publisher.js'
-export { createArtifactAssets, contentTypeFor, storedName, hashedName, ASSET_NAME, ASSET_DIGEST, PRIVATE_READ_TTL_MS, type ArtifactAssets, type ArtifactAssetsOptions } from './assets.js'
+export { createArtifactAssets, contentTypeFor, FILE_TYPES, fileTypeFor, INLINE_TYPES, showsInline, contentDisposition, storedName, hashedName, ASSET_NAME, ASSET_DIGEST, PRIVATE_READ_TTL_MS, type ArtifactAssets, type ArtifactAssetsOptions } from './assets.js'
 export { isUnlocked, keyHash, unlockCookieName, unlockedUrl } from './unlock.js'
 export { verifyPass, mintPass, verifyGrant, mintGrant, decide, firstName, signInUrl, safeReturnPath, GRANT_COOKIE, ACCESS_LEVELS, type Access, type Reader, type AllowEntry, type Decision } from './reader.js'
 export { createReadersStore, summarize, FLAG_KINDS, type ReadersStore, type FlagKind, type SessionDoc, type FlagDoc, type ReaderSummary } from './readers-store.js'
@@ -31,3 +31,4 @@ export { createRecipientsStore, memoryRecipientsStore, summarizeViews, type Reci
 export { parseGoal, goalCta, ctasIn, outcomeThresholds, GOAL_KINDS, DEFAULT_GOAL, CTA_ID, ACK_CTA, MAX_CLICKS_PER_SESSION, OUTCOMES, OUTCOME_READ_SECONDS, OUTCOME_RETURN_GAP_MS, OUTCOME_THRESHOLDS, type ArtifactGoal, type Outcome, type OutcomeThresholds } from './goal.js'
 export { migrateMemosToPrivate, MEMO_KEY, type MemoMigration } from './migrate-memos.js'
 export { parseTranscriptFence, scanVoiceNotes, transcriptFenceFromWords, wordsFromWhisperJson, isAudioSrc, isVideoSrc, TRANSCRIPT_LANG, MAX_TRANSCRIPT_WORDS, type TranscriptParagraphs, type TimedWord, type VoiceNoteBlock, type NoteKind } from './voice-note.js'
+export { fileLinks, fileNoun, sizeWords, parseFileBody, type FileBody, type PrivateUrl } from './file-page.js'

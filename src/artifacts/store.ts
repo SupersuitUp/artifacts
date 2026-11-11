@@ -15,6 +15,7 @@ import type { Access } from './reader.js'
 import type { StateConfig } from './state.js'
 import type { ThemeMode } from '../brand/theme.js'
 import type { Definition } from './definitions.js'
+import type { FileBody } from './file-page.js'
 import type { CommentsMode, CommentsVisible } from './comments.js'
 import { applySettingsPatch, settleOnPublish, type DeclaredSettings, type SettingsPatch } from './settings.js'
 
@@ -39,6 +40,7 @@ export type ArtifactRecord = {
   links?: 'per-reader'
   /** Body media are stored unlisted and served only to a valid reader. */
   privateMedia?: true
+  file?: FileBody
   state?: StateConfig
   theme?: ThemeMode
   /** The brand pack the page asked for by name; see ArtifactMeta.pack. */
@@ -104,17 +106,18 @@ export function newArtifactId(): string {
 }
 
 /** One line of the owner's list of pages: no body, no settings. */
-export type ArtifactListItem = { id: string; title: string; summary: string; template: ArtifactKind; createdAt: string; updatedAt: string; views: number }
+export type ArtifactListItem = { id: string; title: string; summary: string; template: ArtifactKind; createdAt: string; updatedAt: string; views: number; source?: string; file?: { name: string; type: string; bytes: number } }
 
 /** The kind a stored page is: anything not saved as a broadcast is a document, so pages saved
  *  before kinds existed list where they always would have. */
-export const kindOf = (a: { template?: string }): ArtifactKind => (a.template === 'broadcast' ? 'broadcast' : 'document')
+export const kindOf = (a: { template?: string }): ArtifactKind => (a.template === 'broadcast' || a.template === 'file' ? a.template : 'document')
 
 /** The owner's list of one kind, newest first: the same rule every store applies. */
 export function listOfKind(pages: Iterable<Partial<ArtifactRecord> & { id: string }>, kind: ArtifactKind): ArtifactListItem[] {
   return [...pages]
     .filter((p) => kindOf(p) === kind)
-    .map((p) => ({ id: p.id, title: p.title ?? '', summary: p.summary ?? '', template: kind, createdAt: p.createdAt ?? '', updatedAt: p.updatedAt ?? '', views: p.views ?? 0 }))
+    .map((p) => ({ id: p.id, title: p.title ?? '', summary: p.summary ?? '', template: kind, createdAt: p.createdAt ?? '', updatedAt: p.updatedAt ?? '', views: p.views ?? 0,
+      ...(p.file ? { source: p.file.source, file: { name: p.file.name, type: p.file.type, bytes: p.file.bytes } } : {}) }))
     .sort((x, y) => y.updatedAt.localeCompare(x.updatedAt) || x.id.localeCompare(y.id))
 }
 
@@ -193,7 +196,7 @@ export function createArtifactStore(db: Firestore, collection = 'artifacts'): Ar
     },
     list: async (kind) => {
       // `select` keeps every body out of the listing; a tenant's pages number in the hundreds.
-      const snap = await col().select('title', 'summary', 'template', 'createdAt', 'updatedAt', 'views').get()
+      const snap = await col().select('title', 'summary', 'template', 'createdAt', 'updatedAt', 'views', 'file').get()
       return listOfKind(snap.docs.map((d) => ({ ...(d.data() as Partial<ArtifactRecord>), id: d.id })), kind)
     },
   }
@@ -291,6 +294,7 @@ async function saveArtifact(col: Col, input: SaveInput): Promise<SaveResult> {
     ...(input.meta.translations ? { translations: input.meta.translations } : {}),
     ...(input.meta.history ? { history: input.meta.history } : {}),
     ...(input.meta.definitions?.length ? { definitions: input.meta.definitions } : {}),
+    ...(input.meta.file ? { file: input.meta.file } : {}),
   }
   if (input.id) {
     const existing = await getArtifact(col, input.id)
@@ -348,6 +352,7 @@ async function saveArtifact(col: Col, input: SaveInput): Promise<SaveResult> {
       // A whole map replaces the stored one (update merges nested maps otherwise), or clears it.
       translations: input.meta.translations ?? FieldValue.delete(),
       ...(input.meta.definitions?.length ? {} : { definitions: FieldValue.delete() }),
+      ...(input.meta.file ? {} : { file: FieldValue.delete() }),
     }
     // `voice: none` is the page declaring it has no audio. An update merges, so the recording it
     // had would otherwise survive every republish; clear it on purpose, and the player goes with it.

@@ -14,12 +14,14 @@ import { narrationText } from '../artifacts/narration.js'
 import { ArtifactMarkdown, type EmbedCtx } from '../artifacts/render.js'
 import { CHECKLIST_SLOT } from '../artifacts/checklist.js'
 import { ArtifactDoor } from '../artifacts/door.js'
+import { FileCard } from '../artifacts/file-card.js'
+import { fileLinks } from '../artifacts/file-page.js'
 import { isUnlocked, keyHash, unlockCookieName } from '../artifacts/unlock.js'
 import { cleanNote, kindOf, type ArtifactRecord, type ArtifactStore, type VersionEntry } from '../artifacts/store.js'
 import { effectiveWriters, shapeChanges } from '../artifacts/state.js'
 import { COMMENTS_SLOT, type CommentsMode } from '../artifacts/comments.js'
 import type { StateStore } from '../artifacts/state-store.js'
-import { ASSET_DIGEST, ASSET_NAME, contentTypeFor, type ArtifactAssets } from '../artifacts/assets.js'
+import { ASSET_DIGEST, ASSET_NAME, contentTypeFor, fileTypeFor, type ArtifactAssets } from '../artifacts/assets.js'
 import { BrandGround } from '../brand/wrapper.js'
 import { themedPack } from '../brand/theme.js'
 import { showToc, tocOf, TocInline, TocRail } from '../artifacts/toc.js'
@@ -557,7 +559,8 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     const render = (top: boolean, reader: Reader | null, untracked = false) => (n === null ? Body(a, { top, reader, untracked }) : VersionBody(a, n, { top, reader }))
     if (a.access) return GatedPage(a, id, render, n)
     const broadcast = kindOf(a) === 'broadcast'
-    if (a.links === 'per-reader' || broadcast) {
+    const isFile = kindOf(a) === 'file'
+    if (a.links === 'per-reader' || broadcast || isFile) {
       if (n !== null) notFound() // a past version of a per-reader page is never served
       const sp = (await searchParams) ?? {}
       const param = Array.isArray(sp.r) ? sp.r[0] : sp.r
@@ -573,7 +576,8 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
       if (isAdmin(me)) {
         const markdown = await media(a.markdown)
         const viewer = wantsReaderView(sp) ? null : me
-        const page = broadcast ? await BroadcastCard({ ...a, markdown }, { reader: viewer, bot, untracked: true }) : await Body({ ...a, markdown }, { top: true, reader: viewer, untracked: true })
+        const page = isFile ? await FilePage(a, { reader: viewer, bot, untracked: true })
+          : broadcast ? await BroadcastCard({ ...a, markdown }, { reader: viewer, bot, untracked: true }) : await Body({ ...a, markdown }, { top: true, reader: viewer, untracked: true })
         return <BrandGround pack={pack} mode={a.theme}>{viewer ? null : <ViewingAsReader back={pagePath(id)} />}{page}</BrandGround>
       }
       const secret = usableSecret(config.recipientSecret?.())
@@ -600,8 +604,8 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
         : null
       const perReader = bot ? undefined : { rid: g.rid, sig: g.sig, label: g.label, note: g.note, owner: g.owner, group: g.group, forwarded: g.forwarded, closesAt: g.closesAt, token: mintRenderToken(secret!, id, g.rid) }
       const markdown = await media(a.markdown)
-      const body = broadcast
-        ? await BroadcastCard({ ...a, markdown }, { reader: null, perReader, bot })
+      const body = isFile ? await FilePage(a, { reader: null, perReader, bot })
+        : broadcast ? await BroadcastCard({ ...a, markdown }, { reader: null, perReader, bot })
         : await Body({ ...a, markdown }, { top: true, reader: null, perReader })
       return (
         <BrandGround pack={pack} mode={a.theme}>
@@ -840,6 +844,22 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
         >
           <ArtifactMarkdown markdown={v.markdown} embeds={embeds} definitions={a.definitions} checklist={{ artifactId: a.id, accent: brand.accent }} Section={pack.Section} figure={pack.figure} />
         </Framed>
+      </>
+    )
+  }
+
+  /** A `template: file` page (any-file artifacts): the thin page, its reader's quiet-view and analytics. */
+  async function FilePage(a: Rec, { reader, perReader, bot, untracked = false }: { reader: Reader | null; bot: boolean; untracked?: boolean; perReader?: { rid: string; sig: string; label: string; note: string | null; owner: boolean; group: boolean; forwarded?: boolean; closesAt: string | null; token: string } }) {
+    const { brand } = lookOf(a)
+    const privateUrl = config.assets?.privateUrl?.bind(config.assets)
+    // A fetcher gets the title and never a signed URL, as on every per-reader page.
+    const links = bot || !privateUrl || !a.file ? null : await fileLinks(a.id, a.file, privateUrl)
+    const label = perReader && !perReader.group && !perReader.owner ? perReader.label : null
+    return (
+      <>
+        <FileCard owner={owner} title={a.title} label={label} file={a.file ?? null} links={links} display={brand.type.display} updatedAt={a.updatedAt} />
+        {perReader && !perReader.owner ? <QuietView id={a.id} rid={perReader.rid} sig={perReader.sig} token={perReader.token} /> : null}
+        {await Analytics(a, { reader, perReader, untracked, bot })}
       </>
     )
   }
@@ -1339,6 +1359,13 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
         parsed = again
       }
     }
+    // A file page stays a file page and a page stays a page: the bytes and the markdown are different
+    // things, and changing one into the other at the same link would hand readers something else.
+    if (id) {
+      const stored = await kept.get(id)
+      if (stored && (kindOf(stored) === 'file') !== (parsed.meta.template === 'file'))
+        return NextResponse.json({ error: kindOf(stored) === 'file' ? 'this page is a file page and stays one: publish the file again, or the markdown as a new page' : 'this page is not a file page: publish the file as a new page' }, { status: 409 })
+    }
     // Fail closed: private media needs a private store. Without one the media would have to sit in
     // the public bucket, which may carry a bucket-wide public read grant, so nothing is saved.
     // `media:` is sticky, so a stored page that already keeps private media counts too.
@@ -1418,6 +1445,19 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     })
   }
 
+  /** THE SECOND RULE (any-file artifacts, 2026-11-11). `?file=1` is the body of a `template: file`
+   *  page: any type, stored with its own, in the private store only. Every other upload keeps the
+   *  nine page-asset types. Returns the content type, or the refusal. */
+  function typeForUpload(request: NextRequest, page: Rec, name: string, priv: boolean): { type: string } | { refused: NextResponse } {
+    if (request.nextUrl.searchParams.get('file') !== '1') {
+      const type = contentTypeFor(name)
+      return type ? { type } : { refused: NextResponse.json({ error: 'asset type not allowed; use webp, png, jpg, gif, mp3, mp4 or json' }, { status: 415 }) }
+    }
+    if (kindOf(page) !== 'file') return { refused: NextResponse.json({ error: 'file=1 is only for the body of a file page' }, { status: 409 }) }
+    if (!priv) return { refused: NextResponse.json({ error: 'the body of a file page is stored privately: add private=1' }, { status: 400 }) }
+    return { type: fileTypeFor(name) }
+  }
+
   /** PUT /api/artifacts/<id>/assets/<name>: raw bytes in, public URL out. 16 MiB cap. */
   async function PUT_ASSET(request: NextRequest, { params }: { params: Promise<{ id: string; name: string }> }) {
     if (!authed(request)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -1426,15 +1466,17 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     if (priv && !config.assets.putPrivate) return NextResponse.json({ error: NO_PRIVATE_STORE }, { status: 501 })
     const { id, name } = await params
     if (!ARTIFACT_ID.test(id)) return NextResponse.json({ error: `no artifact with id ${id}` }, { status: 404 })
-    if (!(await kept.get(id))) return NextResponse.json({ error: `no artifact with id ${id}` }, { status: 404 })
+    const page = await kept.get(id)
+    if (!page) return NextResponse.json({ error: `no artifact with id ${id}` }, { status: 404 })
     if (!ASSET_NAME.test(name)) return NextResponse.json({ error: 'asset name must be one path segment: letters, digits, dot, dash, underscore' }, { status: 400 })
-    const type = contentTypeFor(name)
-    if (!type) return NextResponse.json({ error: 'asset type not allowed; use webp, png, jpg, gif, mp3, mp4 or json' }, { status: 415 })
+    const t = typeForUpload(request, page, name, priv)
+    if ('refused' in t) return t.refused
+    const type = t.type
     const bytes = Buffer.from(await request.arrayBuffer())
     if (bytes.length === 0) return NextResponse.json({ error: 'empty body' }, { status: 400 })
     if (bytes.length > 16 * 1024 * 1024) return NextResponse.json({ error: 'asset over 16 MiB' }, { status: 413 })
     const url = priv ? await config.assets.putPrivate!(id, name, bytes, type) : await config.assets.put(id, name, bytes, type)
-    return NextResponse.json({ id, name, url }, { status: 201 })
+    return NextResponse.json({ id, name, url, type }, { status: 201 })
   }
 
   /**
@@ -1465,19 +1507,21 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     } else if (!assets?.signUpload || !assets.finishUpload) return NextResponse.json({ error: 'this host does not take direct uploads' }, { status: 501 })
     const { id, name } = await params
     if (!ARTIFACT_ID.test(id)) return NextResponse.json({ error: `no artifact with id ${id}` }, { status: 404 })
-    if (!(await kept.get(id))) return NextResponse.json({ error: `no artifact with id ${id}` }, { status: 404 })
+    const page = await kept.get(id)
+    if (!page) return NextResponse.json({ error: `no artifact with id ${id}` }, { status: 404 })
     if (!ASSET_NAME.test(name)) return NextResponse.json({ error: 'asset name must be one path segment: letters, digits, dot, dash, underscore' }, { status: 400 })
-    const type = contentTypeFor(name)
-    if (!type) return NextResponse.json({ error: 'asset type not allowed; use webp, png, jpg, gif, mp3, mp4 or json' }, { status: 415 })
+    const t = typeForUpload(request, page, name, priv)
+    if ('refused' in t) return t.refused
+    const type = t.type
     const digest = typeof body.digest === 'string' ? body.digest : ''
     if (!ASSET_DIGEST.test(digest)) return NextResponse.json({ error: 'digest must be the first 8 hex of the sha256 of the bytes' }, { status: 400 })
     if (body.done === true) {
       const url = priv ? await assets!.finishPrivateUpload!(id, name, digest) : await assets!.finishUpload!(id, name, digest)
       if (!url) return NextResponse.json({ error: 'nothing was uploaded to that url' }, { status: 409 })
-      return NextResponse.json({ id, name, url }, { status: 201 })
+      return NextResponse.json({ id, name, url, type }, { status: 201 })
     }
     const signed = priv ? await assets!.signPrivateUpload!(id, name, digest, type) : await assets!.signUpload!(id, name, digest, type)
-    return NextResponse.json({ id, name, ...signed }, { status: 201 })
+    return NextResponse.json({ id, name, type, ...signed }, { status: 201 })
   }
 
   /** GET /<id>/share.png: the page's title card. 404 when the pack draws none, so a
@@ -1589,7 +1633,8 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
       const people = rec ? Object.values(rec.recipients).filter((r) => !r.owner) : []
       // `readerLinks`: how many people hold a live link of their own (never the owner's), on every
       // kind, so the owner's list can say which pages were sent to someone.
-      const line = { id: p.id, title: p.title, summary: p.summary, url: pageUrl(p.id), createdAt: p.createdAt, updatedAt: p.updatedAt, readerLinks: people.filter((r) => !r.revokedAt).length }
+      const line = { id: p.id, title: p.title, summary: p.summary, url: pageUrl(p.id), createdAt: p.createdAt, updatedAt: p.updatedAt, readerLinks: people.filter((r) => !r.revokedAt).length,
+        ...(p.source ? { source: p.source, file: p.file } : {}) }
       if (kind !== 'broadcast') return { ...line, views: p.views }
       return { ...line, expireAt: rec?.expireAt ?? null, keep: rec?.keep ?? false, readers: people.filter((r) => !r.revokedAt).length, revoked: people.filter((r) => r.revokedAt).length }
     }))

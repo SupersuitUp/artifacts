@@ -349,9 +349,36 @@ summary: Three bets, what each costs, and what we stop doing to afford them.
 | `lang` | The language the page is written in, a BCP 47 tag (`en`, `es`, `es-MX`). Marks the page's words for screen readers and the browser's translate offer, and sets `og:locale`. Absent, nothing changes |
 | `translations` | The same document in other languages on this host, as a map of tag to page id: `{"es": "abcd2345"}` (the publisher resolves each twin's file to its id). With `lang`, the page draws a small switch at the top naming each language in itself ("English · Español") and the unfurl carries `hreflang` alternates. Each page names its own twins; a republish without the line removes the switch |
 | `change` | One line saying what this version changed (see Version history) |
-| `template` | `document` (the default, the read-along reader) or `broadcast` (one message card sent to several people; see Broadcasts) |
+| `template` | `document` (the default, the read-along reader), `broadcast` (one message card sent to several people; see Broadcasts) or `file` (a page that is one file; see below) |
 
 An unknown key is refused, so a typo fails loudly instead of being ignored.
+
+### A file page (`template: file`)
+
+A file page is one file with no markdown around it. Its front matter has `title`, `summary` and a `file:` map, and no body.
+
+```markdown
+---
+template: file
+title: Pricing
+summary: The current price list.
+file:
+  name: pricing.pdf
+  bytes: 48211
+  source: documents/pricing.pdf
+---
+```
+
+| `file:` key | Meaning |
+|---|---|
+| `name` (required) | The file's name, 1 to 200 characters, with no slash. The type is never sent: the host reads it from the stored name |
+| `bytes` (required) | The size in bytes, a whole number of 1 or more |
+| `source` (required) | The file's path in the operator's workspace, one line of up to 400 characters. `LIST ?kind=file` returns it |
+| `ref` | `private:<stored name>`, once the file is in the private store |
+
+A file page has no body, and no `access`, `password`, `state`, `comments`, `voice`, `narration`, `timings` or `cover`. It is always `links: per-reader` and private: the file sits in the private store and a reader gets one-hour signed links. A PDF, an image (png, jpeg, gif, webp), a video (mp4, webm) or a sound (mp3, m4a, wav) opens in the browser's own viewer. Every other type, HTML and SVG included, is a download signed with `Content-Disposition: attachment`, so no file runs as a page on the hub.
+
+`UPLOAD` and `PUT_ASSET` take the file's bytes with `?private=1&file=1`. They answer 409 for a page that is not a file page and 400 without `private=1`. Page assets of a markdown page keep the nine types.
 
 ## Inline definitions (`definitions:`)
 

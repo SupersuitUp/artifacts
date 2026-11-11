@@ -21,7 +21,7 @@ describe('parseArtifactSource', () => {
   })
   it('rejects a template other than document or broadcast', () => {
     const r = parseArtifactSource(`---\ntitle: X\nsummary: Y\ntemplate: slides\n---\nbody`)
-    expect(r).toEqual({ ok: false, error: 'template must be document or broadcast' })
+    expect(r).toEqual({ ok: false, error: 'template must be document, broadcast or file' })
   })
   it('keeps optional audience, cover and id', () => {
     const r = parseArtifactSource(`---\ntitle: X\nsummary: Y\naudience: Yasmin\ncover: https://x/y.webp\nid: abc23456\n---\nbody`)
