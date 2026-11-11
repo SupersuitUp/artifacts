@@ -3,6 +3,20 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.66.0 (2026-11-11)
+
+**A recording is a voice note with a video.** An mp4 directly above a ```transcript fence is a note too, of kind `video`; the widget draws the video above its words, with the same seek line, lit word and tap-a-time-to-jump as an audio note, and its own controls (never the browser's). Starting one pauses any other audio or video on the page. For a long recording the words are drawn once, not on every clock tick (3,000 words: 926 ms a tick before, 4 ms after), and a word with no spaces wraps on a phone. New exports: `isVideoSrc`, `NoteKind`.
+
+- DETECTOR: a page whose body has `![...](x.mp4)` followed by a transcript fence (Supersuit's screen recorder writes these).
+- REMEDY: none for a host; it ships in the reader. A host on 0.65.0 refuses the fence under an mp4, and the recorder falls back to plain words.
+- TESTS: `src/artifacts/voice-note.test.ts`, `src/widgets/voice-note.test.tsx`, `src/artifacts/render.test.tsx`.
+
+**The transcript tool stops inventing words.** `transcript-fence` drops a segment Whisper made up (a failed decode over silence or noise, or words squeezed faster than speech that Whisper is unsure of), never carries words across Whisper's 30-second windows, prints each dropped line to stderr with its time, and exits 4 when it heard no words. It finds Whisper on Windows without `sh`, and it can be imported without running (fixes #13).
+
+- DETECTOR: a quiet recording whose transcript has a line nobody said, or words packed into a fraction of a second; or "no local transcriber" on Windows with Whisper installed.
+- REMEDY: re-run `transcript-fence` on the recording.
+- TESTS: `src/cli/transcript-fence.test.ts`, `src/artifacts/voice-note.test.ts`; full suite 1398 passed.
+
 ## 0.65.0 (2026-11-09)
 
 **Needs you leaves out a handled comment.** A reader's comment no longer needs the owner once its thread is resolved, or once the publisher replied in its thread after it; a reader writing again brings it back. Comments carry `handled` on `Send`. DETECTOR: Gary, reviewing the phone dashboard. REMEDY: `handledBy` in `src/analytics/index.ts`. TESTS: `src/analytics/index.test.ts`.
