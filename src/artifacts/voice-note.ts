@@ -176,18 +176,22 @@ export function transcriptFenceFromWords(words: TimedWord[], opts: { paragraphGa
 const FAILED_DECODE = -1
 /** Faster than anyone speaks: more words than this in each second of the segment. */
 const SQUEEZED_WORDS_PER_SECOND = 10
+/** Below this mean word probability, Whisper is unsure of the words it squeezed together. */
+const UNSURE = 0.7
 
-/** A segment Whisper made up: a failed decode that is either silence by Whisper's own measure
- *  (`no_speech_prob` over 0.6, the rule Whisper uses to skip a segment) or has its words packed
- *  faster than speech, the shape of a stock phrase invented over noise ("I'm going to go to the
- *  next video." in 0.16 s). A low score alone, or fast words alone, is kept: that is real mumbling. */
-function madeUp(seg: Record<string, unknown>, words: TimedWord[]): boolean {
-  const lp = seg.avg_logprob
-  if (typeof lp !== 'number' || !(lp < FAILED_DECODE)) return false
-  if (typeof seg.no_speech_prob === 'number' && seg.no_speech_prob > 0.6) return true
-  if (words.length < 3) return false
+/** A segment Whisper made up over noise or silence. Either Whisper's own skip rule (a failed decode with
+ *  `no_speech_prob` over 0.6), or two or more words packed faster than speech that Whisper is not sure of (a failed
+ *  decode, or a mean word probability under 0.7): "I'm going to go to the next video." and "Thank you." in 0.16 s
+ *  over nine seconds of rumble, 2026-11-11. A low score alone, or fast words Whisper is sure of, are kept: that is
+ *  real mumbling, or real words with poor timing. */
+function madeUp(seg: Record<string, unknown>, words: TimedWord[], probs: number[]): boolean {
+  const lp = typeof seg.avg_logprob === 'number' ? seg.avg_logprob : 0
+  if (lp < FAILED_DECODE && typeof seg.no_speech_prob === 'number' && seg.no_speech_prob > 0.6) return true
+  if (words.length < 2) return false
   const span = words[words.length - 1].end - words[0].start
-  return words.length / Math.max(span, 0.01) > SQUEEZED_WORDS_PER_SECOND
+  if (words.length / Math.max(span, 0.01) <= SQUEEZED_WORDS_PER_SECOND) return false
+  const meanProb = probs.length === words.length ? probs.reduce((a, b) => a + b, 0) / probs.length : 1
+  return lp < FAILED_DECODE || meanProb < UNSURE
 }
 
 /** The timed words in a whisper JSON result (`segments[].words[]`, written by `mlx_whisper` or
@@ -201,11 +205,15 @@ export function wordsFromWhisperJson(json: unknown): TimedWord[] {
     const words = (seg as { words?: unknown })?.words
     if (!Array.isArray(words)) continue
     const timed: TimedWord[] = []
+    const probs: number[] = []
     for (const w of words) {
-      const { word, start, end } = (w ?? {}) as Record<string, unknown>
-      if (typeof word === 'string' && typeof start === 'number' && typeof end === 'number') timed.push({ word, start, end })
+      const { word, start, end, probability } = (w ?? {}) as Record<string, unknown>
+      if (typeof word === 'string' && typeof start === 'number' && typeof end === 'number') {
+        timed.push({ word, start, end })
+        if (typeof probability === 'number') probs.push(probability)
+      }
     }
-    if (!madeUp(seg as Record<string, unknown>, timed)) out.push(...timed)
+    if (!madeUp(seg as Record<string, unknown>, timed, probs)) out.push(...timed)
   }
   return out
 }

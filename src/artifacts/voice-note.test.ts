@@ -121,9 +121,15 @@ describe('wordsFromWhisperJson', () => {
     const json = { segments: [{ start: 0, end: 2, avg_logprob: -1.2, no_speech_prob: 0.8, words: [{ word: ' Thank', start: 0.2, end: 0.6 }, { word: ' you.', start: 0.6, end: 1 }] }] }
     expect(wordsFromWhisperJson(json)).toEqual([])
   })
+  // The same take with the windows not carried over (transcript-fence's flags): "Thank you." in 0.16 s, its first word
+  // at probability 0.27. Squeezed words Whisper itself is unsure of are not words either.
+  it('drops squeezed words Whisper is unsure of, even when the segment scores well', () => {
+    const json = { segments: [{ start: 8.64, end: 8.8, avg_logprob: -0.6, no_speech_prob: 0, words: [{ word: ' Thank', start: 8.64, end: 8.64, probability: 0.27 }, { word: ' you.', start: 8.64, end: 8.8, probability: 0.998 }] }] }
+    expect(wordsFromWhisperJson(json)).toEqual([])
+  })
   it('keeps quiet or mumbled real speech: a low score alone, or fast words alone, is not enough', () => {
     const slowLow = { start: 0, end: 2, avg_logprob: -1.3, no_speech_prob: 0.1, words: [{ word: ' um', start: 0, end: 0.5 }, { word: ' yes', start: 1, end: 1.5 }] }
-    const fastSure = { start: 3, end: 3.3, avg_logprob: -0.2, no_speech_prob: 0, words: ['a', 'b', 'c', 'd'].map((w, i) => ({ word: ' ' + w, start: 3 + i * 0.05, end: 3.05 + i * 0.05 })) }
+    const fastSure = { start: 3, end: 3.3, avg_logprob: -0.2, no_speech_prob: 0, words: ['a', 'b', 'c', 'd'].map((w, i) => ({ word: ' ' + w, start: 3 + i * 0.05, end: 3.05 + i * 0.05, probability: 0.95 })) }
     expect(wordsFromWhisperJson({ segments: [slowLow, fastSure] })).toHaveLength(6)
   })
 })
