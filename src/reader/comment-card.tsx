@@ -32,7 +32,7 @@ export const recallName = () => { try { return localStorage.getItem(NAME_KEY) ??
 export const rememberName = (name: string) => { try { localStorage.setItem(NAME_KEY, name) } catch { /* a browser that keeps nothing still comments */ } }
 
 export function CommentCard({
-  ownerName, mode, canShare, signedIn, closed = false, requireName = false, knownName = null, quote, initial = '', accent = 'currentColor', signIn, voice = null, onSave, onCancel,
+  ownerName, mode, canShare, signedIn, closed = false, requireName = false, knownName = null, quote, initial = '', accent = 'currentColor', signIn, voice = null, moment, onSave, onCancel,
 }: {
   ownerName: string
   mode: CommentsMode
@@ -51,6 +51,8 @@ export function CommentCard({
   signIn?: string | null
   /** The page's voice routes. Null: a memo is kept but never uploaded or transcribed here. */
   voice?: VoiceHost | null
+  /** The second in a recording this comment is pinned to: a line above the box that moves the recording there. */
+  moment?: { label: string; onSeek(): void }
   /** Resolves to an error to show, or null when saved. */
   onSave: (body: string, share: boolean, memo?: SavedMemo, by?: string) => Promise<string | null>
   onCancel: () => void
@@ -113,6 +115,7 @@ export function CommentCard({
           {warningLine(ownerName, mode, closed)}
         </p>
       ) : null}
+      {moment ? <button type="button" data-comment-moment onClick={moment.onSeek} className="mb-2 block text-xs font-semibold underline">{`At ${moment.label}`}</button> : null}
       {quote ? <p className="mb-2 line-clamp-3 border-l-2 pl-2 text-[13px] italic opacity-75" style={{ borderColor: accent }}>{quote}</p> : null}
       <textarea
         value={text}

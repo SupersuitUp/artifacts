@@ -29,6 +29,7 @@ import type { RecipientsStore } from '../artifacts/recipients-store.js'
 import { perReaderGate, signInToAct } from './per-reader.js'
 import { ANON_WRITES_PER_MINUTE, MAX_ENTRIES_PER_SLOT, checkValue, effectiveWriters, slotVisibility } from '../artifacts/state.js'
 import { COMMENTS_SLOT, FEEDBACK_CLOSED, MAX_COMMENT_CHARS, MAX_COMMENT_NAME_CHARS, NAME_NEEDED, cleanResolveNote, resolutionOf, validateComment, type CommentResolution, type CommentValue } from '../artifacts/comments.js'
+import { ASKS_SLOT, checkAskAnswer, type AskData } from '../artifacts/asks.js'
 import { MAX_QUOTE_CHARS } from '../artifacts/anchor.js'
 import { isCommentAudioPath } from '../artifacts/audio.js'
 import { readerKeyFor, type StateEntry, type StateStore, type Writer } from '../artifacts/state-store.js'
@@ -289,9 +290,10 @@ export function createStateRoutes(ctx: StateRoutesContext) {
     if (op === 'replace' && !entryId) return json({ error: 'replace names the entry it edits' }, 400)
     if (op === 'replace' && !ctx.state!.replace) return json({ error: 'this host cannot edit an answer' }, 501)
     const isComments = slot === COMMENTS_SLOT && commentsOn(a)
+    const isAsks = slot === ASKS_SLOT && !!(a as { asks?: unknown[] }).asks?.length
     // A reader whose feedback window has closed can still read and still delete their own; a new
     // comment or an edit is refused in words, so what they typed is not lost silently.
-    if (isComments && recipient && op !== 'remove' && windowClosed(recipient)) return json({ error: FEEDBACK_CLOSED, closed: true }, 403)
+    if ((isComments || isAsks) && recipient && op !== 'remove' && windowClosed(recipient)) return json({ error: FEEDBACK_CLOSED, closed: true }, 403)
     let setCookie: string | null = null
     let writer: Writer
     if (recipient?.signInToAct) {
@@ -343,8 +345,12 @@ export function createStateRoutes(ctx: StateRoutesContext) {
       const bad = checkValue(b.value)
         ?? (slot === NOTES_SLOT && hasNotesWidget(a.markdown) ? checkNoteValue(b.value) : null)
         ?? (sendIds ? checkChecklistValue(b.value, sendIds) : null)
+        ?? (isAsks ? checkAskAnswer(b.value, (a as { asks: AskData[] }).asks) : null)
       if (bad) return json({ error: bad }, 400)
+      if (isAsks && recipient?.group && a.commentName === 'required' && !(b.value as { name?: string }).name) return json({ error: NAME_NEEDED }, 400)
       let value: unknown = b.value
+      // A typed name stands only on a group link, where the reader must type one; a named link or a signed-in reader is known by the label or account, so a name they send is dropped (as a comment's is).
+      if (isAsks && !recipient?.group) { const { name: _drop, ...rest } = b.value as Record<string, unknown>; value = rest }
       if (isComments) {
         const seen = await visibleComments(a, writer.key, reader, !!recipient)
         const c = validateComment(b.value, (cid) => seen.get(cid) ?? null)
@@ -486,6 +492,7 @@ export function createStateRoutes(ctx: StateRoutesContext) {
         reader: ridOfReaderKey(e.readerKey) ? { rid: ridOfReaderKey(e.readerKey)!, label: e.writer.name ?? null } : null,
         by: declared(v), publisher: v.publisher === true,
         quote: v.anchor?.kind === 'text' ? v.anchor.quote : null, region: v.anchor?.kind === 'region',
+        moment: v.anchor?.kind === 'time' ? v.anchor.at : null,
         body: v.body, transcript: v.transcript ?? null, audioUrl: audio, at: e.at, resolved,
         link: `${ctx.pageUrl(e.artifactId)}#comment-${e.id}`,
       })

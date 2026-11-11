@@ -3,6 +3,32 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## Unreleased
+
+**The feedback page: a page can ask its readers questions.** The front matter takes `asks:` (up to 12 questions, each with up to 8 options; see the README). Each ```askcard slot in the body draws one question as a card: the options with their reasons, the recommended one marked, and "<Reader> says something else". After a tap the card marks the reader's answer. A "Your answers" panel lists every question, with a Change link or a Make it link, and says answers reach the owner within a few minutes. A reader's answer is a record in the new `asks` state slot (private to the owner; a POST that works answers 200). A typed name stands only through a group link; a named link or a signed-in reader is known already, so a name they send is dropped. The hub never parses an ask block: the owner's computer sends the questions as data. Answers are refused in words when the question changed since the page opened, when the option is not one of the options, or after the reader's feedback window closes.
+
+**`ChoiceCard` is one drawing for a call card and an ask card.** The new `@supersuit/artifacts/choice-card` entry exports `ChoiceCard`, `CHOICE_TYPE_WORDS` and `HUB_CHOICE_LOOK`, and needs React only.
+
+**`next` and `firebase-admin` are now optional peers.** A host that imports only `./choice-card` or the pure helpers installs neither.
+
+**A note at a moment.** A comment can be pinned to a second in a recording: the new `time` anchor is `{kind: "time", block, at}`, with `at` a whole second from 0 to 21600 (six hours). A voice note or video shows "Note at 0:14" where the page takes comments, and a note pinned to a moment shows "At 0:14", which moves the recording to that second. The comments feed carries `moment`. New exports: `TimeAnchor`, `MAX_TIME_S`, `momentLabel`.
+
+- DETECTOR: a page whose front matter has `asks:` or a ```askcard slot; a host that wants `ChoiceCard` without Next; a comment with a `time` anchor.
+- REMEDY: none for a host; it ships in the routes and the reader. A host on 0.66.0 refuses `asks:` as an unknown key.
+- TESTS: `src/artifacts/asks.test.ts`, `src/routes/asks.test.tsx`, `src/widgets/ask-card.test.tsx`, `src/reader/choice-card.test.tsx`, `src/reader/feedback-window.test.tsx`, `src/artifacts/anchor.test.ts`, `src/artifacts/comments.test.ts`, `src/reader/moment.test.tsx`, `src/routes/comments-feed.test.tsx`.
+
+**Microsoft sign-in, beside Google.** The hub's sign-in page reads a list of providers (`SIGN_IN_PROVIDERS`, `providersFor`) and draws one button for each provider the hub turned on; its words name none of them. A Microsoft email is not verified unless Microsoft issued the domain, so an account with an unverified email gets Firebase's verification email, sent once for each account on that browser and flagged as sent only after it sends. The reader taps the link, comes back and taps Continue. An account that exists with another provider sees "Continue with Google" (or Microsoft), and the second credential links only when both emails are the same. A pass counts one sign-in by provider, for fresh sign-ins only (`auth_time` within 5 minutes), under `tenants/<id>/signInCounts/<YYYY-MM>`; a reader already signed in is not counted again, and a failed count never blocks the pass. `auth/unauthorized-domain` is the hub's own setup fault, so it gets the plain failure words and not a company message. New exports: `SIGN_IN_PROVIDERS`, `providersFor`, `signInOutcome`, `providerOf`, `shouldLink`, `shouldSendVerification`, `isFreshSignIn`.
+
+- DETECTOR: a hub whose sign-in page offers a second provider, or whose readers sign in with an unverified email.
+- REMEDY: none for a host that stays on Google; the template hub ships the page and the pass route. Turning Microsoft on is Supersuit's `hub.mjs apply ... --sign-in microsoft`.
+- TESTS: `src/artifacts/sign-in.test.ts`, `test/local-sign-in.test.ts`.
+
+**A spreadsheet file page shows its first sheet.** A `template: file` page for an `.xlsx`, `.xls`, `.csv` or `.ods` file draws the first sheet as a read-only table in the reader's browser, with SheetJS CE 0.20.3 (Apache-2.0), vendored in `vendor/sheetjs` with its `LICENSE` and SHA-256 hashes. It shows the first 500 rows by 50 columns. The browser does not fetch a file over 10 MB; the line and Download stay. The server never loads SheetJS and never reads the file: the reader's browser fetches the private signed URL, so the private bucket's CORS rule must allow `GET` and `HEAD` as well as `PUT` (see the README). Supersuit's hub setup sets it.
+
+- DETECTOR: a hub that serves a spreadsheet file page; the table does not draw and Download still works when the private bucket has no CORS rule for the hub's origin.
+- REMEDY: set the one CORS rule on the private bucket (README, "private bucket" CORS rule); a spreadsheet page needs `GET` and `HEAD` in it as well as `PUT`. Supersuit's hub setup sets it. Nothing else for a host.
+- TESTS: `src/artifacts/sheet-view.test.tsx`, `src/routes/file-page.test.tsx`.
+
 ## 0.67.1 (2026-11-11)
 
 **A republish without `cover:` clears the old cover.** `saveArtifact` cleared a dropped subtitle, `to`, theme and pack on update, but not a dropped cover, so a page republished without its `cover:` line kept the old image under the title and as `og:image`. The cover is now content like the subtitle: when the file carries none, the record loses it, the body draws no image under the title, and the link preview falls back to the share card (`/<id>/share.png`). Fixes #14.

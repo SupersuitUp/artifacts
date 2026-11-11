@@ -29,8 +29,8 @@
 // overlay is portalled onto document.body so its coordinates are page coordinates.
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { PINS_SET, announcePins, signInBack } from './page-bridge.js'
-import { MAX_QUOTE_CHARS, textAnchorFrom, type Anchor } from '../artifacts/anchor.js'
+import { NOTE_AT, PINS_SET, SEEK_TO, announcePins, signInBack } from './page-bridge.js'
+import { MAX_QUOTE_CHARS, momentLabel, textAnchorFrom, type Anchor } from '../artifacts/anchor.js'
 import { COMMENTS_SLOT, MAX_COMMENT_NAME_CHARS, MAX_RESOLVE_NOTE_CHARS, resolutionOf, type CommentResolution, type CommentValue, type CommentsMode } from '../artifacts/comments.js'
 import type { PersonalNote } from '../artifacts/personal-store.js'
 import { CommentCard, recallName, rememberName, type SavedMemo } from './comment-card.js'
@@ -59,6 +59,10 @@ export const STRANDED_ALONE = 'The recording did not upload, so it is kept on th
 export const STRANDED_LOST = 'Your comment is saved. The recording did not upload, and this browser would not keep it.'
 /** The line a resolved thread collapses to. */
 export const resolvedLine = (r: CommentResolution) => (r.note ? `Resolved: ${r.note}` : 'Resolved')
+/** The "At 0:14" line for a time anchor: its label, and a way to move the recording there. */
+const momentOf = (a: Anchor) => a.kind === 'time'
+  ? { label: momentLabel(a.at), onSeek: () => window.dispatchEvent(new CustomEvent(SEEK_TO, { detail: { block: a.block, at: a.at } })) }
+  : undefined
 const resolvedOf = (item: Item) => (item.kind === 'shared' ? resolutionOf(item.value) : null)
 const DRAG_PX = 8
 /** Where a drag never starts a box: controls, and anything that is somebody's words. */
@@ -415,6 +419,23 @@ export function CommentLayer({
   }, [])
   useEffect(() => { announcePins(showPins) }, [showPins])
 
+  // A recording's "Note at 0:14" button: the page's recordings show it only while this mark is set.
+  useEffect(() => {
+    if (!share) return
+    document.documentElement.setAttribute('data-comments-on', '')
+    return () => document.documentElement.removeAttribute('data-comments-on')
+  }, [share])
+  useEffect(() => {
+    const onNote = (e: Event) => {
+      const d = (e as CustomEvent<{ block: string; at: number }>).detail
+      const el = document.getElementById(rootId)?.querySelector<HTMLElement>(`[data-block="${d?.block}"]`)
+      const box = el?.getBoundingClientRect()
+      if (d && box) setDraft({ anchor: { kind: 'time', block: d.block, at: d.at }, x: box.right + window.scrollX, y: box.top + window.scrollY + 48 })
+    }
+    window.addEventListener(NOTE_AT, onNote)
+    return () => window.removeEventListener(NOTE_AT, onNote)
+  }, [rootId])
+
   // Show the comment the address names once it has loaded: a reply is shown in its parent's thread.
   // Held until the comments arrive; an id that is not among them (deleted, or not this reader's to
   // see) says so in a line, rather than leaving the reader wondering why nothing happened.
@@ -613,7 +634,7 @@ export function CommentLayer({
       {draft ? (
         <Floating x={draft.x} y={draft.y}>
           <CommentCard ownerName={ownerName} mode={comments} canShare={share} closed={closed} requireName={requireName} knownName={knownName} signedIn={signedIn && onServer} quote={draft.quote} accent={accent} signIn={signIn}
-            voice={host} onSave={(body, share, memo, by) => saveNew(body, share, draft, memo, by)} onCancel={() => setDraft(null)} />
+            voice={host} moment={momentOf(draft.anchor)} onSave={(body, share, memo, by) => saveNew(body, share, draft, memo, by)} onCancel={() => setDraft(null)} />
         </Floating>
       ) : null}
       {openItem && open ? (
@@ -641,7 +662,7 @@ export function CommentLayer({
                       className="w-full rounded-lg px-2 py-2 text-left hover:bg-[color:var(--a-line)]"
                       style={resolvedOf(item) ? { opacity: 0.6 } : undefined}>
                       <span className="block truncate text-[12px] italic opacity-70">
-                        {resolvedOf(item) ? '✓ ' : ''}{item.value.anchor.kind === 'text' ? `“${item.value.anchor.quote}”` : 'A box on the page'}
+                        {resolvedOf(item) ? '✓ ' : ''}{item.value.anchor.kind === 'text' ? `“${item.value.anchor.quote}”` : item.value.anchor.kind === 'time' ? `At ${momentLabel(item.value.anchor.at)}` : 'A box on the page'}
                       </span>
                       <span className="line-clamp-2 block text-[14px] leading-snug">{item.value.body}</span>
                       <span className="block text-[11px] opacity-60">{item.kind === 'personal' ? 'only you' : item.name}</span>
@@ -679,7 +700,7 @@ export function CommentLayer({
                 className="m-0 border-l-2 py-1 pl-3"
                 style={{ borderColor: accent, borderStyle: item.kind === 'personal' ? 'dashed' : 'solid', ...(highlight === item.id ? { background: `color-mix(in srgb, ${accent} 14%, transparent)` } : {}) }}>
                 {resolvedOf(item) ? <span data-comment-resolved-line className="block text-[13px] font-medium" style={{ color: accent }}>✓ {resolvedLine(resolvedOf(item)!)}</span> : null}
-                {item.value.anchor.kind === 'text' ? <span className="block text-[13px] italic opacity-70">“{item.value.anchor.quote}”</span> : <span className="block text-[13px] italic opacity-70">A box on part of the page that has changed</span>}
+                {item.value.anchor.kind === 'text' ? <span className="block text-[13px] italic opacity-70">“{item.value.anchor.quote}”</span> : <span className="block text-[13px] italic opacity-70">{item.value.anchor.kind === 'time' ? `A note at ${momentLabel(item.value.anchor.at)} on a recording that has changed` : 'A box on part of the page that has changed'}</span>}
                 <span className="block whitespace-pre-wrap text-[15px] text-[color:var(--a-strong)]">{item.value.body}</span>
                 <span className="block text-xs opacity-60">
                   {item.kind === 'personal' ? 'only you' : item.name}{` · version ${item.value.version}`}
@@ -726,6 +747,7 @@ function Thread({ item, replies, canReply, awaiting = false, askName = false, on
   const [error, setError] = useState<string | null>(null)
   const [showResolved, setShowResolved] = useState(startExpanded)
   const resolved = resolvedOf(item)
+  const moment = momentOf(item.value.anchor)
   const shell = 'w-[min(22rem,calc(100vw-2rem))] rounded-xl border border-[color:var(--a-line-strong)] bg-[color:var(--a-surface)] p-3 text-sm text-[color:var(--a-strong)] shadow-xl'
   const reopen = canResolve && onResolve ? (
     <button type="button" data-comment-reopen className="ml-3 text-xs underline" onClick={async () => setError(await onResolve(item, false))}>Reopen</button>
@@ -756,6 +778,7 @@ function Thread({ item, replies, canReply, awaiting = false, askName = false, on
       </div>
       {resolved ? <p data-comment-resolved-line className="m-0 mb-2 text-[13px]" style={{ color: accent }}>✓ {resolvedLine(resolved)}{resolved.by ? <span className="opacity-70">{` · ${resolved.by}`}</span> : null}</p> : null}
       {item.value.anchor.kind === 'text' ? <p className="mb-2 line-clamp-2 border-l-2 pl-2 text-[13px] italic opacity-70" style={{ borderColor: accent }}>{item.value.anchor.quote}</p> : null}
+      {moment ? <button type="button" data-comment-moment onClick={moment.onSeek} className="mb-2 block text-xs font-semibold underline">{`At ${moment.label}`}</button> : null}
       <Entry item={item} accent={accent} audioDb={audioDb} onRemove={onRemove} onEdit={onEdit} />
       {replies.length ? <ul className="m-0 mt-2 grid list-none gap-2 border-l pl-3 p-0">{replies.map((r) => {
         // A publisher reply pinned somewhere other than its thread points at the passage that changed.

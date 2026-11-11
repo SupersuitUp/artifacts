@@ -13,6 +13,12 @@ export function announcePins(show: boolean): void {
   window.dispatchEvent(new CustomEvent<boolean>(PINS_STATE, { detail: show }))
 }
 
+/** A recording's "Note at 0:14" button asks the comment layer to open a note at that second.
+ *  Detail: { block: string; at: number }. */
+export const NOTE_AT = 'artifact:note-at'
+/** A comment's "At 0:14" line asks the recording in that block to move there. Same detail. */
+export const SEEK_TO = 'artifact:seek-to'
+
 /** The sign-in link, returning to this exact address, hash included, so a reader who signs in
  *  lands where they were (a linked comment, a section). */
 export function signInBack(signIn: string): string {

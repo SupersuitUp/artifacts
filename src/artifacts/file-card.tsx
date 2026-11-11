@@ -1,9 +1,11 @@
 // The thin page a file artifact is (any-file artifacts, 2026-11-11). It ports file-page.html: the hub
 // reader's kicker, title and "For <name>" line, and the voice note's box holding the file. A PDF, an
-// image, a video or a sound shows in the browser's own viewer; everything else is a download. The
-// hub never reads inside a file, so the box says the size and the date, never a page count.
+// image, a video or a sound shows in the browser's own viewer; a spreadsheet is drawn as a table by
+// the reader's browser (sheet-view.tsx); everything else is a download. The hub never reads inside a
+// file, so the box says the size and the date, never a page count.
 import type { FileBody } from './file-page.js'
-import { fileNoun, sizeWords } from './file-page.js'
+import { fileNoun, showsAsSheet, sizeWords } from './file-page.js'
+import { SheetView } from './sheet-view.js'
 
 const BTN = 'inline-flex min-h-11 items-center gap-2 rounded-full px-[1.15rem] text-[0.95rem] font-semibold'
 const day = (iso: string) => { const d = new Date(iso); return Number.isFinite(d.getTime()) ? d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }) : '' }
@@ -42,6 +44,9 @@ export function FileCard({ owner, title, label, file, links, display, updatedAt 
               <video src={links.open} controls preload="metadata" className="mt-[0.9rem] w-full rounded-lg border border-[color:var(--a-line)] bg-black" />
             ) : links.open && type.startsWith('audio/') ? (
               <audio src={links.open} controls preload="none" className="mt-[0.9rem] w-full" />
+            ) : file && showsAsSheet(file) ? (
+              // The reader's browser draws the first sheet; until it does (or if it cannot), the line below.
+              <SheetView url={links.download} bytes={file.bytes} />
             ) : (
               <p className="mt-3 text-[0.8rem] text-[color:var(--a-muted)]">This page does not show this kind of file. Download it to open it.</p>
             )}

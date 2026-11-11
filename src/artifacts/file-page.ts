@@ -34,6 +34,13 @@ export async function fileLinks(id: string, file: FileBody, privateUrl: PrivateU
   return { open, download }
 }
 
+/** Whether the reader's browser draws the file as a table (Task 25): judged, like `fileLinks`, from
+ *  the STORED name. Null-safe before the file arrives. The hub server never reads the bytes. */
+export function showsAsSheet(file: FileBody): boolean {
+  const stored = file.ref ? PRIVATE_REF.exec(file.ref)?.[1] : undefined
+  return !!stored && /\.(xlsx|xls|csv|ods)$/i.test(stored)
+}
+
 const NOUNS: [RegExp, string, string][] = [
   [/^application\/pdf$/, 'PDF', 'PDF'],
   [/^image\//, 'Image', 'image'],

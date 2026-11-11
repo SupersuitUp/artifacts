@@ -28,6 +28,10 @@
       "types": "./lib/index.d.ts",
       "default": "./lib/index.js"
     },
+    "./choice-card": {
+      "types": "./lib/choice-card.d.ts",
+      "default": "./lib/choice-card.js"
+    },
     "./artifacts": {
       "types": "./lib/artifacts/index.d.ts",
       "default": "./lib/artifacts/index.js"
@@ -62,6 +66,7 @@
   "files": [
     "lib",
     "fonts",
+    "vendor",
     "template",
     "README.md",
     "CHANGELOG.md",
@@ -86,6 +91,12 @@
   },
   "peerDependenciesMeta": {
     "@google-cloud/storage": {
+      "optional": true
+    },
+    "next": {
+      "optional": true
+    },
+    "firebase-admin": {
       "optional": true
     }
   },

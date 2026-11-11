@@ -18,9 +18,9 @@ Firestore), and optionally `@google-cloud/storage >= 7` for uploaded files.
 ## A deployable hub host, in the package
 
 `template/hub/` is a complete Next.js app that serves one operator's pages from a Google Cloud
-project they own (Firebase App Hosting, Firestore, Cloud Storage, Google sign-in on their own
-domain), configured entirely by environment variables. It ships in the tarball so anyone can
-deploy a hub without access to any private repository. Supersuit's `create-or-update-my-artifact-hub`
+project they own (Firebase App Hosting, Firestore, Cloud Storage, Google and Microsoft sign-in on
+their own domain), configured entirely by environment variables. It ships in the tarball so anyone
+can deploy a hub without access to any private repository. Supersuit's `create-or-update-my-artifact-hub`
 copies it out of the package, runs `npm install` and deploys it; its own
 [README](./template/hub/README.md) lists every variable. The template pins this package's own
 version (`npm version` keeps it in step), and `npm run test:template` packs the package, installs
@@ -350,6 +350,7 @@ summary: Three bets, what each costs, and what we stop doing to afford them.
 | `translations` | The same document in other languages on this host, as a map of tag to page id: `{"es": "abcd2345"}` (the publisher resolves each twin's file to its id). With `lang`, the page draws a small switch at the top naming each language in itself ("English · Español") and the unfurl carries `hreflang` alternates. Each page names its own twins; a republish without the line removes the switch |
 | `change` | One line saying what this version changed (see Version history) |
 | `template` | `document` (the default, the read-along reader), `broadcast` (one message card sent to several people; see Broadcasts) or `file` (a page that is one file; see below) |
+| `asks` | Questions to the page's readers, sent as data (see Asks below). Needs `links: per-reader` |
 
 An unknown key is refused, so a typo fails loudly instead of being ignored.
 
@@ -379,6 +380,43 @@ file:
 A file page has no body, and no `access`, `password`, `state`, `comments`, `voice`, `narration`, `timings` or `cover`. It is always `links: per-reader` and private: the file sits in the private store and a reader gets one-hour signed links. A PDF, an image (png, jpeg, gif, webp), a video (mp4, webm) or a sound (mp3, m4a, wav) opens in the browser's own viewer. Every other type, HTML and SVG included, is a download signed with `Content-Disposition: attachment`, so no file runs as a page on the hub.
 
 `UPLOAD` and `PUT_ASSET` take the file's bytes with `?private=1&file=1`. They answer 409 for a page that is not a file page and 400 without `private=1`. Page assets of a markdown page keep the nine types.
+
+A spreadsheet (`.xlsx`, `.xls`, `.csv`, `.ods`) shows its first sheet as a read-only table, the first 500 rows by 50 columns. The reader's browser draws it with a vendored SheetJS CE (`vendor/sheetjs`); the server never loads it. The browser fetches the signed URL itself, so a spreadsheet page needs `GET` and `HEAD` in the private bucket's CORS rule, as well as `PUT`; see [the one rule](#private-bucket-cors) (Supersuit's hub setup sets it). A file over 10 MB is not drawn; Download stays.
+
+## Asks (`asks:`)
+
+An ask is a question the page puts to its readers. The owner's computer reads the ```ask blocks in the draft and sends them as data in `asks:`. The hub never parses an ask block.
+
+```yaml
+asks:
+  - id: headline
+    type: pick-one
+    question: Which headline should the page open with?
+    hash: 3f9a1c0b7d2e
+    options:
+      - label: Your own AI, on your own computer
+        because: Says what is different in eight words.
+        recommended: true
+      - label: Stop doing the toil by hand
+        because: Names the pain, but not the product.
+        recommended: false
+```
+
+| Key | Meaning |
+|---|---|
+| `id` | Lowercase letters, digits and hyphens, 1 to 48 characters. The first character is a letter or a digit. Each id is used once |
+| `type` | `pick-one`, `accept-or-reject` or `say-what-you-want` |
+| `question` | The question, up to 300 characters |
+| `hash` | 12 hex characters. The hash changes when the type or the options change. An answer with an old hash is refused, so a reader never answers a question that has changed |
+| `options` | Up to 8, each with `label` (up to 200 characters), `because` (the reason, up to 400 characters) and `recommended` (true or false). `say-what-you-want` takes none; the other types need them |
+
+- A page has up to 12 asks. `asks:` needs `links: per-reader`.
+- Each ```askcard slot in the body names one ask id, alone on its line inside the fence. An id with no ask in `asks:` is refused.
+- The page declares the `asks` state slot by itself: private to the owner, any reader may append. A front matter `state:` slot named `asks` is refused.
+- A reader taps an option, or taps "<Reader> says something else" and types words. The answer is `{ask, hash, choice, words}`, with `name` only through a group link. The latest answer for a question stands, and the reader can change it.
+- Answers reach the owner within a few minutes. A reader whose feedback window has closed gets a 403 in words.
+
+A note can also be pinned to a second in a recording: a comment with the anchor `{kind: "time", block, at}` (`at` is a whole second from 0 to 21600).
 
 ## Inline definitions (`definitions:`)
 
@@ -922,13 +960,23 @@ type Ctx = { params: Promise<{ id: string }> }
 export function POST(request: NextRequest, ctx: Ctx) { return artifacts.TRANSCRIBE(request, ctx) }
 ```
 
-The PRIVATE bucket (`privateBucket`, where memos live since 0.38.0) needs CORS allowing `PUT`
-from the site's origin with the `content-type`, `cache-control` and `x-goog-content-length-range`
-headers, since the reader's browser uploads directly. Without it every recording fails in the
-browser (Safari says "Load failed") while the routes answer 201; the typed words still save, and
-the recording is kept on the reader's device as a note only they see. Check it with a preflight:
+<a id="private-bucket-cors"></a>
+The PRIVATE bucket (`privateBucket`) needs ONE CORS rule, because the reader's browser talks to it
+directly: it uploads voice memos with `PUT`, and it fetches a spreadsheet's signed URL with `GET`
+and `HEAD` to draw the table. The publisher's `?private=1` uploads need the same rule.
+
+- Origins: the hub's own origins.
+- Methods: `GET`, `HEAD` and `PUT`.
+- Response headers: `Content-Type`, `Content-Length`, `Content-Range`, `Accept-Ranges`, `cache-control` and `x-goog-content-length-range`.
+- `maxAgeSeconds`: 3600.
+
+Supersuit's hub setup sets this rule on the private bucket. Without `PUT`, every recording fails in
+the browser (Safari says "Load failed") while the routes answer 201; the typed words still save, and
+the recording is kept on the reader's device as a note only they see. Without `GET` and `HEAD`, a
+spreadsheet page shows its line and Download but no table. Check the upload side with a preflight:
 `curl -si -X OPTIONS -H 'Origin: https://<your host>' -H 'Access-Control-Request-Method: PUT' -H 'Access-Control-Request-Headers: content-type,cache-control,x-goog-content-length-range' https://storage.googleapis.com/<private bucket>/x`
-must answer with an `access-control-allow-origin` header.
+must answer with an `access-control-allow-origin` header. For the table, send the same request with
+`Access-Control-Request-Method: GET`.
 
 ### Resolving a thread
 
@@ -1136,7 +1184,7 @@ media: private
 
 The private bucket must be a different bucket from the public one (passing the same bucket twice throws), with uniform bucket-level access, public access prevention enforced, and object access granted only to the host's own service account. The page signs a V4 read URL per private file on every render that passed the per-reader gate, valid `PRIVATE_READ_TTL_MS` (one hour); a revoked or expired link renders nothing and mints nothing. A reader revoked after a render can keep loading a URL already handed to them for at most that hour. Expiry's `deletePage` clears the page from both buckets.
 
-Readers' voice memos are uploaded from the reader's browser straight to the private bucket, so give that bucket a CORS rule allowing `PUT` from your origin with the `content-type`, `cache-control` and `x-goog-content-length-range` headers (the publisher's `?private=1` uploads need the same rule); a reader's browser playing a signed URL needs `GET` (and `HEAD`) from your origin only if your player fetches it with CORS.
+Readers' voice memos are uploaded from the reader's browser straight to the private bucket, so that bucket needs the CORS rule described under [the private bucket](#private-bucket-cors) (`PUT` for memos; a spreadsheet page needs `GET` and `HEAD` too).
 
 Routes (spread into your route files by `createArtifactRoutes`): `RECIPIENTS`, `VIEWS`, `SEEN`, and `sweepExpired`.
 

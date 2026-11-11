@@ -15,7 +15,20 @@
 // node:crypto here (the block hash is FNV-1a, which only has to be stable, never secret).
 export type TextAnchor = { kind: 'text'; quote: string; prefix: string; suffix: string; heading?: string }
 export type RegionAnchor = { kind: 'region'; block: string; x: number; y: number; w: number; h: number }
-export type Anchor = TextAnchor | RegionAnchor
+/** A second in a recording block (a voice note or a video): "at 0:14". */
+export type TimeAnchor = { kind: 'time'; block: string; at: number }
+export type Anchor = TextAnchor | RegionAnchor | TimeAnchor
+
+/** The longest recording a note can be pinned in: six hours, in seconds. */
+export const MAX_TIME_S = 6 * 60 * 60
+
+/** A second as the player shows it: "0:14", or "1:02:03" past an hour. */
+export function momentLabel(at: number): string {
+  const s = Math.floor(at)
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), r = s % 60
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return h ? `${h}:${pad(m)}:${pad(r)}` : `${m}:${pad(r)}`
+}
 
 export const CONTEXT_CHARS = 32
 export const MAX_QUOTE_CHARS = 500
@@ -100,6 +113,13 @@ export function parseAnchor(raw: unknown): Anchor | null {
     // A small allowance for float rounding at the far edge; a box that leaves its block is refused.
     if (x + w > 1.000001 || y + h > 1.000001) return null
     return { kind: 'region', block, x, y, w, h }
+  }
+  if (raw.kind === 'time') {
+    if (Object.keys(raw).some((k) => !['kind', 'block', 'at'].includes(k))) return null
+    const { block, at } = raw
+    if (typeof block !== 'string' || !BLOCK_ID.test(block)) return null
+    if (typeof at !== 'number' || !Number.isFinite(at) || at < 0 || at > MAX_TIME_S) return null
+    return { kind: 'time', block, at: Math.floor(at) }
   }
   return null
 }

@@ -1,7 +1,7 @@
 // Between the page in the browser and a comment's anchor: the page's text as one string (so a
 // selection becomes a text-quote anchor and an anchor becomes a Range again), and where on the
 // screen each anchor sits. DOM only, no React, so the layer and its tests share it.
-import { findText, type Anchor, type RegionAnchor, type TextAnchor } from '../artifacts/anchor.js'
+import { findText, type Anchor, type RegionAnchor, type TextAnchor, type TimeAnchor } from '../artifacts/anchor.js'
 
 /** Text that is on the page but not the page's prose: the notes widget, hidden definition copy,
  *  and anything the comment layer itself draws. */
@@ -72,6 +72,7 @@ export function headingAt(root: HTMLElement, idx: TextIndex, offset: number): st
 export type Placement =
   | { kind: 'text'; range: Range }
   | { kind: 'region'; block: HTMLElement; anchor: RegionAnchor }
+  | { kind: 'time'; block: HTMLElement; anchor: TimeAnchor }
 
 /** Where an anchor is on this page now, or null: the comment is then on an earlier version. */
 export function placeAnchor(root: HTMLElement, idx: TextIndex, a: Anchor): Placement | null {
@@ -81,6 +82,7 @@ export function placeAnchor(root: HTMLElement, idx: TextIndex, a: Anchor): Place
     return range ? { kind: 'text', range } : null
   }
   const block = root.querySelector<HTMLElement>(`[data-block="${a.block}"]`)
+  if (a.kind === 'time') return block ? { kind: 'time', block, anchor: a } : null
   return block ? { kind: 'region', block, anchor: a } : null
 }
 
@@ -97,6 +99,7 @@ export function boxOf(p: Placement): Box {
     return pageBox(first ?? { left: 0, top: 0, width: 0, height: 0 })
   }
   const b = p.block.getBoundingClientRect()
+  if (p.kind === 'time') return pageBox({ left: b.left, top: b.top, width: b.width, height: Math.min(b.height, 48) })
   return pageBox({ left: b.left + p.anchor.x * b.width, top: b.top + p.anchor.y * b.height, width: p.anchor.w * b.width, height: p.anchor.h * b.height })
 }
 

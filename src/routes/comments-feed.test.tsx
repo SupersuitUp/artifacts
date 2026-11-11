@@ -87,13 +87,13 @@ describe('COMMENTS_FEED', () => {
     // Exclusive: the comment left exactly at `since` is not repeated.
     expect(body.comments.map((c) => c.body)).toEqual(['Which river?', 'This box', 'The north one.'])
     expect(body.comments[0]).toEqual({
-      artifactId: 'fda23456', title: 'First page', entryId: ids.first, parent: null, name: 'Sam Rivera', quote: 'river', region: false,
+      artifactId: 'fda23456', title: 'First page', entryId: ids.first, parent: null, name: 'Sam Rivera', quote: 'river', region: false, moment: null,
       body: 'Which river?', transcript: 'host', audioUrl: 'https://cdn.example.com/signed/fda23456/comments/memo1memo1memo1memo1.webm',
       at: '2026-09-28T11:00:00.000Z', resolved: null, link: `https://artifacts.example.com/fda23456#comment-${ids.first}`,
       reader: null, by: null, publisher: false,
     })
     expect(body.comments[1]).toEqual({
-      artifactId: 'fdb23456', title: 'Second page', entryId: ids.region, parent: null, name: null, quote: null, region: true,
+      artifactId: 'fdb23456', title: 'Second page', entryId: ids.region, parent: null, name: null, quote: null, region: true, moment: null,
       body: 'This box', transcript: null, audioUrl: null, at: '2026-09-28T12:00:00.000Z', resolved: null, link: `https://artifacts.example.com/fdb23456#comment-${ids.region}`,
       reader: null, by: null, publisher: false,
     })

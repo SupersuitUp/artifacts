@@ -74,6 +74,14 @@ Readers are people outside Supersuit, so their command line is the hub's own API
 | Open the file page | reader | `GET /<id>?r=<rid>.<sig>` | `src/routes/file-page.test.tsx` |
 | Open the PDF, play or view in place | reader | `GET <signed read URL>` (inline, safe list only) | `src/routes/file-page.test.tsx` |
 | Download | reader | `GET <signed read URL with response-content-disposition=attachment>` | `src/artifacts/assets.test.ts`, `src/routes/file-page.test.tsx` |
+| Tap an option on an ask card | reader | `POST /api/artifacts/<id>/state {"slot":"asks","op":"append","value":{"ask","hash","choice","words":null}}` | `src/widgets/ask-card.test.tsx`, `src/routes/asks.test.tsx` |
+| "<Reader> says something else", then Send | reader | the same request with `"choice":null,"words":"<words>"` | `src/widgets/ask-card.test.tsx` |
+| Change or Make it (in Your answers) | reader | none: it scrolls to the card; the next tap sends the request above | `src/widgets/ask-card.test.tsx` |
+| Note at a moment in a recording | reader | `POST /api/artifacts/<id>/state {"slot":"comments","op":"append","value":{"anchor":{"kind":"time","block","at"},"body",...}}` | `src/reader/moment.test.tsx` |
+| "At 0:14" on a note | reader | none: it seeks the recording on the page | `src/reader/moment.test.tsx` |
+| Sign in with Google or with Microsoft | reader | Firebase popup, then `GET /api/artifact-pass?to=/<id>` (unchanged) | `src/artifacts/sign-in.test.ts`, `test/local-sign-in.test.ts` |
+| Send the verification email again | reader | Firebase `sendEmailVerification(user)` (once for each account on this browser) | `src/artifacts/sign-in.test.ts` |
+| Continue with Google (the account exists) | reader | Firebase popup for Google, then `linkWithCredential` (only for the same email) | `src/artifacts/sign-in.test.ts` |
 
 ## What must never land in this repo
 

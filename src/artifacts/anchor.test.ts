@@ -105,3 +105,15 @@ describe('parseAnchor', () => {
     for (const v of [null, 'x', [], {}, { kind: 'line' }]) expect(parseAnchor(v)).toBeNull()
   })
 })
+
+describe('a time anchor', () => {
+  it('pins a note to a second in a recording block', () => {
+    expect(parseAnchor({ kind: 'time', block: 'b-voice-0123abcd', at: 14.04 })).toEqual({ kind: 'time', block: 'b-voice-0123abcd', at: 14 })
+  })
+  it('refuses a bad block, a negative or too-long time, and extra keys', () => {
+    expect(parseAnchor({ kind: 'time', block: 'nope', at: 1 })).toBeNull()
+    expect(parseAnchor({ kind: 'time', block: 'b-voice-0123abcd', at: -1 })).toBeNull()
+    expect(parseAnchor({ kind: 'time', block: 'b-voice-0123abcd', at: 21601 })).toBeNull()
+    expect(parseAnchor({ kind: 'time', block: 'b-voice-0123abcd', at: 1, x: 0 })).toBeNull()
+  })
+})

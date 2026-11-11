@@ -17,12 +17,14 @@ export function timeLeft(closesAt: string, now: number): string | null {
   return '1 minute left'
 }
 
-export function FeedbackWindow({ owner, label, note, group, closesAt, now }: {
+export function FeedbackWindow({ owner, label, note, group, closesAt, now, asks }: {
   owner: string; label: string; note: string | null
   /** An open link, shared by several people: nobody is named. */
   group: boolean; closesAt: string
   /** The clock, for tests. Left out, the banner reads the real one and ticks. */
   now?: number
+  /** How many questions the page asks its reader. */
+  asks?: number
 }) {
   const [at, setAt] = useState(() => now ?? Date.now())
   // Markup the server rendered (or a render held for a while) keeps its text through hydration,
@@ -43,6 +45,7 @@ export function FeedbackWindow({ owner, label, note, group, closesAt, now }: {
       <div className="rounded-xl border border-[color:var(--a-line-strong)] px-4 py-3 text-[15px]">
         <p className="m-0 font-medium">{`A draft from ${owner}${group ? '' : `, for ${label}`}`}</p>
         {note ? <p data-feedback-note className="m-0 mt-1">{note}</p> : null}
+        {asks ? <p data-feedback-asks className="m-0 mt-1">{`${['One choice', 'Two choices', 'Three choices', 'Four choices'][asks - 1] ?? `${asks} choices`} for you, and anything that reads wrong. Your answers reach ${owner} within a few minutes.`}</p> : null}
         {/* The server and the browser read the clock a moment apart, so the text may differ by a minute. */}
         <p key={live ? 'live' : 'first'} data-feedback-left aria-live="polite" suppressHydrationWarning className="m-0 mt-1 opacity-80">{left ? `Feedback is open: ${left}.` : FEEDBACK_CLOSED_LINE}</p>
       </div>
