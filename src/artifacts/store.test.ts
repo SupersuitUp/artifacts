@@ -373,3 +373,20 @@ describe('listing one kind (0.37.0)', () => {
     expect(JSON.stringify(d)).not.toContain('long body')
   })
 })
+
+describe('a dropped cover (0.67.1, #14)', () => {
+  beforeEach(() => docs.clear())
+  it('a republish without `cover:` clears the cover, so the body and og:image fall back to the share card', async () => {
+    const r = await saveArtifact({ meta: { ...meta, cover: '/media/x/cover.png' }, markdown: 'b' })
+    if ('notFound' in r) throw new Error('unexpected')
+    expect((await getArtifact(r.id))?.cover).toBe('/media/x/cover.png')
+    await saveArtifact({ id: r.id, meta, markdown: 'b2' })
+    expect((await getArtifact(r.id))?.cover).toBeUndefined()
+  })
+  it('a republish that keeps `cover:` keeps it', async () => {
+    const r = await saveArtifact({ meta: { ...meta, cover: '/media/x/cover.png' }, markdown: 'b' })
+    if ('notFound' in r) throw new Error('unexpected')
+    await saveArtifact({ id: r.id, meta: { ...meta, cover: '/media/x/cover2.png' }, markdown: 'b2' })
+    expect((await getArtifact(r.id))?.cover).toBe('/media/x/cover2.png')
+  })
+})
