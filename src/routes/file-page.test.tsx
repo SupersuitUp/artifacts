@@ -7,6 +7,7 @@ import { testConfig, memoryArtifactStore } from './test-config.js'
 import { memoryRecipientsStore } from '../artifacts/recipients-store.js'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { ridSig } from '../artifacts/recipients.js'
+import { GRANT_COOKIE, mintGrant } from '../artifacts/reader.js'
 
 const site = 'https://artifacts.example.com'
 const auth = { authorization: 'Bearer test-key' }
@@ -43,13 +44,13 @@ describe('LIST ?kind=file', () => {
 
 const S = 's'.repeat(40)
 const props = (id: string, r?: string) => ({ params: Promise.resolve({ id }), searchParams: Promise.resolve(r ? { r } : {}) })
-async function fileRoutes(file: typeof FILE.file) {
+async function fileRoutes(file: typeof FILE.file, extra: Record<string, unknown> = {}) {
   const recipients = memoryRecipientsStore()
   const [dana] = await recipients.add('fkpg2345', [{ label: 'Dana' }])
   const signer = vi.fn(async (_i: string, s: string, o?: { download?: string }) => `https://signed.example.com/${s}${o?.download ? '?dl=1' : ''}`)
   const r = createArtifactRoutes(testConfig({ store: memoryArtifactStore([{ ...FILE, file }]), recipients, recipientSecret: () => S, owner: 'Gary',
-    assets: { put: async () => '', privateUrl: signer } as never }))
-  return { r, recipients, dana, link: `${dana.rid}.${ridSig(S, 'fkpg2345', dana.rid)}` }
+    assets: { put: async () => '', privateUrl: signer } as never, ...extra }))
+  return { r, recipients, dana, signer, link: `${dana.rid}.${ridSig(S, 'fkpg2345', dana.rid)}` }
 }
 
 describe('the file page a reader opens', () => {
@@ -92,5 +93,21 @@ describe('the file page a reader opens', () => {
     const html = renderToStaticMarkup(await r.Page(props('fkpg2345', link)))
     expect(html).not.toContain('signed.example.com')
     expect(html).not.toContain('data-file-card')
+  })
+  it('a link fetcher gets the title and never a signed URL, and the signer is never called', async () => {
+    const { r, link, signer } = await fileRoutes(FILE.file, { readHeader: async (n: string) => (n === 'user-agent' ? 'facebookexternalhit/1.1 Facebot Twitterbot/1.0' : undefined) })
+    const html = renderToStaticMarkup(await r.Page(props('fkpg2345', link)))
+    expect(html).toContain('Pricing model')
+    expect(html).not.toContain('signed.example.com')
+    expect(signer).not.toHaveBeenCalled()
+  })
+  it('the owner signed in sees the file card, not the document reader', async () => {
+    const RS = 'rs'
+    const owner = { uid: 'u1', email: 'robin@example.com', name: 'Robin', member: true }
+    const { r } = await fileRoutes(FILE.file, { readerSecret: () => RS, ownerEmail: 'robin@example.com', readCookie: async (n: string) => (n === GRANT_COOKIE ? mintGrant(RS, owner) : undefined) })
+    const html = renderToStaticMarkup(await r.Page(props('fkpg2345')))
+    expect(html).toContain('data-file-card')
+    expect(html).toContain('Open the PDF')
+    expect(html).not.toContain('A page from Supersuit')
   })
 })
