@@ -22,7 +22,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ t
       <div style={{ maxWidth: '26rem', margin: '0 auto', padding: '18vh 1.5rem 4rem', textAlign: 'center' }}>
         <p style={{ fontSize: '.75rem', letterSpacing: '.14em', textTransform: 'uppercase', opacity: 0.6 }}>{pack.kicker}</p>
         <h1 style={{ fontFamily: pack.type.display, fontSize: '1.9rem', margin: '.6rem 0 1rem' }}>Open a private page</h1>
-        <SignIn firebase={tenant.localSignIn.firebase} to={path} accent={pack.accent} ground={pack.ground} switchAccount={sw === '1'} />
+        <SignIn firebase={tenant.localSignIn.firebase} to={path} accent={pack.accent} ground={pack.ground} switchAccount={sw === '1'} providers={['google']} />
       </div>
     </main>
   )

@@ -1,12 +1,13 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { initializeApp, getApps, getApp } from 'firebase/app'
-import { getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut, type User } from 'firebase/auth'
+import { getAuth, GoogleAuthProvider, OAuthProvider, onAuthStateChanged, signInWithPopup, signOut, type User } from 'firebase/auth'
+import { providersFor, SIGN_IN_WORDS, type SignInProviderId } from '@supersuit/artifacts'
 import type { FirebaseWebConfig } from '@/tenant'
 
 const NAME = 'artifacts'
 
-export function SignIn({ firebase, to, accent, ground, switchAccount = false }: { firebase: FirebaseWebConfig; to: string | null; accent: string; ground: string; switchAccount?: boolean }) {
+export function SignIn({ firebase, to, accent, ground, switchAccount = false, providers }: { firebase: FirebaseWebConfig; to: string | null; accent: string; ground: string; switchAccount?: boolean; providers: SignInProviderId[] }) {
   const [user, setUser] = useState<User | null | undefined>(undefined)
   const [state, setState] = useState<'idle' | 'working' | 'unverified' | 'error'>('idle')
   const auth = () => getAuth(getApps().some(a => a.name === NAME) ? getApp(NAME) : initializeApp(firebase, NAME))
@@ -46,15 +47,18 @@ export function SignIn({ firebase, to, accent, ground, switchAccount = false }: 
   if (user === undefined) return <p style={{ opacity: 0.6 }}>…</p>
   if (!user) return (
     <>
-      <p style={{ opacity: 0.75, marginBottom: '1.4rem' }}>Sign in with the Google account this page was shared with.</p>
-      <button style={button} onClick={() => {
-        const p = new GoogleAuthProvider(); p.setCustomParameters({ prompt: 'select_account' })
-        signInWithPopup(auth(), p).catch(() => setState('error'))
-      }}>Sign in with Google</button>
-      {state === 'error' && <p style={{ opacity: 0.7, marginTop: '1rem' }}>That did not finish. Try again.</p>}
+      <p style={{ opacity: 0.75, marginBottom: '1.4rem' }}>{SIGN_IN_WORDS.ask}</p>
+      {providersFor(providers).map((p) => (
+        <button key={p.id} style={button} onClick={() => {
+          const provider = p.id === 'google' ? new GoogleAuthProvider() : new OAuthProvider(p.firebaseId)
+          if (p.id === 'google') provider.setCustomParameters({ prompt: 'select_account' })
+          signInWithPopup(auth(), provider).catch(() => setState('error'))
+        }}>{p.button}</button>
+      ))}
+      {state === 'error' && <p style={{ opacity: 0.7, marginTop: '1rem' }}>{SIGN_IN_WORDS.failed}</p>}
     </>
   )
-  if (state === 'unverified') return <p style={{ opacity: 0.75 }}>That Google account has no verified email. Sign in with one that does.</p>
-  if (state === 'error') return <p style={{ opacity: 0.75 }}>Signed in as {user.email}, but the page did not open. Reload to try again.</p>
+  if (state === 'unverified') return <p style={{ opacity: 0.75 }}>{SIGN_IN_WORDS.notVerified}</p>
+  if (state === 'error') return <p style={{ opacity: 0.75 }}>{SIGN_IN_WORDS.signedInNotOpened(user.email ?? 'your account')}</p>
   return <p style={{ opacity: 0.6 }}>Opening…</p>
 }
