@@ -219,3 +219,61 @@ describe('a recording in a browser', () => {
     other.remove()
   })
 })
+
+// A five-minute screen recording (2026-11-11, "make sure the review page works for multi minute videos"): sixty
+// paragraphs of words, one of them an address with no spaces. A late paragraph seeks and lights, and no word can push
+// the page wider than a phone.
+describe('a five-minute recording', () => {
+  const lines: string[] = []
+  for (let p = 0; p < 60; p++) {
+    if (p) lines.push('')
+    for (let w = 0; w < 12; w++) {
+      const s = p * 5 + w * 0.3
+      const word = p === 30 && w === 0 ? 'https://example.com/a/very/long/address/with/no/spaces/at/all/that/runs/on/and/on' : `p${p}w${w}`
+      lines.push(`${s.toFixed(2)} ${(s + 0.25).toFixed(2)} ${word}`)
+    }
+  }
+  const LONG = ['![sound: Five minutes](https://cdn.example.com/x/take.abc12345.mp4)', '', '```transcript', ...lines, '```'].join('\n')
+  let root: Root
+  let host: HTMLDivElement
+  beforeEach(() => {
+    Object.defineProperty(HTMLMediaElement.prototype, 'play', { configurable: true, value: vi.fn(function (this: HTMLMediaElement) { this.dispatchEvent(new Event('play')); return Promise.resolve() }) })
+    Object.defineProperty(HTMLMediaElement.prototype, 'pause', { configurable: true, value: vi.fn() })
+    host = document.createElement('div'); document.body.appendChild(host); root = createRoot(host)
+  })
+  afterEach(() => { act(() => root.unmount()); host.remove() })
+
+  it('the last paragraph seeks there and lights its first word', () => {
+    act(() => root.render(<ArtifactMarkdown markdown={LONG} />))
+    expect(host.querySelectorAll('[data-vn-paragraph]')).toHaveLength(60)
+    const video = host.querySelector('video')!
+    Object.defineProperty(video, 'readyState', { configurable: true, value: 4 })
+    act(() => { host.querySelector<HTMLButtonElement>('[data-vn-at="295"]')!.click() })
+    expect(video.currentTime).toBe(295)
+    act(() => { video.currentTime = 295.1; video.dispatchEvent(new Event('seeked')) })
+    expect([...host.querySelectorAll('.vn-word-lit')].map((w) => w.textContent)).toEqual(['p59w0'])
+    expect(host.querySelector('[data-vn-at="295"]')!.textContent).toBe('4:55')
+  })
+  it('a word with no spaces wraps inside a phone-wide page instead of pushing it wider', () => {
+    act(() => root.render(<ArtifactMarkdown markdown={LONG} />))
+    const words = host.querySelectorAll('[data-vn-paragraph] > span')
+    expect(words).toHaveLength(60)
+    // A flex item's text never shrinks below its longest word unless it may (min-w-0) and may break inside a word.
+    for (const w of words) expect(w.className).toMatch(/\bmin-w-0\b.*\[overflow-wrap:anywhere\]|\[overflow-wrap:anywhere\].*\bmin-w-0\b/)
+  })
+  // Measured 2026-11-11 in this test's browser: 926 ms a tick when every tick redrew the 3,000 words of a 20-minute
+  // take, 4 ms once the words are drawn once. The bound is wide so a slow machine never fails it; a redraw would.
+  it('twenty minutes of words: the clock ticking does not redraw them', () => {
+    const many: string[] = []
+    for (let p = 0; p < 250; p++) { if (p) many.push(''); for (let w = 0; w < 12; w++) { const s = p * 4.8 + w * 0.3; many.push(`${s.toFixed(2)} ${(s + 0.25).toFixed(2)} w${p}x${w}`) } }
+    act(() => root.render(<ArtifactMarkdown markdown={['![sound: Twenty minutes](https://cdn.example.com/x/take.abc12345.mp4)', '', '```transcript', ...many, '```'].join('\n')} />))
+    const video = host.querySelector('video')!
+    Object.defineProperty(video, 'readyState', { configurable: true, value: 4 })
+    act(() => { host.querySelector<HTMLButtonElement>('[data-vn-at="0"]')!.click() })
+    const t0 = performance.now()
+    for (let i = 1; i <= 20; i++) act(() => { video.currentTime = i * 50; video.dispatchEvent(new Event('timeupdate')) })
+    expect((performance.now() - t0) / 20).toBeLessThan(100)
+    // At 16:40 the word being said is the sixth of paragraph 209, and it alone is lit.
+    expect([...host.querySelectorAll('.vn-word-lit')].map((w) => w.textContent)).toEqual(['w208x5'])
+  })
+})

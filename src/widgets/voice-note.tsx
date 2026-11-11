@@ -16,7 +16,7 @@
 // A note of kind "video" (a screen recording) draws the video above its words, with no native bar:
 // the same button and seek line drive it, a click on the picture toggles play, and each paragraph
 // opens with its time, a button that seeks there.
-import { useEffect, useMemo, useRef, useState, type SyntheticEvent } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject, type SyntheticEvent } from 'react'
 import type { NoteKind } from '../artifacts/voice-note.js'
 import { begunCount, litDeclarations, litWordIndex, type WordTiming } from '../reader/karaoke.js'
 
@@ -135,8 +135,12 @@ export function VoiceNote({ src, label, media, paragraphs, block, kind = 'audio'
     onDurationChange: (e: SyntheticEvent<HTMLMediaElement>) => { const d = e.currentTarget.duration; if (Number.isFinite(d)) setDuration(d) },
   }
 
-  let k = 0
-  spans.current = []
+  // The words are drawn once, not on every tick of the clock: a twenty-minute take has thousands of them, and the
+  // clock ticks every frame while it plays. The lighting touches the spans directly (sync), so they need no redraw.
+  const actions = useRef({ seekTo, play })
+  actions.current = { seekTo, play }
+  const onWord = useCallback((s: number) => { actions.current.seekTo(s); actions.current.play() }, [])
+
   return (
     <div
       {...block}
@@ -195,39 +199,54 @@ export function VoiceNote({ src, label, media, paragraphs, block, kind = 'audio'
         />
         <span className="shrink-0 font-mono text-xs tabular-nums text-[color:var(--a-muted)]">{fmt(t)} / {fmt(total)}</span>
       </div>
-      <div className="mt-4 leading-relaxed text-[color:var(--a-body)]">
-        {paragraphs.map((p, pi) => (
-          <p key={pi} data-vn-paragraph className={kind === 'video' ? 'my-2 flex items-baseline gap-[0.6rem]' : 'my-2'}>
-            {kind === 'video' && p.length ? (
-              <button
-                type="button"
-                data-vn-at={String(p[0].s)}
-                onClick={() => { seekTo(p[0].s); play() }}
-                className="-ml-1 min-h-7 shrink-0 rounded px-1 py-[0.15rem] font-mono text-xs tabular-nums text-[color:var(--a-accent)] hover:bg-[color:var(--a-surface-strong)]"
-              >
-                {fmt(p[0].s)}
-              </button>
-            ) : null}
-            <span>
-              {p.map((w, wi) => {
-                const i = k++
-                return (
-                  <span key={wi}>
-                    {wi ? ' ' : null}
-                    <span
-                      ref={(el) => { if (el) spans.current[i] = el }}
-                      className="vn-word"
-                      onClick={() => { seekTo(w.s); play() }}
-                    >
-                      {w.w}
-                    </span>
-                  </span>
-                )
-              })}
-            </span>
-          </p>
-        ))}
-      </div>
+      <Words paragraphs={paragraphs} kind={kind} spans={spans} onWord={onWord} />
     </div>
   )
 }
+
+/** Every paragraph of the words, with a time stamp first on a recording. Memoized: drawn again only when the words change. */
+const Words = memo(function Words({ paragraphs, kind, spans, onWord }: {
+  paragraphs: WordTiming[][]
+  kind: NoteKind
+  spans: MutableRefObject<HTMLSpanElement[]>
+  onWord(s: number): void
+}) {
+  let k = 0
+  spans.current = []
+  return (
+    <div className="mt-4 leading-relaxed text-[color:var(--a-body)]">
+      {paragraphs.map((p, pi) => (
+        <p key={pi} data-vn-paragraph className={kind === 'video' ? 'my-2 flex items-baseline gap-[0.6rem]' : 'my-2'}>
+          {kind === 'video' && p.length ? (
+            <button
+              type="button"
+              data-vn-at={String(p[0].s)}
+              onClick={() => onWord(p[0].s)}
+              className="-ml-1 min-h-7 shrink-0 rounded px-1 py-[0.15rem] font-mono text-xs tabular-nums text-[color:var(--a-accent)] hover:bg-[color:var(--a-surface-strong)]"
+            >
+              {fmt(p[0].s)}
+            </button>
+          ) : null}
+          {/* min-w-0 and overflow-wrap: a word with no spaces (an address) wraps instead of widening a phone's page. */}
+          <span className="min-w-0 [overflow-wrap:anywhere]">
+            {p.map((w, wi) => {
+              const i = k++
+              return (
+                <span key={wi}>
+                  {wi ? ' ' : null}
+                  <span
+                    ref={(el) => { if (el) spans.current[i] = el }}
+                    className="vn-word"
+                    onClick={() => onWord(w.s)}
+                  >
+                    {w.w}
+                  </span>
+                </span>
+              )
+            })}
+          </span>
+        </p>
+      ))}
+    </div>
+  )
+})
