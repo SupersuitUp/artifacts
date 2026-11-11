@@ -105,6 +105,7 @@ export const FILE_TYPES: Record<string, string> = {
   md: 'text/markdown',
   xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   xls: 'application/vnd.ms-excel',
+  ods: 'application/vnd.oasis.opendocument.spreadsheet',
   docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   doc: 'application/msword',
   pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',

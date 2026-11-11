@@ -66,6 +66,7 @@
   "files": [
     "lib",
     "fonts",
+    "vendor",
     "template",
     "README.md",
     "CHANGELOG.md",

@@ -1,5 +1,8 @@
 import { describe, it, expect, vi } from 'vitest'
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
+// The server render must never load SheetJS: the table is drawn only in the reader's browser.
+const sheetjs = vi.hoisted(() => ({ loaded: false }))
+vi.mock('../../vendor/sheetjs/xlsx.mjs', () => { sheetjs.loaded = true; return {} })
 vi.mock('next/navigation', () => ({ notFound: () => { throw new Error('NOT_FOUND') }, redirect: (to: string) => { throw new Error(`REDIRECT ${to}`) } }))
 import { NextRequest } from 'next/server'
 import { createArtifactRoutes } from './artifacts.js'
@@ -74,6 +77,20 @@ describe('the file page a reader opens', () => {
     expect(html).toContain('This page does not show this kind of file. Download it to open it.')
     expect(html).not.toContain('<object')
     expect(html).not.toContain('<iframe')
+  })
+  it('a spreadsheet on the server: the fallback line and Download, no network call, and SheetJS never loaded', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+    try {
+      for (const stored of ['model.0123abcd.xlsx', 'model.0123abcd.xls', 'model.0123abcd.csv', 'model.0123abcd.ods']) {
+        const { r, link } = await fileRoutes({ name: 'model.xlsx', bytes: 180000, source: 's', type: 'x', ref: `private:${stored}` })
+        const html = renderToStaticMarkup(await r.Page(props('fkpg2345', link)))
+        expect(html, stored).toContain('This page does not show this kind of file. Download it to open it.')
+        expect(html).toContain(`href="https://signed.example.com/${stored}?dl=1"`)
+        expect(html).not.toContain('<table')
+      }
+      expect(fetchSpy).not.toHaveBeenCalled()
+      expect(sheetjs.loaded).toBe(false)
+    } finally { fetchSpy.mockRestore() }
   })
   it('an html or svg file is never shown in place', async () => {
     for (const [name, stored] of [['page.html', 'page.0123abcd.html'], ['mark.svg', 'mark.0123abcd.svg']]) {
