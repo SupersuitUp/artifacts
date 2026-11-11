@@ -5,6 +5,7 @@ import { useState, useSyncExternalStore } from 'react'
 import type { AskData, AskAnswer } from '../artifacts/asks.js'
 import { ChoiceCard, CHOICE_TYPE_WORDS, HUB_CHOICE_LOOK } from '../reader/choice-card.js'
 import { askStoreFor, EMPTY_ASKS } from './ask-store.js'
+import { NO_ZOOM_FONT } from '../reader/no-zoom.js'
 
 export type AskCtx = { artifactId: string; asks: AskData[]; owner: string; reader: string | null; requireName: boolean; display: string }
 const useAsks = (artifactId: string) => { const s = askStoreFor(artifactId); return { store: s, snap: useSyncExternalStore(s.subscribe, s.get, () => EMPTY_ASKS) } }
@@ -30,7 +31,7 @@ export function AskFence({ id, ctx }: { id: string; ctx: AskCtx }) {
   const open = ask.type === 'say-what-you-want' || other
   const box = open ? (
     <div className="flex flex-col gap-2">
-      <textarea aria-label="Your answer" rows={3} value={words} onChange={(e) => setWords(e.currentTarget.value)}
+      <textarea aria-label="Your answer" rows={3} style={NO_ZOOM_FONT} value={words} onChange={(e) => setWords(e.currentTarget.value)}
         className="w-full rounded-xl border border-[color:var(--a-line-strong)] bg-transparent p-3 text-base text-[color:var(--a-strong)]" />
       <button type="button" disabled={!words.trim() || needsName} onClick={() => send(null, words.trim())}
         className="min-h-11 self-start rounded-full bg-[color:var(--a-accent)] px-5 font-semibold text-[color:var(--a-on-accent)] disabled:opacity-50">Send</button>
@@ -40,7 +41,7 @@ export function AskFence({ id, ctx }: { id: string; ctx: AskCtx }) {
     <div data-nospeak>
       {ctx.requireName && (needsName || typedHere) ? (
         <label className="mb-2 block text-sm text-[color:var(--a-muted)]">Your first name
-          <input value={snap.name} onChange={(e) => { setTypedHere(true); store.setName(e.currentTarget.value) }} aria-label="Your first name"
+          <input value={snap.name} onChange={(e) => { setTypedHere(true); store.setName(e.currentTarget.value) }} aria-label="Your first name" style={NO_ZOOM_FONT}
             className="mt-1 block w-full rounded-lg border border-[color:var(--a-line-strong)] bg-transparent px-3 py-2 text-base text-[color:var(--a-strong)]" />
         </label>
       ) : null}

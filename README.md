@@ -404,11 +404,11 @@ asks:
 
 | Key | Meaning |
 |---|---|
-| `id` | Lowercase letters, digits and hyphens, 1 to 48 characters. Each id is used once |
+| `id` | Lowercase letters, digits and hyphens, 1 to 48 characters. The first character is a letter or a digit. Each id is used once |
 | `type` | `pick-one`, `accept-or-reject` or `say-what-you-want` |
 | `question` | The question, up to 300 characters |
-| `hash` | 12 hex characters that change when the question changes. An answer with an old hash is refused, so a reader never answers a question that has changed |
-| `options` | Up to 8, each with `label`, `because` (the reason) and `recommended` (true or false). `say-what-you-want` takes none; the other types need them |
+| `hash` | 12 hex characters. The hash changes when the type or the options change. An answer with an old hash is refused, so a reader never answers a question that has changed |
+| `options` | Up to 8, each with `label` (up to 200 characters), `because` (the reason, up to 400 characters) and `recommended` (true or false). `say-what-you-want` takes none; the other types need them |
 
 - A page has up to 12 asks. `asks:` needs `links: per-reader`.
 - Each ```askcard slot in the body names one ask id, alone on its line inside the fence. An id with no ask in `asks:` is refused.
