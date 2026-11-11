@@ -199,6 +199,17 @@ describe('a recording in a browser', () => {
     expect(pause.mock.instances).toContain(other)
     other.remove()
   })
+  // R10: the lit-word logic is shared with the audio note, so this can pass before the change; it guards the video path.
+  it('seeked inside one word, a recording lights exactly that word', () => {
+    act(() => root.render(<ArtifactMarkdown markdown={REC} />))
+    const video = host.querySelector('video')!
+    Object.defineProperty(video, 'readyState', { configurable: true, value: 4 })
+    act(() => { host.querySelector<HTMLButtonElement>('[data-vn-at="0"]')!.click() })
+    act(() => { video.currentTime = 1.2; video.dispatchEvent(new Event('seeked')) })
+    const lit = [...host.querySelectorAll('.vn-word-lit')]
+    expect(lit).toHaveLength(1)
+    expect(lit[0].textContent).toBe('hope')
+  })
   it('starting a voice note pauses a recording playing elsewhere on the page', () => {
     const other = document.createElement('video'); document.body.appendChild(other)
     Object.defineProperty(other, 'paused', { configurable: true, value: false })
