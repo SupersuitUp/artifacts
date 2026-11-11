@@ -18,7 +18,7 @@ Firestore), and optionally `@google-cloud/storage >= 7` for uploaded files.
 ## A deployable hub host, in the package
 
 `template/hub/` is a complete Next.js app that serves one operator's pages from a Google Cloud
-project they own (Firebase App Hosting, Firestore, Cloud Storage, Google sign-in on their own
+project they own (Firebase App Hosting, Firestore, Cloud Storage, Google and Microsoft sign-in on their own
 domain), configured entirely by environment variables. It ships in the tarball so anyone can
 deploy a hub without access to any private repository. Supersuit's `create-or-update-my-artifact-hub`
 copies it out of the package, runs `npm install` and deploys it; its own
@@ -380,6 +380,8 @@ file:
 A file page has no body, and no `access`, `password`, `state`, `comments`, `voice`, `narration`, `timings` or `cover`. It is always `links: per-reader` and private: the file sits in the private store and a reader gets one-hour signed links. A PDF, an image (png, jpeg, gif, webp), a video (mp4, webm) or a sound (mp3, m4a, wav) opens in the browser's own viewer. Every other type, HTML and SVG included, is a download signed with `Content-Disposition: attachment`, so no file runs as a page on the hub.
 
 `UPLOAD` and `PUT_ASSET` take the file's bytes with `?private=1&file=1`. They answer 409 for a page that is not a file page and 400 without `private=1`. Page assets of a markdown page keep the nine types.
+
+A spreadsheet (`.xlsx`, `.xls`, `.csv`, `.ods`) shows its first sheet as a read-only table, the first 500 rows by 50 columns. The reader's browser draws it with a vendored SheetJS CE (`vendor/sheetjs`); the server never loads it. The browser fetches the signed URL itself, so the private bucket needs a CORS rule that allows `GET`, `HEAD` and `PUT` from the hub's origins (Supersuit's hub setup sets it). A file over 10 MB is not drawn; Download stays.
 
 ## Asks (`asks:`)
 

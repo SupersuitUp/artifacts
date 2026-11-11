@@ -25,6 +25,18 @@ host can tell whether it is affected (DETECTOR), what a host does about it (REME
 - REMEDY: none for a host; it ships in the routes and the reader. A host on 0.66.0 refuses `asks:` as an unknown key.
 - TESTS: `src/artifacts/asks.test.ts`, `src/routes/asks.test.tsx`, `src/widgets/ask-card.test.tsx`, `src/reader/choice-card.test.tsx`, `src/reader/feedback-window.test.tsx`, `src/artifacts/anchor.test.ts`, `src/artifacts/comments.test.ts`, `src/reader/moment.test.tsx`, `src/routes/comments-feed.test.tsx`.
 
+**Microsoft sign-in, beside Google.** The hub's sign-in page reads a list of providers (`SIGN_IN_PROVIDERS`, `providersFor`) and draws one button for each provider the hub turned on; its words name none of them. A Microsoft email is not verified unless Microsoft issued the domain, so an account with an unverified email gets Firebase's verification email, sent once for each account on that browser and flagged as sent only after it sends. The reader taps the link, comes back and taps Continue. An account that exists with another provider sees "Continue with Google" (or Microsoft), and the second credential links only when both emails are the same. A pass counts one sign-in by provider, for fresh sign-ins only (`auth_time` within 5 minutes), under `tenants/<id>/signInCounts/<YYYY-MM>`; a reader already signed in is not counted again, and a failed count never blocks the pass. `auth/unauthorized-domain` is the hub's own setup fault, so it gets the plain failure words and not a company message. New exports: `SIGN_IN_PROVIDERS`, `providersFor`, `signInOutcome`, `providerOf`, `shouldLink`, `shouldSendVerification`, `isFreshSignIn`.
+
+- DETECTOR: a hub whose sign-in page offers a second provider, or whose readers sign in with an unverified email.
+- REMEDY: none for a host that stays on Google; the template hub ships the page and the pass route. Turning Microsoft on is Supersuit's `hub.mjs apply ... --sign-in microsoft`.
+- TESTS: `src/artifacts/sign-in.test.ts`, `test/local-sign-in.test.ts`.
+
+**A spreadsheet file page shows its first sheet.** A `template: file` page for an `.xlsx`, `.xls`, `.csv` or `.ods` file draws the first sheet as a read-only table in the reader's browser, with SheetJS CE 0.20.3 (Apache-2.0), vendored in `vendor/sheetjs` with its `LICENSE` and SHA-256 hashes. It shows the first 500 rows by 50 columns. The browser does not fetch a file over 10 MB; the line and Download stay. The server never loads SheetJS and never reads the file: the reader's browser fetches the private signed URL, so the private bucket needs a CORS rule that allows `GET`, `HEAD` and `PUT` from the hub's origins. Supersuit's hub setup sets it.
+
+- DETECTOR: a hub that serves a spreadsheet file page; the table does not draw and Download still works when the private bucket has no CORS rule for the hub's origin.
+- REMEDY: add the CORS rule to the private bucket (see the README). Nothing else for a host.
+- TESTS: `src/artifacts/sheet-view.test.tsx`, `src/routes/file-page.test.tsx`.
+
 ## 0.66.0 (2026-11-11)
 
 **A recording is a voice note with a video.** An mp4 directly above a ```transcript fence is a note too, of kind `video`; the widget draws the video above its words, with the same seek line, lit word and tap-a-time-to-jump as an audio note, and its own controls (never the browser's). Starting one pauses any other audio or video on the page. For a long recording the words are drawn once, not on every clock tick (3,000 words: 926 ms a tick before, 4 ms after), and a word with no spaces wraps on a phone. New exports: `isVideoSrc`, `NoteKind`.
