@@ -172,8 +172,27 @@ export function transcriptFenceFromWords(words: TimedWord[], opts: { paragraphGa
   return lines.length ? lines.join('\n') + '\n' : ''
 }
 
+/** Whisper's own line for a failed decode (its `logprob_threshold`). */
+const FAILED_DECODE = -1
+/** Faster than anyone speaks: more words than this in each second of the segment. */
+const SQUEEZED_WORDS_PER_SECOND = 10
+
+/** A segment Whisper made up: a failed decode that is either silence by Whisper's own measure
+ *  (`no_speech_prob` over 0.6, the rule Whisper uses to skip a segment) or has its words packed
+ *  faster than speech, the shape of a stock phrase invented over noise ("I'm going to go to the
+ *  next video." in 0.16 s). A low score alone, or fast words alone, is kept: that is real mumbling. */
+function madeUp(seg: Record<string, unknown>, words: TimedWord[]): boolean {
+  const lp = seg.avg_logprob
+  if (typeof lp !== 'number' || !(lp < FAILED_DECODE)) return false
+  if (typeof seg.no_speech_prob === 'number' && seg.no_speech_prob > 0.6) return true
+  if (words.length < 3) return false
+  const span = words[words.length - 1].end - words[0].start
+  return words.length / Math.max(span, 0.01) > SQUEEZED_WORDS_PER_SECOND
+}
+
 /** The timed words in a whisper JSON result (`segments[].words[]`, written by `mlx_whisper` or
- *  `whisper` with word timestamps on). Anything else in the file is ignored. */
+ *  `whisper` with word timestamps on), less any segment Whisper made up (see madeUp). Anything
+ *  else in the file is ignored. */
 export function wordsFromWhisperJson(json: unknown): TimedWord[] {
   const segments = (json as { segments?: unknown })?.segments
   if (!Array.isArray(segments)) return []
@@ -181,10 +200,12 @@ export function wordsFromWhisperJson(json: unknown): TimedWord[] {
   for (const seg of segments) {
     const words = (seg as { words?: unknown })?.words
     if (!Array.isArray(words)) continue
+    const timed: TimedWord[] = []
     for (const w of words) {
       const { word, start, end } = (w ?? {}) as Record<string, unknown>
-      if (typeof word === 'string' && typeof start === 'number' && typeof end === 'number') out.push({ word, start, end })
+      if (typeof word === 'string' && typeof start === 'number' && typeof end === 'number') timed.push({ word, start, end })
     }
+    if (!madeUp(seg as Record<string, unknown>, timed)) out.push(...timed)
   }
   return out
 }

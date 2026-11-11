@@ -109,6 +109,23 @@ describe('wordsFromWhisperJson', () => {
     expect(wordsFromWhisperJson(json)).toEqual([{ word: ' Hello', start: 0, end: 0.3 }, { word: ' friend.', start: 0.62, end: 0.88 }])
     expect(wordsFromWhisperJson(null)).toEqual([])
   })
+  // A real take (2026-11-11): nine seconds of low rumble and clicks, no voice. whisper-large-v3-turbo invented
+  // "I'm going to go to the next video." and squeezed all eight words into the last 0.16 s (avg_logprob -1.77).
+  // large-v3 heard nothing. A failed decode with words packed faster than anyone speaks is not words.
+  it('drops a failed decode whose words are squeezed together (a hallucination)', () => {
+    const squeezed = ["I'm", 'going', 'to', 'go', 'to', 'the', 'next', 'video.'].map((w, i) => ({ word: ' ' + w, start: 8.64 + i * 0.02, end: 8.66 + i * 0.02 }))
+    const json = { segments: [{ start: 8.64, end: 8.8, avg_logprob: -1.77, no_speech_prob: 1e-10, words: squeezed }] }
+    expect(wordsFromWhisperJson(json)).toEqual([])
+  })
+  it('drops a segment whisper itself calls silence (no_speech_prob over 0.6 and a failed decode)', () => {
+    const json = { segments: [{ start: 0, end: 2, avg_logprob: -1.2, no_speech_prob: 0.8, words: [{ word: ' Thank', start: 0.2, end: 0.6 }, { word: ' you.', start: 0.6, end: 1 }] }] }
+    expect(wordsFromWhisperJson(json)).toEqual([])
+  })
+  it('keeps quiet or mumbled real speech: a low score alone, or fast words alone, is not enough', () => {
+    const slowLow = { start: 0, end: 2, avg_logprob: -1.3, no_speech_prob: 0.1, words: [{ word: ' um', start: 0, end: 0.5 }, { word: ' yes', start: 1, end: 1.5 }] }
+    const fastSure = { start: 3, end: 3.3, avg_logprob: -0.2, no_speech_prob: 0, words: ['a', 'b', 'c', 'd'].map((w, i) => ({ word: ' ' + w, start: 3 + i * 0.05, end: 3.05 + i * 0.05 })) }
+    expect(wordsFromWhisperJson({ segments: [slowLow, fastSure] })).toHaveLength(6)
+  })
 })
 
 describe('a recording: an mp4 line above its words', () => {
