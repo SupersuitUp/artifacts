@@ -138,3 +138,73 @@ describe('the voice note in a browser', () => {
     expect(button.getAttribute('aria-label')).toBe('Pause voice note: Robin, to the family')
   })
 })
+
+const REC = NOTE.replace('![Robin, to the family](https://cdn.example.com/x/hello.abc12345.m4a)', '![sound: The bug](https://cdn.example.com/x/take.abc12345.mp4)')
+
+describe('a recording on the page', () => {
+  it('draws a video above its words: inline, nothing fetched beyond its size, no native bar, no autoplay', () => {
+    const doc = new DOMParser().parseFromString(html(REC), 'text/html')
+    const note = doc.querySelector('[data-artifact-voicenote]')!
+    const video = note.querySelector('video')!
+    expect(note.querySelector('audio')).toBeNull()
+    expect(video.getAttribute('src')).toBe('https://cdn.example.com/x/take.abc12345.mp4')
+    expect(video.getAttribute('data-artifact-media')).toBe('take.abc12345.mp4')
+    expect(video.getAttribute('preload')).toBe('metadata')
+    expect(video.hasAttribute('playsinline')).toBe(true)
+    expect(video.hasAttribute('controls')).toBe(false)
+    expect(video.hasAttribute('autoplay')).toBe(false)
+    expect(note.textContent).toContain('Recording')
+    expect(note.querySelector('button')!.getAttribute('aria-label')).toBe('Play recording: The bug')
+    expect([...note.querySelectorAll('[data-vn-at]')].map((b) => [b.getAttribute('data-vn-at'), b.textContent])).toEqual([['0', '0:00'], ['2', '0:02']])
+  })
+  // Regression guard: this passes before the change too; it pins that the audio note stays as it was.
+  it('an audio note has no time stamps, as before', () => {
+    expect(html(NOTE)).not.toContain('data-vn-at')
+  })
+})
+
+describe('a recording in a browser', () => {
+  let root: Root
+  let host: HTMLDivElement
+  let play: ReturnType<typeof vi.fn>
+  let pause: ReturnType<typeof vi.fn>
+  beforeEach(() => {
+    play = vi.fn(function (this: HTMLMediaElement) { this.dispatchEvent(new Event('play')); return Promise.resolve() })
+    pause = vi.fn()
+    Object.defineProperty(HTMLMediaElement.prototype, 'play', { configurable: true, value: play })
+    Object.defineProperty(HTMLMediaElement.prototype, 'pause', { configurable: true, value: pause })
+    host = document.createElement('div'); document.body.appendChild(host); root = createRoot(host)
+  })
+  afterEach(() => { act(() => root.unmount()); host.remove() })
+
+  it('a time stamp seeks to its paragraph and plays', () => {
+    act(() => root.render(<ArtifactMarkdown markdown={REC} />))
+    const video = host.querySelector('video')!
+    Object.defineProperty(video, 'readyState', { configurable: true, value: 4 })
+    act(() => { host.querySelector<HTMLButtonElement>('[data-vn-at="2"]')!.click() })
+    expect(video.currentTime).toBe(2)
+    expect(play).toHaveBeenCalled()
+  })
+  it('a click on the video toggles play', () => {
+    act(() => root.render(<ArtifactMarkdown markdown={REC} />))
+    act(() => { host.querySelector('video')!.click() })
+    expect(play).toHaveBeenCalledTimes(1)
+  })
+  // Regression guard: the audio path already paused others, so this passes before the change too.
+  it('starting it pauses a voice note already playing elsewhere on the page', () => {
+    const other = document.createElement('audio'); document.body.appendChild(other)
+    Object.defineProperty(other, 'paused', { configurable: true, value: false })
+    act(() => root.render(<ArtifactMarkdown markdown={REC} />))
+    act(() => { host.querySelector<HTMLButtonElement>('[data-artifact-voicenote] button')!.click() })
+    expect(pause.mock.instances).toContain(other)
+    other.remove()
+  })
+  it('starting a voice note pauses a recording playing elsewhere on the page', () => {
+    const other = document.createElement('video'); document.body.appendChild(other)
+    Object.defineProperty(other, 'paused', { configurable: true, value: false })
+    act(() => root.render(<ArtifactMarkdown markdown={NOTE} />))
+    act(() => { host.querySelector<HTMLButtonElement>('[data-artifact-voicenote] button')!.click() })
+    expect(pause.mock.instances).toContain(other)
+    other.remove()
+  })
+})
