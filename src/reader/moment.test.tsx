@@ -43,6 +43,14 @@ describe('a note at a moment', () => {
     window.removeEventListener(NOTE_AT, on)
     expect(seen).toHaveBeenCalledWith({ block: 'b-voice-0123abcd', at: 0 })
   })
+  it('the button appears when comments turn on after the note is drawn (the layer mounts second)', async () => {
+    await mount(note())
+    expect(document.querySelector('[data-note-at]')).toBeNull()
+    await act(async () => { document.documentElement.setAttribute('data-comments-on', ''); await Promise.resolve() })
+    expect(document.querySelector('[data-note-at]')?.textContent).toBe('Note at 0:00')
+    await act(async () => { document.documentElement.removeAttribute('data-comments-on'); await Promise.resolve() })
+    expect(document.querySelector('[data-note-at]')).toBeNull()
+  })
   it('a SEEK_TO for its block moves the recording', async () => {
     await mount(note(30))
     const audio = document.querySelector('audio')!

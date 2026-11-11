@@ -700,7 +700,7 @@ export function CommentLayer({
                 className="m-0 border-l-2 py-1 pl-3"
                 style={{ borderColor: accent, borderStyle: item.kind === 'personal' ? 'dashed' : 'solid', ...(highlight === item.id ? { background: `color-mix(in srgb, ${accent} 14%, transparent)` } : {}) }}>
                 {resolvedOf(item) ? <span data-comment-resolved-line className="block text-[13px] font-medium" style={{ color: accent }}>✓ {resolvedLine(resolvedOf(item)!)}</span> : null}
-                {item.value.anchor.kind === 'text' ? <span className="block text-[13px] italic opacity-70">“{item.value.anchor.quote}”</span> : <span className="block text-[13px] italic opacity-70">A box on part of the page that has changed</span>}
+                {item.value.anchor.kind === 'text' ? <span className="block text-[13px] italic opacity-70">“{item.value.anchor.quote}”</span> : <span className="block text-[13px] italic opacity-70">{item.value.anchor.kind === 'time' ? `A note at ${momentLabel(item.value.anchor.at)} on a recording that has changed` : 'A box on part of the page that has changed'}</span>}
                 <span className="block whitespace-pre-wrap text-[15px] text-[color:var(--a-strong)]">{item.value.body}</span>
                 <span className="block text-xs opacity-60">
                   {item.kind === 'personal' ? 'only you' : item.name}{` · version ${item.value.version}`}
@@ -747,6 +747,7 @@ function Thread({ item, replies, canReply, awaiting = false, askName = false, on
   const [error, setError] = useState<string | null>(null)
   const [showResolved, setShowResolved] = useState(startExpanded)
   const resolved = resolvedOf(item)
+  const moment = momentOf(item.value.anchor)
   const shell = 'w-[min(22rem,calc(100vw-2rem))] rounded-xl border border-[color:var(--a-line-strong)] bg-[color:var(--a-surface)] p-3 text-sm text-[color:var(--a-strong)] shadow-xl'
   const reopen = canResolve && onResolve ? (
     <button type="button" data-comment-reopen className="ml-3 text-xs underline" onClick={async () => setError(await onResolve(item, false))}>Reopen</button>
@@ -777,7 +778,7 @@ function Thread({ item, replies, canReply, awaiting = false, askName = false, on
       </div>
       {resolved ? <p data-comment-resolved-line className="m-0 mb-2 text-[13px]" style={{ color: accent }}>✓ {resolvedLine(resolved)}{resolved.by ? <span className="opacity-70">{` · ${resolved.by}`}</span> : null}</p> : null}
       {item.value.anchor.kind === 'text' ? <p className="mb-2 line-clamp-2 border-l-2 pl-2 text-[13px] italic opacity-70" style={{ borderColor: accent }}>{item.value.anchor.quote}</p> : null}
-      {momentOf(item.value.anchor) ? <button type="button" data-comment-moment onClick={momentOf(item.value.anchor)!.onSeek} className="mb-2 block text-xs font-semibold underline">{`At ${momentOf(item.value.anchor)!.label}`}</button> : null}
+      {moment ? <button type="button" data-comment-moment onClick={moment.onSeek} className="mb-2 block text-xs font-semibold underline">{`At ${moment.label}`}</button> : null}
       <Entry item={item} accent={accent} audioDb={audioDb} onRemove={onRemove} onEdit={onEdit} />
       {replies.length ? <ul className="m-0 mt-2 grid list-none gap-2 border-l pl-3 p-0">{replies.map((r) => {
         // A publisher reply pinned somewhere other than its thread points at the passage that changed.

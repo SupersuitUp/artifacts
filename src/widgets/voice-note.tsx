@@ -58,7 +58,15 @@ export function VoiceNote({ src, label, media, paragraphs, block, kind = 'audio'
   const blockId = block?.['data-block']
   // "Note at 0:14" shows only where the page takes comments (the comment layer sets this mark).
   const [noting, setNoting] = useState(false)
-  useEffect(() => { setNoting(document.documentElement.hasAttribute('data-comments-on')) }, [])
+  // It follows the mark, because the comment layer mounts after the page body and sets it later.
+  useEffect(() => {
+    const el = document.documentElement
+    const read = () => setNoting(el.hasAttribute('data-comments-on'))
+    read()
+    const watch = new MutationObserver(read)
+    watch.observe(el, { attributes: true, attributeFilter: ['data-comments-on'] })
+    return () => watch.disconnect()
+  }, [])
 
   /** Light the word at the audio's current time; touch only the spans whose state changed. */
   const sync = () => {
