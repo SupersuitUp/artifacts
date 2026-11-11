@@ -8,9 +8,10 @@
 //
 // Correct any word afterwards (a name, a phrase in another language); keep its two times.
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, readdirSync, rmSync, existsSync } from 'node:fs'
+import { mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { transcriptFenceFromWords, wordsFromWhisperJson } from '../artifacts/voice-note.js'
 
 const USAGE = 'usage: supersuit-transcript-fence <audio file> [--language en] [--model <whisper model>] [--gap <seconds>] [--body]'
@@ -20,8 +21,11 @@ function arg(args: string[], name: string): string | undefined {
   return i >= 0 ? args[i + 1] : undefined
 }
 
-function has(cmd: string): boolean {
-  return spawnSync('sh', ['-c', `command -v ${cmd}`], { stdio: 'ignore' }).status === 0
+/** Whether `cmd` is on PATH: `where` on Windows (which has no sh), `command -v` elsewhere. */
+export function findCommand(cmd: string, platform: NodeJS.Platform = process.platform, run: typeof spawnSync = spawnSync): boolean {
+  if (!/^[A-Za-z0-9_.-]+$/.test(cmd)) return false
+  const r = platform === 'win32' ? run('where', [cmd], { stdio: 'ignore' }) : run('sh', ['-c', `command -v ${cmd}`], { stdio: 'ignore' })
+  return r.status === 0
 }
 
 function main(argv: string[]): number {
@@ -41,10 +45,10 @@ function main(argv: string[]): number {
   const out = mkdtempSync(join(tmpdir(), 'transcript-fence-'))
   try {
     let r
-    if (has('mlx_whisper')) {
+    if (findCommand('mlx_whisper')) {
       const model = arg(args, '--model') ?? 'mlx-community/whisper-large-v3-turbo'
       r = spawnSync('mlx_whisper', [path, '--word-timestamps', 'True', '-f', 'json', '-o', out, '--model', model, ...(language ? ['--language', language] : [])], { stdio: ['ignore', 'ignore', 'inherit'] })
-    } else if (has('whisper')) {
+    } else if (findCommand('whisper')) {
       const model = arg(args, '--model') ?? 'turbo'
       r = spawnSync('whisper', [path, '--word_timestamps', 'True', '--output_format', 'json', '--output_dir', out, '--model', model, ...(language ? ['--language', language] : [])], { stdio: ['ignore', 'ignore', 'inherit'] })
     } else {
@@ -72,4 +76,6 @@ function main(argv: string[]): number {
   }
 }
 
-process.exitCode = main(process.argv)
+// Run only when started as a program (the package's bin, or a vendored copy run with node), never on import.
+const entry = process.argv[1] ? (() => { try { return pathToFileURL(realpathSync(process.argv[1])).href } catch { return '' } })() : ''
+if (entry === import.meta.url) process.exitCode = main(process.argv)
