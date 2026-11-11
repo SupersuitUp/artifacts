@@ -71,7 +71,7 @@ describe('the file page a reader opens', () => {
     const { r, link } = await fileRoutes({ name: 'model.xlsx', bytes: 180000, source: 's', type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', ref: 'private:model.0123abcd.xlsx' })
     const html = renderToStaticMarkup(await r.Page(props('fkpg2345', link)))
     expect(html).toContain('Spreadsheet')
-    expect(html).toContain('A browser cannot open a spreadsheet, so the link gives the file itself.')
+    expect(html).toContain('This page does not show this kind of file. Download it to open it.')
     expect(html).not.toContain('<object')
     expect(html).not.toContain('<iframe')
   })

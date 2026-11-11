@@ -17,7 +17,7 @@ export function FileCard({ owner, title, label, file, links, display, updatedAt 
       <span aria-hidden="true" className="inline-block h-px w-7 bg-[color:var(--a-accent)]" />{`A file from ${owner}`}
     </p>
   )
-  const { cap, noun } = fileNoun(file?.type ?? 'application/octet-stream')
+  const { cap } = fileNoun(file?.type ?? 'application/octet-stream')
   const type = file?.type ?? ''
   return (
     <main data-file-page className="mx-auto max-w-2xl px-4 pt-12 pb-12 text-[17px] leading-[1.65] text-[color:var(--a-body)]">
@@ -43,7 +43,7 @@ export function FileCard({ owner, title, label, file, links, display, updatedAt 
             ) : links.open && type.startsWith('audio/') ? (
               <audio src={links.open} controls preload="none" className="mt-[0.9rem] w-full" />
             ) : (
-              <p className="mt-3 text-[0.8rem] text-[color:var(--a-muted)]">{`A browser cannot open a ${noun}, so the link gives the file itself.`}</p>
+              <p className="mt-3 text-[0.8rem] text-[color:var(--a-muted)]">This page does not show this kind of file. Download it to open it.</p>
             )}
             <div className="mt-4 flex flex-wrap items-center gap-[0.6rem]">
               {links.open && type === 'application/pdf' ? (

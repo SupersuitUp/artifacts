@@ -13,6 +13,6 @@ describe('the artifacts entry point', () => {
   })
   it('exports the page kinds and the list helpers (0.37.0)', () => {
     for (const k of ['ARTIFACT_KINDS', 'kindOf', 'listOfKind']) expect(api, k).toHaveProperty(k)
-    expect(api.ARTIFACT_KINDS).toEqual(['document', 'broadcast'])
+    expect(api.ARTIFACT_KINDS).toEqual(['document', 'broadcast', 'file'])
   })
 })
