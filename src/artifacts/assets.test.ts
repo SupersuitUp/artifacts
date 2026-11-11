@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { PRIVATE_REF, PRIVATE_READ_TTL_MS, ASSET_NAME, contentTypeFor, createArtifactAssets, hashedName, storedName } from './assets.js'
+import { PRIVATE_REF, PRIVATE_READ_TTL_MS, ASSET_NAME, contentTypeFor, createArtifactAssets, hashedName, storedName, fileTypeFor, showsInline, contentDisposition, INLINE_TYPES } from './assets.js'
 
 describe('artifact assets', () => {
   it('accepts sane names and refuses paths', () => {
@@ -231,8 +231,6 @@ describe('private media', () => {
   })
 })
 
-import { fileTypeFor, showsInline, contentDisposition, INLINE_TYPES } from './assets.js'
-
 describe('file types (any-file artifacts)', () => {
   it('names the common office, archive and web types, and anything else is octet-stream', () => {
     expect(fileTypeFor('Pricing Model.PDF')).toBe('application/pdf')
@@ -244,6 +242,7 @@ describe('file types (any-file artifacts)', () => {
     expect(fileTypeFor('photo.png')).toBe('image/png')
     expect(fileTypeFor('thing.weird')).toBe('application/octet-stream')
     expect(fileTypeFor('noextension')).toBe('application/octet-stream')
+    for (const n of ['x.constructor', 'x.toString', 'x.valueOf']) expect(fileTypeFor(n), n).toBe('application/octet-stream')
   })
   it('shows in place only the safe list; HTML and SVG never', () => {
     for (const t of ['application/pdf', 'image/png', 'video/mp4', 'audio/mpeg']) expect(showsInline(t), t).toBe(true)
@@ -257,5 +256,6 @@ describe('file types (any-file artifacts)', () => {
   it('leaves the nine page-asset types as they were', () => {
     expect(contentTypeFor('deck.pdf')).toBeUndefined()
     expect(contentTypeFor('a.png')).toBe('image/png')
+    for (const n of ['x.constructor', 'x.toString', 'x.valueOf']) expect(contentTypeFor(n), n).toBeUndefined()
   })
 })

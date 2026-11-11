@@ -90,7 +90,7 @@ export const ASSET_TYPES: Record<string, string> = {
 
 export function contentTypeFor(name: string): string | undefined {
   const ext = name.split('.').pop()?.toLowerCase() ?? ''
-  return ASSET_TYPES[ext]
+  return Object.hasOwn(ASSET_TYPES, ext) ? ASSET_TYPES[ext] : undefined
 }
 
 /** What the body of a `template: file` page is stored as (any-file artifacts, 2026-11-11). It is
@@ -121,7 +121,7 @@ export const FILE_TYPES: Record<string, string> = {
 export function fileTypeFor(name: string): string {
   const dot = name.lastIndexOf('.')
   const ext = dot <= 0 ? '' : name.slice(dot + 1).toLowerCase()
-  return FILE_TYPES[ext] ?? 'application/octet-stream'
+  return Object.hasOwn(FILE_TYPES, ext) ? FILE_TYPES[ext] : 'application/octet-stream'
 }
 
 /** The only types a reader's browser may show in place. Everything else is a download, so no file

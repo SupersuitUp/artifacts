@@ -29,8 +29,8 @@ describe('a markdown page keeps the nine asset types', () => {
   const store = memoryArtifactStore([{ id: 'dkcm2345', template: 'document' }, { id: 'bcst2345', template: 'broadcast', links: 'per-reader' }])
   const r = createArtifactRoutes(testConfig({ store, assets: assets as never }))
   for (const id of ['dkcm2345', 'bcst2345']) {
-    it(`${id}: PUT_ASSET and UPLOAD refuse a pdf, an html and an svg with 415, private or not`, async () => {
-      for (const name of ['deck.pdf', 'page.html', 'mark.svg']) {
+    it(`${id}: PUT_ASSET and UPLOAD refuse a pdf, an html, an svg and an inherited-property name with 415, private or not`, async () => {
+      for (const name of ['deck.pdf', 'page.html', 'mark.svg', 'x.constructor', 'x.toString']) {
         for (const q of ['', '?private=1']) {
           expect((await r.PUT_ASSET(put(id, name, q), params(id, name))).status, `${name}${q}`).toBe(415)
           expect((await r.UPLOAD(upload(id, name, { digest: '0123abcd' }, q), params(id, name))).status, `${name}${q}`).toBe(415)
