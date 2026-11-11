@@ -10,6 +10,7 @@ import { parseDefinitions, type Definition } from './definitions.js'
 import { parseGoal, checkGoalAgainstBody, type ArtifactGoal } from './goal.js'
 import { parseLang, parseTranslations } from './language.js'
 import { parseFileBody, type FileBody } from './file-page.js'
+import { parseAsks, askcardIds, mergeAsksState, type AskData } from './asks.js'
 
 export type ArtifactMeta = {
   title: string
@@ -73,6 +74,8 @@ export type ArtifactMeta = {
   /** `comment_name: required` (0.40.0): on a per-reader page, a comment through a group link must
    *  carry a typed first name, and a named link is never asked for one. Opt-in; content, like `toc:`. */
   commentName?: 'required'
+  /** Questions to readers, sent as data (asks.ts); each is answered in the `asks` slot. */
+  asks?: AskData[]
   /** `history: everyone | admins` (0.42.0): who sees this page's version number and past versions,
    *  overriding the host's `history` for this one page. `everyone` suits a document its readers
    *  follow from draft to draft; a page that reads as a message leaves the line out. Content, like
@@ -123,7 +126,7 @@ export const PACK_NAME = /^[a-z0-9][a-z0-9-]{0,39}$/
 /** The longest `to:` a page may carry: a name or two, never a sentence. */
 export const MAX_TO_CHARS = 60
 
-const KNOWN = new Set(['title', 'summary', 'subtitle', 'to', 'template', 'audience', 'cover', 'id', 'voice', 'narration', 'timings', 'narrationHash', 'password', 'access', 'state', 'theme', 'pack', 'toc', 'definitions', 'change', 'comments', 'comments_visible', 'links', 'media', 'comment_name', 'history', 'forward', 'goal', 'mark', 'lang', 'translations', 'file'])
+const KNOWN = new Set(['title', 'summary', 'subtitle', 'to', 'template', 'audience', 'cover', 'id', 'voice', 'narration', 'timings', 'narrationHash', 'password', 'access', 'state', 'theme', 'pack', 'toc', 'definitions', 'change', 'comments', 'comments_visible', 'links', 'media', 'comment_name', 'history', 'forward', 'goal', 'mark', 'lang', 'translations', 'file', 'asks'])
 
 export function parseArtifactSource(
   text: string,
@@ -260,6 +263,12 @@ export function parseArtifactSource(
     if (d.comments_visible !== 'owner' && d.comments_visible !== 'readers') return { ok: false, error: 'comments_visible must be owner or readers' }
     meta.commentsVisible = d.comments_visible
   }
+  if (d.asks !== undefined && d.asks !== null) {
+    const r = parseAsks(d.asks)
+    if (!r.ok) return { ok: false, error: r.error }
+    if (r.asks.length) meta.asks = r.asks
+  }
+  for (const id of askcardIds(content)) if (!meta.asks?.some((a) => a.id === id)) return { ok: false, error: `the askcard slot "${id}" names no ask in asks:` }
   if (meta.template === 'broadcast') {
     // Per-reader links are what a broadcast is, whatever the file says or leaves out.
     meta.links = 'per-reader'
@@ -282,6 +291,7 @@ export function parseArtifactSource(
   // A page anyone can open is forwarded by its own address: forward links are for per-reader pages.
   if (meta.forward && meta.links !== 'per-reader') return { ok: false, error: 'forward needs links: per-reader' }
   if (meta.commentName && meta.links !== 'per-reader') return { ok: false, error: 'comment_name: required needs links: per-reader' }
+  if (meta.asks && meta.links !== 'per-reader') return { ok: false, error: 'asks needs links: per-reader' }
   // Widgets declare their own slots, so a notes block (and a checklist with send) is merged into state: here, before the
   // page is stored, and the state API and the republish shape checks see it like any slot.
   // Errors name the line in the FILE: the body's lines are counted after the front matter's.
@@ -295,5 +305,8 @@ export function parseArtifactSource(
   const withComments = mergeCommentsState(merged.state, meta.comments, meta.commentsVisible)
   if (!withComments.ok) return { ok: false, error: withComments.error }
   if (withComments.state) meta.state = withComments.state
+  const withAsks = mergeAsksState(meta.state, meta.asks)
+  if (!withAsks.ok) return { ok: false, error: withAsks.error }
+  if (withAsks.state) meta.state = withAsks.state
   return { ok: true, meta, body: content }
 }

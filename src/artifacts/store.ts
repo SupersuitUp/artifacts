@@ -17,6 +17,7 @@ import type { ThemeMode } from '../brand/theme.js'
 import type { Definition } from './definitions.js'
 import type { FileBody } from './file-page.js'
 import type { CommentsMode, CommentsVisible } from './comments.js'
+import type { AskData } from './asks.js'
 import { applySettingsPatch, settleOnPublish, type DeclaredSettings, type SettingsPatch } from './settings.js'
 
 export type ArtifactRecord = {
@@ -47,6 +48,8 @@ export type ArtifactRecord = {
   pack?: string
   toc?: boolean
   commentName?: 'required'
+  /** Questions to readers (front-matter `asks:`), answered in the `asks` state slot. */
+  asks?: AskData[]
   /** Whether a reader may make a forward link (front-matter `forward:`); absent is off. */
   forward?: ForwardMode
   /** What a send of this page is for (front-matter `goal:`); absent is `read`. */
@@ -287,6 +290,7 @@ async function saveArtifact(col: Col, input: SaveInput): Promise<SaveResult> {
     ...(input.meta.pack ? { pack: input.meta.pack } : {}),
     ...(input.meta.toc !== undefined ? { toc: input.meta.toc } : {}),
     ...(input.meta.commentName ? { commentName: input.meta.commentName } : {}),
+    ...(input.meta.asks?.length ? { asks: input.meta.asks } : {}),
     ...(input.meta.forward ? { forward: input.meta.forward } : {}),
     ...(input.meta.goal ? { goal: input.meta.goal } : {}),
     ...(input.meta.mark ? { mark: input.meta.mark } : {}),
@@ -345,6 +349,7 @@ async function saveArtifact(col: Col, input: SaveInput): Promise<SaveResult> {
       ...(input.meta.pack ? {} : { pack: FieldValue.delete() }),
       ...(input.meta.toc !== undefined ? {} : { toc: FieldValue.delete() }),
       ...(input.meta.commentName ? {} : { commentName: FieldValue.delete() }),
+      asks: input.meta.asks ?? FieldValue.delete(),
       ...(input.meta.history ? {} : { history: FieldValue.delete() }),
       ...(input.meta.goal ? {} : { goal: FieldValue.delete() }),
       ...(input.meta.mark ? {} : { mark: FieldValue.delete() }),
