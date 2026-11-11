@@ -2,6 +2,10 @@ import { describe, it, expect } from 'vitest'
 import { parseTranscriptFence, transcriptFenceFromWords, isAudioSrc, wordsFromWhisperJson } from './voice-note.js'
 import { parseArtifactSource } from './front-matter.js'
 import { blocksOf } from './widgets.js'
+import { remarkVoiceNotes, type VoiceNoteBlock } from './voice-note.js'
+import { unified } from 'unified'
+import remarkParse from 'remark-parse'
+import type { Root } from 'mdast'
 
 // A voice note is an ordinary audio line followed by a ```transcript fence of timed words. The
 // publisher needs no change; the fence is checked here, at publish, with the line the author sees.
@@ -104,5 +108,28 @@ describe('wordsFromWhisperJson', () => {
     const json = { text: 'x', segments: [{ words: [{ word: ' Hello', start: 0, end: 0.3, probability: 0.9 }, { word: 3 }] }, { words: [{ word: ' friend.', start: 0.62, end: 0.88 }] }, {}] }
     expect(wordsFromWhisperJson(json)).toEqual([{ word: ' Hello', start: 0, end: 0.3 }, { word: ' friend.', start: 0.62, end: 0.88 }])
     expect(wordsFromWhisperJson(null)).toEqual([])
+  })
+})
+
+describe('a recording: an mp4 line above its words', () => {
+  const REC = NOTE.replace('![Robin, to the family](hello.m4a)', '![sound: The bug](take.mp4)')
+  it('publishes like a voice note', () => {
+    expect(parseArtifactSource(page(REC)).ok).toBe(true)
+  })
+  // Regression guard (R10): this already passes before the change, so it cannot go red; it pins the refusal wording.
+  it('a picture above a transcript is still refused, with the same words an older page saw', () => {
+    const r = parseArtifactSource(page('![a photo](x.png)\n\n```transcript\n0 1 hi\n```'))
+    expect(r).toEqual({ ok: false, error: expect.stringMatching(/a transcript belongs directly under its voice note.*audio line/) })
+  })
+  it('the block says it is a video, and its label drops the sound: mark', () => {
+    const found: VoiceNoteBlock[] = []
+    const tree = unified().use(remarkParse).parse(REC) as Root
+    remarkVoiceNotes(found)()(tree)
+    expect(found).toEqual([{ src: 'take.mp4', label: 'The bug', kind: 'video', paragraphs: expect.any(Array) }])
+  })
+  it('an audio note says it is audio', () => {
+    const found: VoiceNoteBlock[] = []
+    remarkVoiceNotes(found)()(unified().use(remarkParse).parse(NOTE) as Root)
+    expect(found[0].kind).toBe('audio')
   })
 })

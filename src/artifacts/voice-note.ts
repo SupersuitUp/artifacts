@@ -22,6 +22,11 @@ export const TRANSCRIPT_LANG = 'transcript'
 /** `![caption](x.mp3)` / `.m4a` is a clip the reader plays. */
 export const AUDIO_SRC = /\.(mp3|m4a)(?:[?#].*)?$/i
 export const isAudioSrc = (src: unknown): src is string => typeof src === 'string' && AUDIO_SRC.test(src)
+/** `![caption](x.mp4)` above a transcript is a recording: the same note, with its picture. */
+export const VIDEO_SRC = /\.mp4(?:[?#].*)?$/i
+export const isVideoSrc = (src: unknown): src is string => typeof src === 'string' && VIDEO_SRC.test(src)
+export type NoteKind = 'audio' | 'video'
+const SOUND = /^sound:\s*/i
 
 /** A page this long is a book, not a voice note. */
 export const MAX_TRANSCRIPT_WORDS = 20000
@@ -63,11 +68,18 @@ export function parseTranscriptFence(value: string, line: number):
   return { ok: true, paragraphs }
 }
 
-/** The audio image a paragraph holds and nothing else (whitespace aside), or null. */
-export function soleAudio(n: RootContent | undefined): Image | null {
+/** The audio or video image a paragraph holds and nothing else (whitespace aside), with its kind, or null. */
+export function soleMedia(n: RootContent | undefined): { image: Image; kind: NoteKind } | null {
   if (!n || n.type !== 'paragraph') return null
   const kids = (n as Paragraph).children.filter((c) => !(c.type === 'text' && !c.value.trim()))
-  return kids.length === 1 && kids[0].type === 'image' && isAudioSrc(kids[0].url) ? kids[0] : null
+  if (kids.length !== 1 || kids[0].type !== 'image') return null
+  const image = kids[0]
+  return isAudioSrc(image.url) ? { image, kind: 'audio' } : isVideoSrc(image.url) ? { image, kind: 'video' } : null
+}
+/** The audio image a paragraph holds and nothing else, or null. */
+export function soleAudio(n: RootContent | undefined): Image | null {
+  const m = soleMedia(n)
+  return m?.kind === 'audio' ? m.image : null
 }
 
 type Parent = { children: RootContent[] }
@@ -93,8 +105,8 @@ export function scanVoiceNotes(tree: Root, offset: number): { ok: true; count: n
     if (error) return
     const line = (fence.position?.start.line ?? 1) + offset
     if (fence.meta?.trim()) { error = `line ${line}: the transcript block takes no name`; return }
-    if (!soleAudio(above)) {
-      error = `line ${line}: a transcript belongs directly under its voice note: put an audio line like ![caption](note.m4a) right above it`
+    if (!soleMedia(above)) {
+      error = `line ${line}: a transcript belongs directly under its voice note: put an audio line like ![caption](note.m4a), or a video line like ![caption](take.mp4), right above it`
       return
     }
     const r = parseTranscriptFence(fence.value, line)
@@ -105,7 +117,7 @@ export function scanVoiceNotes(tree: Root, offset: number): { ok: true; count: n
 }
 
 /** What the renderer draws for one voice note. */
-export type VoiceNoteBlock = { src: string; label: string; paragraphs: TranscriptParagraphs }
+export type VoiceNoteBlock = { src: string; label: string; paragraphs: TranscriptParagraphs; kind: NoteKind }
 
 /** Replaces each audio line + transcript pair with one node the renderer draws as a voice note,
  *  keeping the audio line's position so its comment anchor (blocksOf) is unchanged. A pair that
@@ -117,10 +129,10 @@ export function remarkVoiceNotes(found: VoiceNoteBlock[]) {
       const out: RootContent[] = []
       for (const n of p.children) {
         const above = out[out.length - 1]
-        const audio = n.type === 'code' && n.lang === TRANSCRIPT_LANG && !n.meta?.trim() ? soleAudio(above) : null
-        const r = audio ? parseTranscriptFence((n as Code).value, 0) : null
-        if (audio && r?.ok) {
-          found.push({ src: audio.url, label: audio.alt ?? '', paragraphs: r.paragraphs })
+        const media = n.type === 'code' && n.lang === TRANSCRIPT_LANG && !n.meta?.trim() ? soleMedia(above) : null
+        const r = media ? parseTranscriptFence((n as Code).value, 0) : null
+        if (media && r?.ok) {
+          found.push({ src: media.image.url, label: (media.image.alt ?? '').replace(SOUND, ''), paragraphs: r.paragraphs, kind: media.kind })
           out[out.length - 1] = {
             type: 'artifactVoiceNote',
             position: above!.position,
