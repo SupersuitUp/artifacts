@@ -349,6 +349,8 @@ export function createStateRoutes(ctx: StateRoutesContext) {
       if (bad) return json({ error: bad }, 400)
       if (isAsks && recipient?.group && a.commentName === 'required' && !(b.value as { name?: string }).name) return json({ error: NAME_NEEDED }, 400)
       let value: unknown = b.value
+      // A typed name stands only on a group link, where the reader must type one; a named link or a signed-in reader is known by the label or account, so a name they send is dropped (as a comment's is).
+      if (isAsks && !recipient?.group) { const { name: _drop, ...rest } = b.value as Record<string, unknown>; value = rest }
       if (isComments) {
         const seen = await visibleComments(a, writer.key, reader, !!recipient)
         const c = validateComment(b.value, (cid) => seen.get(cid) ?? null)
