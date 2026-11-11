@@ -1004,7 +1004,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
                 cover={
                   <>
                     {perReader?.closesAt && !perReader.owner ? (
-                      <FeedbackWindow owner={owner} label={perReader.label} note={perReader.note} group={perReader.group} closesAt={perReader.closesAt} asks={a.asks?.length ?? 0} />
+                      <FeedbackWindow owner={owner} label={perReader.label} note={perReader.note} group={perReader.group} closesAt={perReader.closesAt} asks={askCtx?.asks.length ?? 0} />
                     ) : perReader?.note ? (
                       <p data-for-reader className="mx-auto mt-6 mb-0 max-w-2xl px-6 text-lg">{`For ${perReader.label}: ${perReader.note}`}</p>
                     ) : null}

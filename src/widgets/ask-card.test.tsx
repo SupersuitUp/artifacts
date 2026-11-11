@@ -3,6 +3,8 @@ import { act, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { AskFence, YourAnswers, type AskCtx } from './ask-card.js'
 import { askStoreFor } from './ask-store.js'
+import { renderToStaticMarkup } from 'react-dom/server'
+import { ArtifactMarkdown } from '../artifacts/render.js'
 
 // A small stand-in for Testing Library, which this repo does not install: react-dom plus act.
 let root: Root | null = null
@@ -90,5 +92,23 @@ describe('Your answers', () => {
     expect(screen.getByRole('button', { name: 'Change: Which headline should the page open with?' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Make it: Show the activation price on this page?' })).toBeTruthy()
     expect(screen.getByText('Saved as you go. Your answers reach Gary within a few minutes.')).toBeTruthy()
+  })
+})
+
+describe('a name on a group link, and the slot in a page', () => {
+  it('a name typed on card 1 goes with the answer on card 2', async () => {
+    const c = ctx({ reader: null, requireName: true }); const f = served(); askStoreFor(c.artifactId, f)
+    await render(<><AskFence id="headline" ctx={c} /><AskFence id="price" ctx={c} /></>)
+    fireEvent.change(screen.queryAllByRole('input', { name: 'Your first name' })[0] as HTMLInputElement, { target: { value: 'Ann' } })
+    await fireEvent.click(screen.getByRole('button', { name: /Reject: say it/ }))
+    await waitFor(() => expect(f.mock.calls.some(([, i]) => i?.method === 'POST')).toBe(true))
+    expect(JSON.parse(String(f.mock.calls.find(([, i]) => i?.method === 'POST')![1]!.body)).value).toMatchObject({ ask: 'price', name: 'Ann' })
+  })
+  it('an askcard fence draws the card for a known id and nothing for an unknown one', () => {
+    const c = ctx(); askStoreFor(c.artifactId, served())
+    const html = renderToStaticMarkup(<ArtifactMarkdown markdown={'```askcard\nheadline\n```\n\n```askcard\nnope\n```'} asks={c} />)
+    expect(html).toContain('Gary asks')
+    expect(html.match(/data-ask-card/g)).toHaveLength(1)
+    expect(renderToStaticMarkup(<ArtifactMarkdown markdown={'```askcard\nheadline\n```'} />)).not.toContain('data-ask-card')
   })
 })

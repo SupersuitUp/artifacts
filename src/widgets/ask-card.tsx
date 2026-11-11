@@ -7,9 +7,6 @@ import { ChoiceCard, CHOICE_TYPE_WORDS, HUB_CHOICE_LOOK } from '../reader/choice
 import { askStoreFor, EMPTY_ASKS } from './ask-store.js'
 
 export type AskCtx = { artifactId: string; asks: AskData[]; owner: string; reader: string | null; requireName: boolean; display: string }
-const nameKey = (id: string) => `artifact-name:${id}`
-const readName = (id: string) => { try { return globalThis.localStorage?.getItem(nameKey(id)) ?? '' } catch { return '' } }
-const keepName = (id: string, v: string) => { try { globalThis.localStorage?.setItem(nameKey(id), v) } catch { /* the name lives for this visit */ } }
 const useAsks = (artifactId: string) => { const s = askStoreFor(artifactId); return { store: s, snap: useSyncExternalStore(s.subscribe, s.get, () => EMPTY_ASKS) } }
 const changedLine = (owner: string) => `${owner} changed this. Please look again`
 
@@ -17,16 +14,16 @@ export function AskFence({ id, ctx }: { id: string; ctx: AskCtx }) {
   const { store, snap } = useAsks(ctx.artifactId)
   const [other, setOther] = useState(false)
   const [words, setWords] = useState('')
-  const [name, setName] = useState(() => (ctx.requireName ? readName(ctx.artifactId) : ''))
+  const [typedHere, setTypedHere] = useState(false)
   const ask = ctx.asks.find((a) => a.id === id)
   if (!ask) return null
   const mine = snap.mine[id]
   const current = mine && mine.hash === ask.hash ? mine : null
-  const needsName = ctx.requireName && !name.trim()
+  const name = snap.name.trim()
+  const needsName = ctx.requireName && !name
   const send = (choice: string | null, said: string | null) => {
     if (needsName) return
-    if (ctx.requireName) keepName(ctx.artifactId, name.trim())
-    const a: AskAnswer = { ask: id, hash: ask.hash, choice, words: said, ...(ctx.requireName ? { name: name.trim() } : {}) }
+    const a: AskAnswer = { ask: id, hash: ask.hash, choice, words: said, ...(ctx.requireName ? { name } : {}) }
     void store.answer(a).then((ok) => { if (ok && said !== null) { setOther(false); setWords('') } })
   }
   const who = ctx.reader ?? 'You'
@@ -41,9 +38,9 @@ export function AskFence({ id, ctx }: { id: string; ctx: AskCtx }) {
   ) : undefined
   return (
     <div data-nospeak>
-      {ctx.requireName && ask === ctx.asks[0] ? (
+      {ctx.requireName && (needsName || typedHere) ? (
         <label className="mb-2 block text-sm text-[color:var(--a-muted)]">Your first name
-          <input value={name} onChange={(e) => setName(e.currentTarget.value)} aria-label="Your first name"
+          <input value={snap.name} onChange={(e) => { setTypedHere(true); store.setName(e.currentTarget.value) }} aria-label="Your first name"
             className="mt-1 block w-full rounded-lg border border-[color:var(--a-line-strong)] bg-transparent px-3 py-2 text-base text-[color:var(--a-strong)]" />
         </label>
       ) : null}
