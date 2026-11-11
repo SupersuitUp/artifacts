@@ -750,6 +750,11 @@ npx -p @supersuit/artifacts supersuit-transcript-fence hello.m4a > fence.md
 # --body          the lines only, without the ``` fence
 ```
 
+A line Whisper made up over noise or silence is left out, and each one is printed to stderr
+(`dropped a made-up line at 8.64 s: Thank you.`) so a drop can be checked. Exit codes: `0` the
+fence is printed, `1` the transcriber failed or wrote nothing, `2` usage or no such file, `3` no
+local transcriber, `4` it heard no words (every line was made up), so a caller never has to match text.
+
 Paste it under the audio line, then correct any word (a name, a phrase in another language)
 and keep its two times. `transcriptFenceFromWords` and `wordsFromWhisperJson` (from
 `@supersuit/artifacts/artifacts`) do the same from code.

@@ -176,7 +176,7 @@ export function transcriptFenceFromWords(words: TimedWord[], opts: { paragraphGa
 const FAILED_DECODE = -1
 /** Faster than anyone speaks: more words than this in each second of the segment. */
 const SQUEEZED_WORDS_PER_SECOND = 10
-/** Below this mean word probability, Whisper is unsure of the words it squeezed together. */
+/** Below this mean word probability (strictly), Whisper is unsure of the words it squeezed together. */
 const UNSURE = 0.7
 
 /** A segment Whisper made up over noise or silence. Either Whisper's own skip rule (a failed decode with
@@ -196,8 +196,9 @@ function madeUp(seg: Record<string, unknown>, words: TimedWord[], probs: number[
 
 /** The timed words in a whisper JSON result (`segments[].words[]`, written by `mlx_whisper` or
  *  `whisper` with word timestamps on), less any segment Whisper made up (see madeUp). Anything
- *  else in the file is ignored. */
-export function wordsFromWhisperJson(json: unknown): TimedWord[] {
+ *  else in the file is ignored. `onDrop` hears each dropped segment (where it starts, its words), so
+ *  a caller can show what was left out and a drop can be checked. */
+export function wordsFromWhisperJson(json: unknown, opts: { onDrop?: (at: number, text: string) => void } = {}): TimedWord[] {
   const segments = (json as { segments?: unknown })?.segments
   if (!Array.isArray(segments)) return []
   const out: TimedWord[] = []
@@ -214,6 +215,7 @@ export function wordsFromWhisperJson(json: unknown): TimedWord[] {
       }
     }
     if (!madeUp(seg as Record<string, unknown>, timed, probs)) out.push(...timed)
+    else if (timed.length && opts.onDrop) opts.onDrop(timed[0].start, timed.map((w) => w.word.trim()).filter(Boolean).join(' '))
   }
   return out
 }

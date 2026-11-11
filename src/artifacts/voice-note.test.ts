@@ -123,6 +123,24 @@ describe('wordsFromWhisperJson', () => {
   })
   // The same take with the windows not carried over (transcript-fence's flags): "Thank you." in 0.16 s, its first word
   // at probability 0.27. Squeezed words Whisper itself is unsure of are not words either.
+  // The boundary, pinned: every word collapsed onto one instant (a 0 s span, so squeezed by any rate) at a mean word
+  // probability of exactly 0.7. "Unsure" is strictly under 0.7, so these words are KEPT: at the threshold Whisper is as
+  // sure as the rule asks, and a real word with poor timing is worth more than a dropped one.
+  it('keeps collapsed words at a mean probability of exactly 0.7 (the unsure line is strictly below it)', () => {
+    const at = { word: ' Okay', start: 4, end: 4, probability: 0.7 }
+    const json = { segments: [{ start: 4, end: 4, avg_logprob: -0.5, no_speech_prob: 0, words: [at, { ...at, word: ' then.' }] }] }
+    expect(wordsFromWhisperJson(json)).toHaveLength(2)
+    const under = { segments: [{ ...json.segments[0], words: json.segments[0].words.map((w) => ({ ...w, probability: 0.69 })) }] }
+    expect(wordsFromWhisperJson(under)).toEqual([])
+  })
+  it('tells onDrop each segment it drops, with where it started and its words, so a drop can be checked', () => {
+    const squeezed = ["I'm", 'going', 'to', 'go'].map((w, i) => ({ word: ' ' + w, start: 8.64 + i * 0.02, end: 8.66 + i * 0.02 }))
+    const real = { start: 1, end: 2, avg_logprob: -0.2, no_speech_prob: 0, words: [{ word: ' Hello', start: 1, end: 1.4 }, { word: ' there.', start: 1.5, end: 2 }] }
+    const dropped: Array<[number, string]> = []
+    const out = wordsFromWhisperJson({ segments: [real, { start: 8.64, end: 8.8, avg_logprob: -1.77, no_speech_prob: 0, words: squeezed }] }, { onDrop: (at, text) => dropped.push([at, text]) })
+    expect(out).toHaveLength(2)
+    expect(dropped).toEqual([[8.64, "I'm going to go"]])
+  })
   it('drops squeezed words Whisper is unsure of, even when the segment scores well', () => {
     const json = { segments: [{ start: 8.64, end: 8.8, avg_logprob: -0.6, no_speech_prob: 0, words: [{ word: ' Thank', start: 8.64, end: 8.64, probability: 0.27 }, { word: ' you.', start: 8.64, end: 8.8, probability: 0.998 }] }] }
     expect(wordsFromWhisperJson(json)).toEqual([])

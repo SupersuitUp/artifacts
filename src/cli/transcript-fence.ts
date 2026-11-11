@@ -6,6 +6,10 @@
 //
 //   npx -p @supersuit/artifacts supersuit-transcript-fence note.m4a [--language en] [--model M] [--gap 1.5] [--body]
 //
+// Exit codes: 0 the fence is printed; 1 the transcriber failed or wrote nothing; 2 usage, or no such file;
+// 3 no local transcriber; 4 the transcriber heard no words (every line it wrote was made up over noise or silence).
+// Each line dropped as made up is printed to stderr ("dropped a made-up line at 8.64 s: <words>"), so it can be checked.
+//
 // Correct any word afterwards (a name, a phrase in another language); keep its two times.
 import { spawnSync } from 'node:child_process'
 import { mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, existsSync } from 'node:fs'
@@ -35,6 +39,19 @@ export function transcriberArgs(cmd: 'mlx_whisper' | 'whisper', path: string, ou
   const lang = language ? ['--language', language] : []
   if (cmd === 'mlx_whisper') return [path, '--word-timestamps', 'True', '-f', 'json', '-o', out, '--model', model, '--condition-on-previous-text', 'False', '--hallucination-silence-threshold', '2', ...lang]
   return [path, '--word_timestamps', 'True', '--output_format', 'json', '--output_dir', out, '--model', model, '--condition_on_previous_text', 'False', '--hallucination_silence_threshold', '2', ...lang]
+}
+
+/** Exit 4: the recording held no words (distinct from 1, a transcriber that failed), so a caller never matches text. */
+export const NO_WORDS_EXIT = 4
+
+/** The whole result for one whisper JSON: the exit code, what goes to stdout, and what goes to stderr (one line for
+ *  each segment dropped as made up, then "heard no words" when nothing is left). */
+export function fenceFromWhisper(json: unknown, opts: { gap: number; body: boolean }): { code: number; stdout: string; stderr: string } {
+  let stderr = ''
+  const words = wordsFromWhisperJson(json, { onDrop: (at, text) => { stderr += `dropped a made-up line at ${at.toFixed(2)} s: ${text}\n` } })
+  const body = transcriptFenceFromWords(words, { paragraphGap: opts.gap })
+  if (!body) return { code: NO_WORDS_EXIT, stdout: '', stderr: stderr + 'the transcriber heard no words\n' }
+  return { code: 0, stdout: opts.body ? body : '```transcript\n' + body + '```\n', stderr }
 }
 
 function main(argv: string[]): number {
@@ -73,13 +90,10 @@ function main(argv: string[]): number {
       process.stderr.write('the transcriber wrote no JSON\n')
       return 1
     }
-    const body = transcriptFenceFromWords(wordsFromWhisperJson(JSON.parse(readFileSync(join(out, json), 'utf8'))), { paragraphGap: gap })
-    if (!body) {
-      process.stderr.write('the transcriber heard no words\n')
-      return 1
-    }
-    process.stdout.write(args.includes('--body') ? body : '```transcript\n' + body + '```\n')
-    return 0
+    const r2 = fenceFromWhisper(JSON.parse(readFileSync(join(out, json), 'utf8')), { gap, body: args.includes('--body') })
+    if (r2.stderr) process.stderr.write(r2.stderr)
+    if (r2.stdout) process.stdout.write(r2.stdout)
+    return r2.code
   } finally {
     rmSync(out, { recursive: true, force: true })
   }
