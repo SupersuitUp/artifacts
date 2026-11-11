@@ -46,7 +46,7 @@ export function FileCard({ owner, title, label, file, links, display, updatedAt 
               <audio src={links.open} controls preload="none" className="mt-[0.9rem] w-full" />
             ) : file && showsAsSheet(file) ? (
               // The reader's browser draws the first sheet; until it does (or if it cannot), the line below.
-              <SheetView url={links.download} />
+              <SheetView url={links.download} bytes={file.bytes} />
             ) : (
               <p className="mt-3 text-[0.8rem] text-[color:var(--a-muted)]">This page does not show this kind of file. Download it to open it.</p>
             )}

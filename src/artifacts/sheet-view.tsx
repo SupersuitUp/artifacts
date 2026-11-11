@@ -10,6 +10,8 @@ import type * as SheetJS from '../../vendor/sheetjs/xlsx.mjs'
 
 export const SHEET_ROWS = 500
 export const SHEET_COLS = 50
+/** Over this size the reader's browser does not fetch the file to draw it: the line and Download stay. */
+export const MAX_SHEET_BYTES = 10_000_000
 export const FALLBACK_LINE = 'This page does not show this kind of file. Download it to open it.'
 const LINE = 'mt-3 text-[0.8rem] text-[color:var(--a-muted)]'
 const CELL = 'whitespace-nowrap border border-[color:var(--a-line)] px-[0.45rem] py-[0.3rem] text-left'
@@ -44,19 +46,21 @@ export function drawSheet(data: ArrayBuffer, X: X): Drawn {
 
 const loadSheetJs = (): Promise<X> => import('../../vendor/sheetjs/xlsx.mjs')
 
-export function SheetView({ url }: { url: string }) {
+export function SheetView({ url, bytes, load = loadSheetJs }: { url: string; bytes: number; load?: () => Promise<X> }) {
   const [drawn, setDrawn] = useState<Drawn | null>(null)
   useEffect(() => {
+    if (bytes > MAX_SHEET_BYTES) return
     let live = true
     ;(async () => {
       const res = await fetch(url, { credentials: 'omit', referrerPolicy: 'no-referrer' })
       if (!res.ok) throw new Error(`the file answered ${res.status}`)
-      const [data, X] = await Promise.all([res.arrayBuffer(), loadSheetJs()])
-      const d = drawSheet(data, X)
+      const data = await res.arrayBuffer()
+      // SheetJS (about 1 MB) loads only once the file is in hand, so a refused fetch costs nothing.
+      const d = drawSheet(data, await load())
       if (live) setDrawn(d)
     })().catch(() => { /* The fallback line stays. */ })
     return () => { live = false }
-  }, [url])
+  }, [url, bytes, load])
 
   if (!drawn) return <p className={LINE}>{FALLBACK_LINE}</p>
   return (

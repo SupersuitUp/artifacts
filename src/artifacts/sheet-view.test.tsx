@@ -5,7 +5,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import * as XLSX from '../../vendor/sheetjs/xlsx.mjs'
-import { SheetView, drawSheet, FALLBACK_LINE } from './sheet-view.js'
+import { SheetView, drawSheet, FALLBACK_LINE, MAX_SHEET_BYTES } from './sheet-view.js'
 import { showsAsSheet } from './file-page.js'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -21,11 +21,11 @@ let root: Root | null = null
 let host: HTMLElement | null = null
 afterEach(() => { act(() => root?.unmount()); host?.remove(); root = null; host = null; vi.unstubAllGlobals() })
 
-async function mount(url: string) {
+async function mount(url: string, extra: { bytes?: number; load?: () => Promise<typeof XLSX> } = {}) {
   host = document.createElement('div')
   document.body.append(host)
   root = createRoot(host)
-  await act(async () => { root!.render(<SheetView url={url} />) })
+  await act(async () => { root!.render(<SheetView url={url} bytes={extra.bytes ?? 1000} load={extra.load} />) })
   // Let the fetch, the dynamic import and the parse settle.
   for (let i = 0; i < 20; i++) await act(async () => { await new Promise((r) => setTimeout(r, 10)) })
   return host
@@ -99,6 +99,37 @@ describe('the spreadsheet table', () => {
     el = await mount('https://signed.example.com/model.xlsx')
     expect(el.querySelector('table')).toBeNull()
     expect(el.textContent).toContain(FALLBACK_LINE)
+  })
+})
+
+describe('what the table costs the reader', () => {
+  it('a file over 10 MB is never fetched: the line and Download stay', async () => {
+    const fetcher = answer(book([['S', [['a']]]]))
+    vi.stubGlobal('fetch', fetcher)
+    const load = vi.fn(async () => XLSX)
+    const el = await mount('https://signed.example.com/huge.xlsx', { bytes: MAX_SHEET_BYTES + 1, load })
+    expect(MAX_SHEET_BYTES).toBe(10_000_000)
+    expect(fetcher).not.toHaveBeenCalled()
+    expect(load).not.toHaveBeenCalled()
+    expect(el.querySelector('table')).toBeNull()
+    expect(el.textContent).toContain(FALLBACK_LINE)
+  })
+
+  it('a failed fetch never loads SheetJS; a good one loads it after the fetch answers', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('Failed to fetch') }))
+    const load = vi.fn(async () => XLSX)
+    await mount('https://signed.example.com/model.xlsx', { load })
+    expect(load).not.toHaveBeenCalled()
+    act(() => root?.unmount()); host?.remove()
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('denied', { status: 403 })))
+    await mount('https://signed.example.com/model.xlsx', { load })
+    expect(load).not.toHaveBeenCalled()
+    act(() => root?.unmount()); host?.remove()
+    const order: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async () => { order.push('fetch'); return new Response(book([['S', [['a']]]]), { status: 200 }) }))
+    const el = await mount('https://signed.example.com/model.xlsx', { load: vi.fn(async () => { order.push('load'); return XLSX }) })
+    expect(order).toEqual(['fetch', 'load'])
+    expect(el.querySelector('td')?.textContent).toBe('a')
   })
 })
 
