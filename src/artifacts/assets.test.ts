@@ -230,3 +230,32 @@ describe('private media', () => {
     expect(await a.deletePage!('abcd2345')).toBe(1)
   })
 })
+
+import { fileTypeFor, showsInline, contentDisposition, INLINE_TYPES } from './assets.js'
+
+describe('file types (any-file artifacts)', () => {
+  it('names the common office, archive and web types, and anything else is octet-stream', () => {
+    expect(fileTypeFor('Pricing Model.PDF')).toBe('application/pdf')
+    expect(fileTypeFor('model.xlsx')).toBe('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    expect(fileTypeFor('notes.docx')).toBe('application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+    expect(fileTypeFor('a.zip')).toBe('application/zip')
+    expect(fileTypeFor('page.html')).toBe('text/html')
+    expect(fileTypeFor('mark.svg')).toBe('image/svg+xml')
+    expect(fileTypeFor('photo.png')).toBe('image/png')
+    expect(fileTypeFor('thing.weird')).toBe('application/octet-stream')
+    expect(fileTypeFor('noextension')).toBe('application/octet-stream')
+  })
+  it('shows in place only the safe list; HTML and SVG never', () => {
+    for (const t of ['application/pdf', 'image/png', 'video/mp4', 'audio/mpeg']) expect(showsInline(t), t).toBe(true)
+    for (const t of ['text/html', 'image/svg+xml', 'application/zip', 'application/octet-stream', 'text/csv']) expect(showsInline(t), t).toBe(false)
+    expect([...INLINE_TYPES]).toHaveLength(10)
+  })
+  it('says attachment, with an ASCII name and the real name in UTF-8', () => {
+    expect(contentDisposition('Prix été.pdf')).toBe(`attachment; filename="Prix ete.pdf"; filename*=UTF-8''Prix%20%C3%A9t%C3%A9.pdf`)
+    expect(contentDisposition('a"b\\c.txt')).toBe(`attachment; filename="abc.txt"; filename*=UTF-8''a%22b%5Cc.txt`)
+  })
+  it('leaves the nine page-asset types as they were', () => {
+    expect(contentTypeFor('deck.pdf')).toBeUndefined()
+    expect(contentTypeFor('a.png')).toBe('image/png')
+  })
+})

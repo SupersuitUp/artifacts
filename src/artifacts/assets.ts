@@ -93,6 +93,52 @@ export function contentTypeFor(name: string): string | undefined {
   return ASSET_TYPES[ext]
 }
 
+/** What the body of a `template: file` page is stored as (any-file artifacts, 2026-11-11). It is
+ *  NOT the page-asset gate: ASSET_TYPES still guards every markdown page's assets, and UPLOAD and
+ *  PUT_ASSET use this table only for a file page's body (`?file=1`). A name not here is stored as
+ *  application/octet-stream, which no browser runs. */
+export const FILE_TYPES: Record<string, string> = {
+  ...ASSET_TYPES,
+  pdf: 'application/pdf',
+  csv: 'text/csv',
+  txt: 'text/plain',
+  md: 'text/markdown',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  xls: 'application/vnd.ms-excel',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  doc: 'application/msword',
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  zip: 'application/zip',
+  mov: 'video/quicktime',
+  webm: 'video/webm',
+  wav: 'audio/wav',
+  heic: 'image/heic',
+  svg: 'image/svg+xml',
+  html: 'text/html',
+  htm: 'text/html',
+}
+
+export function fileTypeFor(name: string): string {
+  const dot = name.lastIndexOf('.')
+  const ext = dot <= 0 ? '' : name.slice(dot + 1).toLowerCase()
+  return FILE_TYPES[ext] ?? 'application/octet-stream'
+}
+
+/** The only types a reader's browser may show in place. Everything else is a download, so no file
+ *  (HTML and SVG included) can run as a page. */
+export const INLINE_TYPES: ReadonlySet<string> = new Set([
+  'application/pdf', 'image/png', 'image/jpeg', 'image/gif', 'image/webp',
+  'video/mp4', 'video/webm', 'audio/mpeg', 'audio/mp4', 'audio/wav',
+])
+export const showsInline = (type: string): boolean => INLINE_TYPES.has(type)
+
+/** `attachment`, with an ASCII fallback name (RFC 6266) and the real name in UTF-8 (RFC 5987). */
+export function contentDisposition(name: string): string {
+  const ascii = name.normalize('NFKD').replace(/[^\x20-\x7e]/g, '').replace(/["\\]/g, '') || 'file'
+  const utf8 = encodeURIComponent(name).replace(/['()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)
+  return `attachment; filename="${ascii}"; filename*=UTF-8''${utf8}`
+}
+
 /**
  * The stored name carries a hash of the bytes: `21-the-fork.9f3c1a22.png`.
  *
