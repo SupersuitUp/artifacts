@@ -3,6 +3,16 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## Unreleased
+
+**Any file is an artifact.** `template: file` is a page that is one file, kept in the private store and served only through per-reader links. A PDF, an image, a video or a sound shows in the browser's own viewer; every other type, HTML and SVG included, is a download signed with `Content-Disposition: attachment`. `UPLOAD` and `PUT_ASSET` take any type for a file page's body (`?private=1&file=1`); every markdown page's assets keep the nine types. `LIST ?kind=file` lines carry the file's workspace path (`source`) and the `file` record.
+
+**A name like `x.constructor` no longer passes the page-asset gate.** `contentTypeFor` and `fileTypeFor` now look the extension up as an own property, so an inherited key is not a type.
+
+- DETECTOR: a host that serves `template: file` pages, or a page asset whose name ends in an inherited object key such as `.constructor`.
+- REMEDY: none for a host; it ships in the routes and the reader.
+- TESTS: `src/routes/file-upload.test.tsx`, `src/routes/file-page.test.tsx`, `src/artifacts/file-page.test.ts`, `src/artifacts/assets.test.ts`.
+
 ## 0.66.0 (2026-11-11)
 
 **A recording is a voice note with a video.** An mp4 directly above a ```transcript fence is a note too, of kind `video`; the widget draws the video above its words, with the same seek line, lit word and tap-a-time-to-jump as an audio note, and its own controls (never the browser's). Starting one pauses any other audio or video on the page. For a long recording the words are drawn once, not on every clock tick (3,000 words: 926 ms a tick before, 4 ms after), and a word with no spaces wraps on a phone. New exports: `isVideoSrc`, `NoteKind`.

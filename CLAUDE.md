@@ -65,6 +65,16 @@ tenant from `HUB_TENANT`, the default pack or the hub's own, no brand pack carry
 embed or sign-in service pointing at one company's site. `npm run test:template` proves it installs
 and builds from the tarball; run it whenever the template or a shell export it uses changes.
 
+## Command line
+
+Readers are people outside Supersuit, so their command line is the hub's own API: each reader action is one HTTP request, and its test proves the screen sends exactly that request.
+
+| Screen action | Who | Request | Test |
+|---|---|---|---|
+| Open the file page | reader | `GET /<id>?r=<rid>.<sig>` | `src/routes/file-page.test.tsx` |
+| Open the PDF, play or view in place | reader | `GET <signed read URL>` (inline, safe list only) | `src/routes/file-page.test.tsx` |
+| Download | reader | `GET <signed read URL with response-content-disposition=attachment>` | `src/artifacts/assets.test.ts`, `src/routes/file-page.test.tsx` |
+
 ## What must never land in this repo
 
 It is public. No brand pack carrying anyone's trademark, no tenant tables, no customer names, no
