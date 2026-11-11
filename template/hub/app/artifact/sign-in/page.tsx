@@ -5,7 +5,7 @@ import { SignIn } from './sign-in'
 export const dynamic = 'force-dynamic'
 export const metadata = { title: 'Sign in', robots: { index: false, follow: false } }
 
-// The sign-in a private page's door links to: Google, against the hub's own Firebase project.
+// The sign-in a private page's door links to: the hub's providers, against its own Firebase project.
 export default async function Page({ searchParams }: { searchParams: Promise<{ to?: string; switch?: string }> }) {
   const tenant = hubTenant()
   if (!tenant.localSignIn) notFound()
@@ -22,7 +22,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ t
       <div style={{ maxWidth: '26rem', margin: '0 auto', padding: '18vh 1.5rem 4rem', textAlign: 'center' }}>
         <p style={{ fontSize: '.75rem', letterSpacing: '.14em', textTransform: 'uppercase', opacity: 0.6 }}>{pack.kicker}</p>
         <h1 style={{ fontFamily: pack.type.display, fontSize: '1.9rem', margin: '.6rem 0 1rem' }}>Open a private page</h1>
-        <SignIn firebase={tenant.localSignIn.firebase} to={path} accent={pack.accent} ground={pack.ground} switchAccount={sw === '1'} providers={['google']} />
+        <SignIn firebase={tenant.localSignIn.firebase} to={path} accent={pack.accent} ground={pack.ground} switchAccount={sw === '1'} providers={tenant.localSignIn.providers} />
       </div>
     </main>
   )

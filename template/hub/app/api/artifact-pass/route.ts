@@ -1,5 +1,6 @@
 import type { NextRequest } from 'next/server'
-import { getAdminAuth } from '@/lib/firebase-admin'
+import { FieldValue } from 'firebase-admin/firestore'
+import { getAdminAuth, getAdminDb } from '@/lib/firebase-admin'
 import { localPass } from '@/lib/local-sign-in'
 import { hubTenant } from '@/tenant'
 
@@ -14,8 +15,10 @@ export async function GET(request: NextRequest) {
     authorization: request.headers.get('authorization'),
     verify: async (t) => {
       const d = await getAdminAuth().verifyIdToken(t)
-      return { uid: d.uid, email: d.email, emailVerified: d.email_verified === true, name: typeof d.name === 'string' ? d.name : undefined }
+      return { uid: d.uid, email: d.email, emailVerified: d.email_verified === true, name: typeof d.name === 'string' ? d.name : undefined, claims: d as unknown as Record<string, unknown> }
     },
+    // Finished sign-ins by provider, one document a month. A pass only, so a failed sign-in never counts.
+    count: async (p) => { await getAdminDb().doc(`signInCounts/${new Date().toISOString().slice(0, 7)}`).set({ [p]: FieldValue.increment(1) }, { merge: true }) },
     secret: process.env.ARTIFACT_PASS_SECRET,
   })
   return r.ok

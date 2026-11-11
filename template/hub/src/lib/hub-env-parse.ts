@@ -67,6 +67,16 @@ export type HubEnvConfig = {
   adopt?: string
   /** The hub's own brand look. Not with `adopt`: an adopted row has its own look. */
   pack?: HubPack
+  /** The sign-in providers the hub turned on in its Firebase project. The tenant defaults to Google. */
+  signIn?: ('google' | 'microsoft')[]
+}
+
+function parseSignIn(v: unknown): ('google' | 'microsoft')[] | undefined {
+  if (v === undefined) return undefined
+  if (!Array.isArray(v) || v.length === 0 || !v.every((x) => x === 'google' || x === 'microsoft')) {
+    throw new Error('HUB_TENANT signIn must be a non-empty list of "google" and "microsoft"')
+  }
+  return [...new Set(v as ('google' | 'microsoft')[])]
 }
 
 export function parseHubEnv(raw: string | undefined): HubEnvConfig | null {
@@ -86,5 +96,6 @@ export function parseHubEnv(raw: string | undefined): HubEnvConfig | null {
   const adopt = typeof c.adopt === 'string' ? c.adopt.trim() : undefined
   if (adopt && c.pack !== undefined) throw new Error('HUB_TENANT cannot carry both adopt and pack: an adopted row has its own look')
   const pack = c.pack !== undefined ? parsePack(c.pack) : undefined
-  return { host, owner, firebase: c.firebase, ...(adopt ? { adopt } : {}), ...(pack ? { pack } : {}) }
+  const signIn = parseSignIn(c.signIn)
+  return { host, owner, firebase: c.firebase, ...(adopt ? { adopt } : {}), ...(pack ? { pack } : {}), ...(signIn ? { signIn } : {}) }
 }
