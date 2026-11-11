@@ -339,6 +339,9 @@ async function saveArtifact(col: Col, input: SaveInput): Promise<SaveResult> {
     const subtitle = input.meta.subtitle ? {} : { subtitle: FieldValue.delete() }
     // Who it is for is a label on the content, never an access control: absent clears it.
     const to = input.meta.to ? {} : { to: FieldValue.delete() }
+    // The cover is content too: a file that drops `cover:` loses the image under the title, and
+    // the link preview falls back to the share card instead of the old cover (#14).
+    const cover = input.meta.cover ? {} : { cover: FieldValue.delete() }
     // How the page looks is content too: a line the file no longer carries goes back to the default.
     const look = {
       // Who may open the page is a door, not content: like `access`, a file that leaves these lines
@@ -365,7 +368,7 @@ async function saveArtifact(col: Col, input: SaveInput): Promise<SaveResult> {
       ? { voice: FieldValue.delete(), narration: FieldValue.delete(), timings: FieldValue.delete(), narrationHash: FieldValue.delete() }
       : {}
     await ref.update({
-      ...fields, ...settings, ...subtitle, ...to, ...look, ...audio, markdown: input.markdown, version: next,
+      ...fields, ...settings, ...subtitle, ...to, ...cover, ...look, ...audio, markdown: input.markdown, version: next,
       // `updatedAt` is when this version went live; finishing its own publish does not move it.
       ...(fresh || input.markdown !== existing.markdown ? { updatedAt: now } : {}),
       note: nextNote ?? FieldValue.delete(),

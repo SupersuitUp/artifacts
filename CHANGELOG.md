@@ -5,14 +5,6 @@ host can tell whether it is affected (DETECTOR), what a host does about it (REME
 
 ## Unreleased
 
-**Any file is an artifact.** `template: file` is a page that is one file, kept in the private store and served only through per-reader links. A PDF, an image, a video or a sound shows in the browser's own viewer; every other type, HTML and SVG included, is a download signed with `Content-Disposition: attachment`. `UPLOAD` and `PUT_ASSET` take any type for a file page's body (`?private=1&file=1`); every markdown page's assets keep the nine types. `LIST ?kind=file` lines carry the file's workspace path (`source`) and the `file` record.
-
-**A name like `x.constructor` no longer passes the page-asset gate.** `contentTypeFor` and `fileTypeFor` now look the extension up as an own property, so an inherited key is not a type.
-
-- DETECTOR: a host that serves `template: file` pages, or a page asset whose name ends in an inherited object key such as `.constructor`.
-- REMEDY: none for a host; it ships in the routes and the reader.
-- TESTS: `src/routes/file-upload.test.tsx`, `src/routes/file-page.test.tsx`, `src/artifacts/file-page.test.ts`, `src/artifacts/assets.test.ts`.
-
 **The feedback page: a page can ask its readers questions.** The front matter takes `asks:` (up to 12 questions, each with up to 8 options; see the README). Each ```askcard slot in the body draws one question as a card: the options with their reasons, the recommended one marked, and "<Reader> says something else". After a tap the card marks the reader's answer. A "Your answers" panel lists every question, with a Change link or a Make it link, and says answers reach the owner within a few minutes. A reader's answer is a record in the new `asks` state slot (private to the owner; a POST that works answers 200). A typed name stands only through a group link; a named link or a signed-in reader is known already, so a name they send is dropped. The hub never parses an ask block: the owner's computer sends the questions as data. Answers are refused in words when the question changed since the page opened, when the option is not one of the options, or after the reader's feedback window closes.
 
 **`ChoiceCard` is one drawing for a call card and an ask card.** The new `@supersuit/artifacts/choice-card` entry exports `ChoiceCard`, `CHOICE_TYPE_WORDS` and `HUB_CHOICE_LOOK`, and needs React only.
@@ -36,6 +28,27 @@ host can tell whether it is affected (DETECTOR), what a host does about it (REME
 - DETECTOR: a hub that serves a spreadsheet file page; the table does not draw and Download still works when the private bucket has no CORS rule for the hub's origin.
 - REMEDY: set the one CORS rule on the private bucket (README, "private bucket" CORS rule); a spreadsheet page needs `GET` and `HEAD` in it as well as `PUT`. Supersuit's hub setup sets it. Nothing else for a host.
 - TESTS: `src/artifacts/sheet-view.test.tsx`, `src/routes/file-page.test.tsx`.
+
+## 0.67.1 (2026-11-11)
+
+**A republish without `cover:` clears the old cover.** `saveArtifact` cleared a dropped subtitle, `to`, theme and pack on update, but not a dropped cover, so a page republished without its `cover:` line kept the old image under the title and as `og:image`. The cover is now content like the subtitle: when the file carries none, the record loses it, the body draws no image under the title, and the link preview falls back to the share card (`/<id>/share.png`). Fixes #14.
+
+- DETECTOR: a page whose file no longer has a `cover:` line still shows the old cover under its title, or its `og:image` is not `/<id>/share.png` on a hub whose pack draws a share card.
+- REMEDY: upgrade the host to 0.67.1, then republish the page once; the republish clears the stored cover.
+- TESTS: `src/artifacts/store.test.ts` (a republish without `cover:` clears it; one that keeps it keeps it); full suite 1431 passed.
+
+## 0.67.0 (2026-11-11)
+
+**Any file is an artifact.** `template: file` is a page that is one file, kept in the private store and served only through per-reader links. A PDF, an image, a video or a sound shows in the browser's own viewer; every other type, HTML and SVG included, is a download signed with `Content-Disposition: attachment`. `UPLOAD` and `PUT_ASSET` take any type for a file page's body (`?private=1&file=1`); every markdown page's assets keep the nine types. `LIST ?kind=file` lines carry the file's workspace path (`source`) and the `file` record.
+
+**A name like `x.constructor` no longer passes the page-asset gate.** `contentTypeFor` and `fileTypeFor` now look the extension up as an own property, so an inherited key is not a type.
+
+- DETECTOR: a host that serves `template: file` pages, or a page asset whose name ends in an inherited object key such as `.constructor`.
+- REMEDY: none for a host; it ships in the routes and the reader.
+- TESTS: `src/routes/file-upload.test.tsx`, `src/routes/file-page.test.tsx`, `src/artifacts/file-page.test.ts`, `src/artifacts/assets.test.ts`.
+
+
+**A flaky speed test is steady.** The twenty-minute transcript test timed each clock tick against 100 ms, which a busy machine failed. It now allows 500 ms (the old redraw took 926 to 2,066 ms, the fix 4 ms), checks that the 3,000 word nodes are the same ones, and gives the heavy render 60 s. TESTS: `src/widgets/voice-note.test.tsx`.
 
 ## 0.66.0 (2026-11-11)
 
