@@ -3,6 +3,14 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.67.1 (2026-11-11)
+
+**A republish without `cover:` clears the old cover.** `saveArtifact` cleared a dropped subtitle, `to`, theme and pack on update, but not a dropped cover, so a page republished without its `cover:` line kept the old image under the title and as `og:image`. The cover is now content like the subtitle: when the file carries none, the record loses it, the body draws no image under the title, and the link preview falls back to the share card (`/<id>/share.png`). Fixes #14.
+
+- DETECTOR: a page whose file no longer has a `cover:` line still shows the old cover under its title, or its `og:image` is not `/<id>/share.png` on a hub whose pack draws a share card.
+- REMEDY: upgrade the host to 0.67.1, then republish the page once; the republish clears the stored cover.
+- TESTS: `src/artifacts/store.test.ts` (a republish without `cover:` clears it; one that keeps it keeps it); full suite 1431 passed.
+
 ## 0.67.0 (2026-11-11)
 
 **Any file is an artifact.** `template: file` is a page that is one file, kept in the private store and served only through per-reader links. A PDF, an image, a video or a sound shows in the browser's own viewer; every other type, HTML and SVG included, is a download signed with `Content-Disposition: attachment`. `UPLOAD` and `PUT_ASSET` take any type for a file page's body (`?private=1&file=1`); every markdown page's assets keep the nine types. `LIST ?kind=file` lines carry the file's workspace path (`source`) and the `file` record.
