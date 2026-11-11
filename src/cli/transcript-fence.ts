@@ -28,6 +28,15 @@ export function findCommand(cmd: string, platform: NodeJS.Platform = process.pla
   return r.status === 0
 }
 
+/** The transcriber's arguments. Two of Whisper's own options keep a long recording honest: words are not carried from
+ *  one 30-second window into the next (that is how one line gets repeated forty times), and a line made up inside a
+ *  silence longer than two seconds is skipped. Measured on a five-minute take, 2026-11-11 (transcript-fence.test.ts). */
+export function transcriberArgs(cmd: 'mlx_whisper' | 'whisper', path: string, out: string, model: string, language: string | undefined): string[] {
+  const lang = language ? ['--language', language] : []
+  if (cmd === 'mlx_whisper') return [path, '--word-timestamps', 'True', '-f', 'json', '-o', out, '--model', model, '--condition-on-previous-text', 'False', '--hallucination-silence-threshold', '2', ...lang]
+  return [path, '--word_timestamps', 'True', '--output_format', 'json', '--output_dir', out, '--model', model, '--condition_on_previous_text', 'False', '--hallucination_silence_threshold', '2', ...lang]
+}
+
 function main(argv: string[]): number {
   const args = argv.slice(2)
   const file = args.find((a, i) => !a.startsWith('--') && !['--language', '--model', '--gap'].includes(args[i - 1]))
@@ -47,10 +56,10 @@ function main(argv: string[]): number {
     let r
     if (findCommand('mlx_whisper')) {
       const model = arg(args, '--model') ?? 'mlx-community/whisper-large-v3-turbo'
-      r = spawnSync('mlx_whisper', [path, '--word-timestamps', 'True', '-f', 'json', '-o', out, '--model', model, ...(language ? ['--language', language] : [])], { stdio: ['ignore', 'ignore', 'inherit'] })
+      r = spawnSync('mlx_whisper', transcriberArgs('mlx_whisper', path, out, model, language), { stdio: ['ignore', 'ignore', 'inherit'] })
     } else if (findCommand('whisper')) {
       const model = arg(args, '--model') ?? 'turbo'
-      r = spawnSync('whisper', [path, '--word_timestamps', 'True', '--output_format', 'json', '--output_dir', out, '--model', model, ...(language ? ['--language', language] : [])], { stdio: ['ignore', 'ignore', 'inherit'] })
+      r = spawnSync('whisper', transcriberArgs('whisper', path, out, model, language), { stdio: ['ignore', 'ignore', 'inherit'] })
     } else {
       process.stderr.write('no local transcriber found: install mlx-whisper (pip install mlx-whisper, Apple Silicon) or openai-whisper (pip install openai-whisper)\n')
       return 3
