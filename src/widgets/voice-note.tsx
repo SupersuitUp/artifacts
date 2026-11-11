@@ -18,6 +18,7 @@
 // opens with its time, a button that seeks there.
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject, type SyntheticEvent } from 'react'
 import type { NoteKind } from '../artifacts/voice-note.js'
+import { NOTE_AT, SEEK_TO } from '../reader/page-bridge.js'
 import { begunCount, litDeclarations, litWordIndex, type WordTiming } from '../reader/karaoke.js'
 
 const CSS =
@@ -54,6 +55,10 @@ export function VoiceNote({ src, label, media, paragraphs, block, kind = 'audio'
   const [t, setT] = useState(0)
   const [duration, setDuration] = useState(0)
   const total = duration || words[words.length - 1]?.e || 0
+  const blockId = block?.['data-block']
+  // "Note at 0:14" shows only where the page takes comments (the comment layer sets this mark).
+  const [noting, setNoting] = useState(false)
+  useEffect(() => { setNoting(document.documentElement.hasAttribute('data-comments-on')) }, [])
 
   /** Light the word at the audio's current time; touch only the spans whose state changed. */
   const sync = () => {
@@ -119,6 +124,17 @@ export function VoiceNote({ src, label, media, paragraphs, block, kind = 'audio'
     if (a.readyState >= 1) go()
     else a.addEventListener('loadedmetadata', go, { once: true })
   }
+
+  // A comment's "At 0:14" line moves this recording.
+  useEffect(() => {
+    if (!blockId) return
+    const onSeek = (e: Event) => {
+      const d = (e as CustomEvent<{ block: string; at: number }>).detail
+      if (d?.block === blockId) actions.current.seekTo(d.at)
+    }
+    window.addEventListener(SEEK_TO, onSeek)
+    return () => window.removeEventListener(SEEK_TO, onSeek)
+  }, [blockId])
 
   // What an <audio> and a <video> share: the same clock, the same lit word, the same duration.
   const shared = {
@@ -198,6 +214,10 @@ export function VoiceNote({ src, label, media, paragraphs, block, kind = 'audio'
           className="min-w-0 flex-1"
         />
         <span className="shrink-0 font-mono text-xs tabular-nums text-[color:var(--a-muted)]">{fmt(t)} / {fmt(total)}</span>
+        {noting && blockId ? (
+          <button type="button" data-note-at onClick={() => window.dispatchEvent(new CustomEvent(NOTE_AT, { detail: { block: blockId, at: Math.floor(t) } }))}
+            className="min-h-11 shrink-0 text-xs font-semibold text-[color:var(--a-strong)] underline underline-offset-2">{`Note at ${fmt(t)}`}</button>
+        ) : null}
       </div>
       <Words paragraphs={paragraphs} kind={kind} spans={spans} onWord={onWord} />
     </div>

@@ -114,3 +114,13 @@ describe('resolving (0.33.0)', () => {
     for (const v of [null, undefined, 'x', { body: 'x' }, { resolved: true }, { resolved: { by: 'x' } }]) expect(resolutionOf(v)).toBeNull()
   })
 })
+
+describe('a comment at a moment', () => {
+  const none = () => null
+  it('the server accepts a time anchor and refuses a time out of range', () => {
+    const ok = validateComment({ anchor: { kind: 'time', block: 'b-voice-0123abcd', at: 14 }, body: 'here', version: 1 }, none)
+    expect(ok.ok && ok.value.anchor).toEqual({ kind: 'time', block: 'b-voice-0123abcd', at: 14 })
+    expect(validateComment({ anchor: { kind: 'time', block: 'b-voice-0123abcd', at: 21601 }, body: 'x', version: 1 }, none).ok).toBe(false)
+    expect(validateComment({ anchor: { kind: 'time', block: 'b-voice-0123abcd', at: -1 }, body: 'x', version: 1 }, none).ok).toBe(false)
+  })
+})

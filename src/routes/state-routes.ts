@@ -492,6 +492,7 @@ export function createStateRoutes(ctx: StateRoutesContext) {
         reader: ridOfReaderKey(e.readerKey) ? { rid: ridOfReaderKey(e.readerKey)!, label: e.writer.name ?? null } : null,
         by: declared(v), publisher: v.publisher === true,
         quote: v.anchor?.kind === 'text' ? v.anchor.quote : null, region: v.anchor?.kind === 'region',
+        moment: v.anchor?.kind === 'time' ? v.anchor.at : null,
         body: v.body, transcript: v.transcript ?? null, audioUrl: audio, at: e.at, resolved,
         link: `${ctx.pageUrl(e.artifactId)}#comment-${e.id}`,
       })
