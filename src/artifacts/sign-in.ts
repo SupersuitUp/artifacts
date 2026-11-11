@@ -26,7 +26,8 @@ export type SignInShow = 'open' | 'verify' | 'sent' | 'use-other' | 'blocked' | 
 export function signInOutcome(i: { user: { email: string | null; emailVerified: boolean; providerId: string } | null; errorCode?: string; otherProvider?: SignInProviderId | null; verificationSent?: boolean }): { show: SignInShow; words: string } {
   if (i.errorCode === 'auth/account-exists-with-different-credential' && i.otherProvider)
     return { show: 'use-other', words: `You used ${NAMES[i.otherProvider]} before with this email. Continue with ${NAMES[i.otherProvider]}.` }
-  if (i.errorCode === 'auth/admin-restricted-operation' || i.errorCode === 'auth/unauthorized-domain')
+  // auth/unauthorized-domain is the hub's own setup fault, not the reader's company, so it falls to the plain words.
+  if (i.errorCode === 'auth/admin-restricted-operation')
     return { show: 'blocked', words: 'Your company does not let this account sign in to apps it has not approved. Sign in with another account.' }
   if (i.errorCode || !i.user) return { show: 'failed', words: SIGN_IN_WORDS.failed }
   if (!i.user.email) return { show: 'failed', words: SIGN_IN_WORDS.notVerified }
@@ -39,3 +40,18 @@ export function signInOutcome(i: { user: { email: string | null; emailVerified: 
 /** The provider a pass was made for, from Firebase's `sign_in_provider` claim. */
 export const providerOf = (claims: { firebase?: { sign_in_provider?: string } }): SignInProviderId | 'other' =>
   (SIGN_IN_PROVIDERS.find((p) => p.firebaseId === claims.firebase?.sign_in_provider)?.id ?? 'other')
+
+/** Link a refused credential only to an account with the same email: the second popup can return any
+ *  account, and linking a stranger's credential to it would make two readers one. */
+export const shouldLink = (pendingEmail: string | null | undefined, userEmail: string | null | undefined): boolean =>
+  !!pendingEmail && !!userEmail && pendingEmail.toLowerCase() === userEmail.toLowerCase()
+
+/** The page sends Firebase's verification email only for an unverified email, with a page to open, once. */
+export const shouldSendVerification = (i: { hasPage: boolean; email: string | null; emailVerified: boolean; sentBefore: boolean }): boolean =>
+  i.hasPage && !!i.email && !i.emailVerified && !i.sentBefore
+
+/** A sign-in counts once: when the ID token's `auth_time` is this close to now. A reader already
+ *  signed in who opens more pages carries an older `auth_time`, so the count does not grow. */
+export const FRESH_SIGN_IN_SECONDS = 300
+export const isFreshSignIn = (claims: { auth_time?: unknown }, nowSeconds: number): boolean =>
+  typeof claims.auth_time === 'number' && Math.abs(nowSeconds - claims.auth_time) <= FRESH_SIGN_IN_SECONDS

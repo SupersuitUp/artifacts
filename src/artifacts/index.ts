@@ -32,4 +32,4 @@ export { parseGoal, goalCta, ctasIn, outcomeThresholds, GOAL_KINDS, DEFAULT_GOAL
 export { migrateMemosToPrivate, MEMO_KEY, type MemoMigration } from './migrate-memos.js'
 export { parseTranscriptFence, scanVoiceNotes, transcriptFenceFromWords, wordsFromWhisperJson, isAudioSrc, isVideoSrc, TRANSCRIPT_LANG, MAX_TRANSCRIPT_WORDS, type TranscriptParagraphs, type TimedWord, type VoiceNoteBlock, type NoteKind } from './voice-note.js'
 export { fileLinks, fileNoun, sizeWords, parseFileBody, type FileBody, type PrivateUrl } from './file-page.js'
-export { SIGN_IN_PROVIDERS, SIGN_IN_WORDS, providersFor, signInOutcome, providerOf, type SignInProviderId, type SignInProvider, type SignInShow } from './sign-in.js'
+export { SIGN_IN_PROVIDERS, SIGN_IN_WORDS, providersFor, signInOutcome, providerOf, shouldLink, shouldSendVerification, isFreshSignIn, FRESH_SIGN_IN_SECONDS, type SignInProviderId, type SignInProvider, type SignInShow } from './sign-in.js'

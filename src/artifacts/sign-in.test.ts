@@ -52,3 +52,44 @@ describe('the words when the page did not open', () => {
     expect(SIGN_IN_WORDS.signedInNotOpened(null)).toBe('You are signed in, but the page did not open. Reload to try again.')
   })
 })
+
+import { shouldLink, shouldSendVerification, isFreshSignIn, FRESH_SIGN_IN_SECONDS } from './sign-in.js'
+
+describe('the hub\'s own setup fault', () => {
+  it('an unauthorized domain gets the plain failure words, not the company words', () => {
+    expect(signInOutcome({ user: null, errorCode: 'auth/unauthorized-domain' })).toEqual({ show: 'failed', words: SIGN_IN_WORDS.failed })
+  })
+})
+
+describe('linking a refused credential', () => {
+  it('links only to an account with the same email, in any case', () => {
+    expect(shouldLink('a@example.com', 'A@Example.com')).toBe(true)
+    expect(shouldLink('a@example.com', 'b@example.com')).toBe(false)
+    expect(shouldLink(null, 'a@example.com')).toBe(false)
+    expect(shouldLink('a@example.com', null)).toBe(false)
+    expect(shouldLink('', '')).toBe(false)
+  })
+})
+
+describe('when the page sends the verification email', () => {
+  const base = { hasPage: true, email: 'a@example.com', emailVerified: false, sentBefore: false }
+  it('sends once for an unverified email with a page to open', () => {
+    expect(shouldSendVerification(base)).toBe(true)
+    expect(shouldSendVerification({ ...base, sentBefore: true })).toBe(false)
+  })
+  it('sends nothing with no page to open, no email, or a verified email', () => {
+    expect(shouldSendVerification({ ...base, hasPage: false })).toBe(false)
+    expect(shouldSendVerification({ ...base, email: null })).toBe(false)
+    expect(shouldSendVerification({ ...base, emailVerified: true })).toBe(false)
+  })
+})
+
+describe('a fresh sign-in', () => {
+  it('is one whose auth_time is within five minutes of now', () => {
+    expect(FRESH_SIGN_IN_SECONDS).toBe(300)
+    expect(isFreshSignIn({ auth_time: 1000 }, 1000 + 300)).toBe(true)
+    expect(isFreshSignIn({ auth_time: 1000 }, 1000 + 301)).toBe(false)
+    expect(isFreshSignIn({}, 1000)).toBe(false)
+    expect(isFreshSignIn({ auth_time: '1000' }, 1000)).toBe(false)
+  })
+})

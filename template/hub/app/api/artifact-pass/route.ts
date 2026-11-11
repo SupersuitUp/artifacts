@@ -9,16 +9,18 @@ export const runtime = 'nodejs'
 
 // The pass for a reader who signed in on this host (app/artifact/sign-in).
 export async function GET(request: NextRequest) {
+  const tenant = hubTenant()
   const r = await localPass({
-    tenant: hubTenant(),
+    tenant,
     to: request.nextUrl.searchParams.get('to'),
     authorization: request.headers.get('authorization'),
     verify: async (t) => {
       const d = await getAdminAuth().verifyIdToken(t)
       return { uid: d.uid, email: d.email, emailVerified: d.email_verified === true, name: typeof d.name === 'string' ? d.name : undefined, claims: d as unknown as Record<string, unknown> }
     },
-    // Finished sign-ins by provider, one document a month. A pass only, so a failed sign-in never counts.
-    count: async (p) => { await getAdminDb().doc(`signInCounts/${new Date().toISOString().slice(0, 7)}`).set({ [p]: FieldValue.increment(1) }, { merge: true }) },
+    // Fresh, finished sign-ins by provider, one document a month under the tenant like every hub path.
+    // A pass only, so a failed sign-in never counts; localPass skips a reader already signed in.
+    count: async (p) => { await getAdminDb().doc(`tenants/${tenant.id}/signInCounts/${new Date().toISOString().slice(0, 7)}`).set({ [p]: FieldValue.increment(1) }, { merge: true }) },
     secret: process.env.ARTIFACT_PASS_SECRET,
   })
   return r.ok
