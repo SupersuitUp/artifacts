@@ -32,6 +32,7 @@ import { CommentLayer } from '../reader/comment-layer.js'
 import { ReaderWatch } from '../reader/reader-watch.js'
 import { UpdatedTime } from '../reader/updated-time.js'
 import { FeedbackWindow } from '../reader/feedback-window.js'
+import { YourAnswers, type AskCtx } from '../widgets/ask-card.js'
 import { perReaderGate, signInToAct, withPrivateUrls, UNAVAILABLE } from './per-reader.js'
 import { PerReaderDoor, AskForAccess, ASK_NOTE_MAX } from './per-reader-door.js'
 import { ridCookieName, mintRenderToken, usableSecret, isUnfurlAgent, RID_COOKIE_MAX_AGE } from '../artifacts/recipients.js'
@@ -947,6 +948,9 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     const toc = showToc(a.markdown, a.toc) ? tocOf(a.markdown) : []
     // Shared comments need the page to take them AND a host that keeps answers; personal notes need neither.
     const mode: CommentsMode = config.state && a.state && a.comments && a.comments !== 'off' && a.state.slots[COMMENTS_SLOT] ? a.comments : 'off'
+    const askCtx: AskCtx | undefined = a.asks?.length && config.state && a.state?.slots.asks
+      ? { artifactId: a.id, asks: a.asks, owner, reader: perReader && !perReader.group && !perReader.owner ? perReader.label : null, requireName: a.commentName === 'required' && perReader?.group === true, display: brand.type.display }
+      : undefined
     const history = await historyOf(a.id)
     const current = a.version ?? (a.versions?.length ?? 0) + 1
     return (
@@ -1000,7 +1004,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
                 cover={
                   <>
                     {perReader?.closesAt && !perReader.owner ? (
-                      <FeedbackWindow owner={owner} label={perReader.label} note={perReader.note} group={perReader.group} closesAt={perReader.closesAt} />
+                      <FeedbackWindow owner={owner} label={perReader.label} note={perReader.note} group={perReader.group} closesAt={perReader.closesAt} asks={a.asks?.length ?? 0} />
                     ) : perReader?.note ? (
                       <p data-for-reader className="mx-auto mt-6 mb-0 max-w-2xl px-6 text-lg">{`For ${perReader.label}: ${perReader.note}`}</p>
                     ) : null}
@@ -1024,10 +1028,12 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
                   Section={pack.Section}
                   figure={pack.figure}
                   embeds={embeds}
+                  asks={askCtx}
                 />
               </Framed>
             )
           })()}
+          {askCtx ? <YourAnswers ctx={askCtx} /> : null}
         </div>
         <CommentLayer
           artifactId={a.id}

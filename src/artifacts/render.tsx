@@ -19,6 +19,7 @@ import { blocksOf, checklistSyncs, checklistsOf, hasNotesWidget, headingsOf, typ
 import type { ChecklistBlock } from './checklist.js'
 import { HeadingNotes, NoteToggle, NotesEarlier, NotesProvider } from '../widgets/notes.js'
 import { Checklist } from '../widgets/checklist.js'
+import { AskFence, type AskCtx } from '../widgets/ask-card.js'
 import { embedSrc, isEmbedKind, parseEmbedFence, EMBED_KINDS, type EmbedKind } from './simulator.js'
 import { EmbedFrame } from './embed-frame.js'
 import { VideoAutoplay } from '../reader/video-autoplay.js'
@@ -155,7 +156,7 @@ type SimulatorCtx = { embed: string }
 /** The host's embed page for each embed kind it serves (ArtifactMarkdown `embeds`). */
 export type EmbedCtx = Partial<Record<EmbedKind, SimulatorCtx>>
 /** Fences that draw something other than code, so `pre` must not wrap them. */
-const OWN_BLOCK = new RegExp(`language-(links|notes|checklist|transcript|${EMBED_KINDS.join('|')})\\b`)
+const OWN_BLOCK = new RegExp(`language-(links|notes|checklist|askcard|transcript|${EMBED_KINDS.join('|')})\\b`)
 
 // A session demo on a wide screen is wider than the reading column, so the device it draws (a
 // laptop, or a phone beside what was made) has room: up to 64rem, centred on the column, and clear
@@ -248,7 +249,7 @@ function ChecklistFence({ line, ctx }: { line: number; ctx: ChecklistCtx }) {
   )
 }
 
-function baseComponents(block: BlockAttr, figure?: FigureFor, checklists?: ChecklistCtx, embeds?: EmbedCtx, voiceNotes?: VoiceNoteBlock[]): Components {
+function baseComponents(block: BlockAttr, figure?: FigureFor, checklists?: ChecklistCtx, embeds?: EmbedCtx, voiceNotes?: VoiceNoteBlock[], asks?: AskCtx): Components {
   return {
   // A voice note (remarkVoiceNotes): the audio line and its transcript, drawn as one keepsake.
   div: ({ node, ...props }) => {
@@ -332,6 +333,7 @@ function baseComponents(block: BlockAttr, figure?: FigureFor, checklists?: Check
     if (lang === 'checklist') return checklists ? <ChecklistFence line={node?.position?.start.line ?? -1} ctx={checklists} /> : null
     // A notes fence is the widget's place on the page. Without notes enabled (the host keeps no
     // answers) it draws nothing: its settings are not prose and never shown as code.
+    if (lang === 'askcard') return asks ? <AskFence id={textOf(children).trim()} ctx={asks} /> : null
     if (lang === 'notes') return null
     // A transcript not under an audio line draws nothing (publish refuses one; an old page may hold it).
     if (lang === TRANSCRIPT_LANG) return null
@@ -402,7 +404,7 @@ const HEADING_CLASS: Record<number, string> = {
 
 /** Components for any page: every heading gets its slug as an id, the one headingsOf derived,
  *  so a contents link and a note both land on it. */
-function pageComponents(headings: Heading[], block: BlockAttr, figure?: FigureFor, checklists?: ChecklistCtx, embeds?: EmbedCtx, voiceNotes?: VoiceNoteBlock[]): Components {
+function pageComponents(headings: Heading[], block: BlockAttr, figure?: FigureFor, checklists?: ChecklistCtx, embeds?: EmbedCtx, voiceNotes?: VoiceNoteBlock[], asks?: AskCtx): Components {
   const byLine = new Map(headings.map((h) => [h.line, h]))
   const heading = (depth: 1 | 2 | 3 | 4 | 5 | 6): Components['h1'] =>
     function Heading({ node, children }) {
@@ -410,14 +412,14 @@ function pageComponents(headings: Heading[], block: BlockAttr, figure?: FigureFo
       const h = byLine.get(node?.position?.start.line ?? -1)
       return <Tag id={h?.slug} {...block(node)} className={HEADING_CLASS[depth]}>{children}</Tag>
     }
-  return { ...baseComponents(block, figure, checklists, embeds, voiceNotes), h1: heading(1), h2: heading(2), h3: heading(3), h4: heading(4), h5: heading(5), h6: heading(6) }
+  return { ...baseComponents(block, figure, checklists, embeds, voiceNotes, asks), h1: heading(1), h2: heading(2), h3: heading(3), h4: heading(4), h5: heading(5), h6: heading(6) }
 }
 
 /** Components for a page with a notes block: every heading gets its slug as an id, a note
  *  control, and its notes after it. The heading is found by its source line, so the slug is the
  *  one headingsOf derived, the same one a note stores. */
-function notesComponents(headings: Heading[], block: BlockAttr, figure?: FigureFor, checklists?: ChecklistCtx, embeds?: EmbedCtx, voiceNotes?: VoiceNoteBlock[]): Components {
-  const components = baseComponents(block, figure, checklists, embeds, voiceNotes)
+function notesComponents(headings: Heading[], block: BlockAttr, figure?: FigureFor, checklists?: ChecklistCtx, embeds?: EmbedCtx, voiceNotes?: VoiceNoteBlock[], asks?: AskCtx): Components {
+  const components = baseComponents(block, figure, checklists, embeds, voiceNotes, asks)
   const byLine = new Map(headings.map((h) => [h.line, h]))
   const heading = (depth: 1 | 2 | 3 | 4 | 5 | 6): Components['h1'] =>
     function NotedHeading({ node, children }) {
@@ -528,6 +530,7 @@ export function ArtifactMarkdown({
   simulator,
   messages,
   embeds: hosted,
+  asks,
 }: {
   markdown: string
   /** The page a ```checklist keeps its ticks under, and whether its Send can reach the owner
@@ -550,6 +553,8 @@ export function ArtifactMarkdown({
    *  ```helm). A kind with none shows its caption only. `simulator` and `messages` above still work
    *  and win over this. */
   embeds?: EmbedCtx
+  /** The questions this page asks its reader, for ```askcard blocks. Without it a block draws nothing. */
+  asks?: AskCtx
 }) {
   const on = !!notes && hasNotesWidget(markdown)
   const embeds: EmbedCtx = { ...hosted, ...(simulator ? { simulator } : {}), ...(messages ? { messages } : {}) }
@@ -571,7 +576,7 @@ export function ArtifactMarkdown({
     // page whose checklists sync, that same slot is the shared set, so it turns sync on instead.
     ? { byLine: lists, artifactId: checklist?.artifactId, send: !!checklist?.send, sync: !!checklist?.send && checklistSyncs(lists.values()), owner: checklist?.owner, accent: checklist?.accent }
     : undefined
-  const components = on ? notesComponents(headings, block, figure, checklists, embeds, voiceNotes) : pageComponents(headings, block, figure, checklists, embeds, voiceNotes)
+  const components = on ? notesComponents(headings, block, figure, checklists, embeds, voiceNotes, asks) : pageComponents(headings, block, figure, checklists, embeds, voiceNotes, asks)
   if (outline.length) components.section = sectionComponent(Section!, outline, block)
   const body = (
     <ReactMarkdown remarkPlugins={plugins} components={components} urlTransform={artifactUrlTransform}>

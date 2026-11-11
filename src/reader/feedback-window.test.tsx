@@ -33,6 +33,10 @@ describe('FeedbackWindow', () => {
     expect(box.textContent).toContain('Is the ending earned?')
     expect(document.querySelector('[data-feedback-left]')!.textContent).toBe('Feedback is open: 3 days left.')
   })
+  it('with asks, the banner says how many choices wait and when the answers arrive', async () => {
+    await mount(<FeedbackWindow owner="Robin Vale" label="Reader A" note={null} group={false} closesAt="2026-10-16T12:00:00Z" now={at} asks={2} />)
+    expect(document.querySelector('[data-feedback-asks]')!.textContent).toBe('Two choices for you, and anything that reads wrong. Your answers reach Robin Vale within a few minutes.')
+  })
   it('an open link names nobody, and a closed window says so', async () => {
     await mount(<FeedbackWindow owner="Robin Vale" label="Anyone with the link" note={null} group closesAt="2026-10-13T11:00:00Z" now={at} />)
     expect(document.querySelector('[data-feedback-window]')!.textContent).not.toContain('Anyone with the link')
