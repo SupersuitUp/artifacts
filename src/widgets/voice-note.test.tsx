@@ -270,10 +270,16 @@ describe('a five-minute recording', () => {
     const video = host.querySelector('video')!
     Object.defineProperty(video, 'readyState', { configurable: true, value: 4 })
     act(() => { host.querySelector<HTMLButtonElement>('[data-vn-at="0"]')!.click() })
+    // The old widget kept the same nodes but re-rendered all 3,000 each tick (926 ms); the fix takes 4 ms. 100 ms
+    // failed on a busy machine, so the bound sits at 500 ms: far above the fix, well below a redraw.
+    const before = [...host.querySelectorAll('.vn-word')]
     const t0 = performance.now()
     for (let i = 1; i <= 20; i++) act(() => { video.currentTime = i * 50; video.dispatchEvent(new Event('timeupdate')) })
-    expect((performance.now() - t0) / 20).toBeLessThan(100)
+    expect((performance.now() - t0) / 20).toBeLessThan(500)
+    const after = [...host.querySelectorAll('.vn-word')]
+    expect(after.length).toBe(3000)
+    expect(after.every((w, k) => w === before[k])).toBe(true)
     // At 16:40 the word being said is the sixth of paragraph 209, and it alone is lit.
     expect([...host.querySelectorAll('.vn-word-lit')].map((w) => w.textContent)).toEqual(['w208x5'])
-  })
+  }, 60_000) // drawing 3,000 words in jsdom takes seconds on a busy machine
 })

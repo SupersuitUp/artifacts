@@ -3,7 +3,7 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
-## Unreleased
+## 0.67.0 (2026-11-11)
 
 **Any file is an artifact.** `template: file` is a page that is one file, kept in the private store and served only through per-reader links. A PDF, an image, a video or a sound shows in the browser's own viewer; every other type, HTML and SVG included, is a download signed with `Content-Disposition: attachment`. `UPLOAD` and `PUT_ASSET` take any type for a file page's body (`?private=1&file=1`); every markdown page's assets keep the nine types. `LIST ?kind=file` lines carry the file's workspace path (`source`) and the `file` record.
 
@@ -12,6 +12,9 @@ host can tell whether it is affected (DETECTOR), what a host does about it (REME
 - DETECTOR: a host that serves `template: file` pages, or a page asset whose name ends in an inherited object key such as `.constructor`.
 - REMEDY: none for a host; it ships in the routes and the reader.
 - TESTS: `src/routes/file-upload.test.tsx`, `src/routes/file-page.test.tsx`, `src/artifacts/file-page.test.ts`, `src/artifacts/assets.test.ts`.
+
+
+**A flaky speed test is steady.** The twenty-minute transcript test timed each clock tick against 100 ms, which a busy machine failed. It now allows 500 ms (the old redraw took 926 to 2,066 ms, the fix 4 ms), checks that the 3,000 word nodes are the same ones, and gives the heavy render 60 s. TESTS: `src/widgets/voice-note.test.tsx`.
 
 ## 0.66.0 (2026-11-11)
 
