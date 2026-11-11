@@ -350,6 +350,7 @@ summary: Three bets, what each costs, and what we stop doing to afford them.
 | `translations` | The same document in other languages on this host, as a map of tag to page id: `{"es": "abcd2345"}` (the publisher resolves each twin's file to its id). With `lang`, the page draws a small switch at the top naming each language in itself ("English · Español") and the unfurl carries `hreflang` alternates. Each page names its own twins; a republish without the line removes the switch |
 | `change` | One line saying what this version changed (see Version history) |
 | `template` | `document` (the default, the read-along reader), `broadcast` (one message card sent to several people; see Broadcasts) or `file` (a page that is one file; see below) |
+| `asks` | Questions to the page's readers, sent as data (see Asks below). Needs `links: per-reader` |
 
 An unknown key is refused, so a typo fails loudly instead of being ignored.
 
@@ -379,6 +380,41 @@ file:
 A file page has no body, and no `access`, `password`, `state`, `comments`, `voice`, `narration`, `timings` or `cover`. It is always `links: per-reader` and private: the file sits in the private store and a reader gets one-hour signed links. A PDF, an image (png, jpeg, gif, webp), a video (mp4, webm) or a sound (mp3, m4a, wav) opens in the browser's own viewer. Every other type, HTML and SVG included, is a download signed with `Content-Disposition: attachment`, so no file runs as a page on the hub.
 
 `UPLOAD` and `PUT_ASSET` take the file's bytes with `?private=1&file=1`. They answer 409 for a page that is not a file page and 400 without `private=1`. Page assets of a markdown page keep the nine types.
+
+## Asks (`asks:`)
+
+An ask is a question the page puts to its readers. The owner's computer reads the ```ask blocks in the draft and sends them as data in `asks:`. The hub never parses an ask block.
+
+```yaml
+asks:
+  - id: headline
+    type: pick-one
+    question: Which headline should the page open with?
+    hash: 3f9a1c0b7d2e
+    options:
+      - label: Your own AI, on your own computer
+        because: Says what is different in eight words.
+        recommended: true
+      - label: Stop doing the toil by hand
+        because: Names the pain, but not the product.
+        recommended: false
+```
+
+| Key | Meaning |
+|---|---|
+| `id` | Lowercase letters, digits and hyphens, 1 to 48 characters. Each id is used once |
+| `type` | `pick-one`, `accept-or-reject` or `say-what-you-want` |
+| `question` | The question, up to 300 characters |
+| `hash` | 12 hex characters that change when the question changes. An answer with an old hash is refused, so a reader never answers a question that has changed |
+| `options` | Up to 8, each with `label`, `because` (the reason) and `recommended` (true or false). `say-what-you-want` takes none; the other types need them |
+
+- A page has up to 12 asks. `asks:` needs `links: per-reader`.
+- Each ```askcard slot in the body names one ask id, alone on its line inside the fence. An id with no ask in `asks:` is refused.
+- The page declares the `asks` state slot by itself: private to the owner, any reader may append. A front matter `state:` slot named `asks` is refused.
+- A reader taps an option, or taps "<Reader> says something else" and types words. The answer is `{ask, hash, choice, words}`, with `name` only through a group link. The latest answer for a question stands, and the reader can change it.
+- Answers reach the owner within a few minutes. A reader whose feedback window has closed gets a 403 in words.
+
+A note can also be pinned to a second in a recording: a comment with the anchor `{kind: "time", block, at}` (`at` is a whole second from 0 to 21600).
 
 ## Inline definitions (`definitions:`)
 

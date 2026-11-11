@@ -13,6 +13,18 @@ host can tell whether it is affected (DETECTOR), what a host does about it (REME
 - REMEDY: none for a host; it ships in the routes and the reader.
 - TESTS: `src/routes/file-upload.test.tsx`, `src/routes/file-page.test.tsx`, `src/artifacts/file-page.test.ts`, `src/artifacts/assets.test.ts`.
 
+**The feedback page: a page can ask its readers questions.** The front matter takes `asks:` (up to 12 questions, each with up to 8 options; see the README). Each ```askcard slot in the body draws one question as a card: the options with their reasons, the recommended one marked, and "<Reader> says something else". After a tap the card shows the answer with a Change link. A "Your answers" panel lists every question, with Change or Make it, and says answers reach the owner within a few minutes. A reader's answer is a record in the new `asks` state slot (private to the owner; a POST that works answers 200). A typed name stands only through a group link; a named link or a signed-in reader is known already, so a name they send is dropped. The hub never parses an ask block: the owner's computer sends the questions as data. Answers are refused in words when the question changed since the page opened, when the option is not one of the options, or after the reader's feedback window closes.
+
+**`ChoiceCard` is one drawing for a call card and an ask card.** The new `@supersuit/artifacts/choice-card` entry exports `ChoiceCard`, `CHOICE_TYPE_WORDS` and `HUB_CHOICE_LOOK`, and needs React only.
+
+**`next` and `firebase-admin` are now optional peers.** A host that imports only `./choice-card` or the pure helpers installs neither.
+
+**A note at a moment.** A comment can be pinned to a second in a recording: the new `time` anchor is `{kind: "time", block, at}`, with `at` a whole second from 0 to 21600 (six hours). A voice note or video shows "Note at 0:14" where the page takes comments, and a note pinned to a moment shows "At 0:14", which moves the recording to that second. The comments feed carries `moment`. New exports: `TimeAnchor`, `MAX_TIME_S`, `momentLabel`.
+
+- DETECTOR: a page whose front matter has `asks:` or a ```askcard slot; a host that wants `ChoiceCard` without Next; a comment with a `time` anchor.
+- REMEDY: none for a host; it ships in the routes and the reader. A host on 0.66.0 refuses `asks:` as an unknown key.
+- TESTS: `src/artifacts/asks.test.ts`, `src/routes/asks.test.tsx`, `src/widgets/ask-card.test.tsx`, `src/reader/choice-card.test.tsx`, `src/reader/feedback-window.test.tsx`, `src/artifacts/anchor.test.ts`, `src/artifacts/comments.test.ts`, `src/reader/moment.test.tsx`, `src/routes/comments-feed.test.tsx`.
+
 ## 0.66.0 (2026-11-11)
 
 **A recording is a voice note with a video.** An mp4 directly above a ```transcript fence is a note too, of kind `video`; the widget draws the video above its words, with the same seek line, lit word and tap-a-time-to-jump as an audio note, and its own controls (never the browser's). Starting one pauses any other audio or video on the page. For a long recording the words are drawn once, not on every clock tick (3,000 words: 926 ms a tick before, 4 ms after), and a word with no spaces wraps on a phone. New exports: `isVideoSrc`, `NoteKind`.
