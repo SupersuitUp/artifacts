@@ -3,7 +3,7 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
-## Unreleased
+## 0.68.0 (2026-11-11)
 
 **The feedback page: a page can ask its readers questions.** The front matter takes `asks:` (up to 12 questions, each with up to 8 options; see the README). Each ```askcard slot in the body draws one question as a card: the options with their reasons, the recommended one marked, and "<Reader> says something else". After a tap the card marks the reader's answer. A "Your answers" panel lists every question, with a Change link or a Make it link, and says answers reach the owner within a few minutes. A reader's answer is a record in the new `asks` state slot (private to the owner; a POST that works answers 200). A typed name stands only through a group link; a named link or a signed-in reader is known already, so a name they send is dropped. The hub never parses an ask block: the owner's computer sends the questions as data. Answers are refused in words when the question changed since the page opened, when the option is not one of the options, or after the reader's feedback window closes.
 
