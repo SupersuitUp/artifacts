@@ -44,6 +44,13 @@ the template from the tarball outside this repo and runs `next build` on it.
 | `ARTIFACT_PUBLIC_PREFIXES` (`/gate`) | Paths to leave open if you mount artifacts inside a gated site |
 
 Subpath imports: `@supersuit/artifacts/artifacts`, `/routes`, `/brand`, `/reader`, `/gate`.
+
+`@supersuit/artifacts/karaoke` holds the karaoke rules on their own, with no React and no other
+package: `litWordIndex` (the word to light at a time), `begunCount` (how many words have begun),
+`litDeclarations(accent)` (the lit word's highlight) and `wordStateCss(scope, accent)` (the CSS
+for a word, the lit word and the words still to come under a selector), with the class names
+`WORD_CLASS`, `LIT_CLASS` and `AHEAD_CLASS`. The voice note draws its words with these, so a
+surface that lights words imports them and does not copy them.
 The package ships compiled ESM with type declarations; no `transpilePackages` needed.
 
 ## Mount it in a Next.js app

@@ -3,6 +3,14 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.69.0 (2026-11-13)
+
+**The karaoke rules are their own entry.** The new `@supersuit/artifacts/karaoke` entry exports `litWordIndex`, `begunCount` and `litDeclarations`, and loads no React and no other package, so another surface that lights words imports them instead of copying them. Before, they were reachable only through `./reader`, which loads React, and `litDeclarations` was not exported at all. The voice note's word CSS (a word, the lit word, the words still to come) is now `wordStateCss(scope, accent)` in the same entry, with the class names `WORD_CLASS`, `LIT_CLASS` and `AHEAD_CLASS`; the voice note draws its words with it, so there is one copy. The CSS it emits is unchanged.
+
+- DETECTOR: a host or app that copied `litWordIndex`, `begunCount`, the lit-word highlight or the `.vn-word` rules out of this package.
+- REMEDY: import them from `@supersuit/artifacts/karaoke` and delete the copy. Nothing changes for a host that does not.
+- TESTS: `src/karaoke.test.ts` (the entry's exports, no package import under it, the exact CSS, the voice note uses it, the exports map); `src/widgets/voice-note.test.tsx`; `scripts/check-packed.mjs` loads the built entry under plain Node.
+
 ## 0.68.0 (2026-11-11)
 
 **The feedback page: a page can ask its readers questions.** The front matter takes `asks:` (up to 12 questions, each with up to 8 options; see the README). Each ```askcard slot in the body draws one question as a card: the options with their reasons, the recommended one marked, and "<Reader> says something else". After a tap the card marks the reader's answer. A "Your answers" panel lists every question, with a Change link or a Make it link, and says answers reach the owner within a few minutes. A reader's answer is a record in the new `asks` state slot (private to the owner; a POST that works answers 200). A typed name stands only through a group link; a named link or a signed-in reader is known already, so a name they send is dropped. The hub never parses an ask block: the owner's computer sends the questions as data. Answers are refused in words when the question changed since the page opened, when the option is not one of the options, or after the reader's feedback window closes.

@@ -34,3 +34,17 @@ export function begunCount(words: WordTiming[], now: number): number {
 
 /** The highlight on the word being spoken, in the page's accent. */
 export const litDeclarations = (accent: string) => `background: color-mix(in srgb, ${accent} 35%, transparent); color: var(--a-strong, #fff);`
+
+/** The class on every word span, on the word being spoken, and on the words still to come. */
+export const WORD_CLASS = 'vn-word'
+export const LIT_CLASS = 'vn-word-lit'
+export const AHEAD_CLASS = 'vn-ahead'
+
+/** The CSS for the three word states under `scope` (a selector for the element holding the
+ *  words): a word is tappable, the word being spoken carries the narration's highlight in
+ *  `accent`, and the words still to come are muted. One copy for every surface that lights words. */
+export const wordStateCss = (scope: string, accent: string) =>
+  `${scope} .${WORD_CLASS}{border-radius:3px;cursor:pointer;transition:background-color 120ms,opacity 200ms;-webkit-tap-highlight-color:transparent}` +
+  `${scope} .${WORD_CLASS}:hover{background:var(--a-surface-strong,rgba(127,127,127,0.12))}` +
+  `${scope} .${WORD_CLASS}.${AHEAD_CLASS}{opacity:0.5}` +
+  `${scope} .${WORD_CLASS}.${LIT_CLASS}{${litDeclarations(accent)}opacity:1}`

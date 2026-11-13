@@ -51,6 +51,12 @@ if (!/^['"]use client['"]/.test(readFileSync(join(dest, 'lib/widgets/checklist.j
 if (!/^['"]use client['"]/.test(readFileSync(join(dest, 'lib/widgets/voice-note.js'), 'utf8'))) fail("compiled voice-note widget lost its 'use client' directive")
 // The transcript-fence bin is a file an author runs with npx: it must ship, as a node script.
 if (!readFileSync(join(dest, 'lib/cli/transcript-fence.js'), 'utf8').startsWith('#!/usr/bin/env node')) fail('the supersuit-transcript-fence bin lost its shebang')
+// The ./karaoke entry loads under plain Node with no React: it imports nothing but itself.
+const karaokeJs = readFileSync(join(dest, 'lib/karaoke.js'), 'utf8') + readFileSync(join(dest, 'lib/reader/karaoke.js'), 'utf8')
+const karaokeFrom = [...karaokeJs.matchAll(/from\s*['"]([^'"]+)['"]/g)].map((m) => m[1]).filter((f) => !f.startsWith('.'))
+if (karaokeFrom.length) fail(`the ./karaoke entry imports ${karaokeFrom.join(', ')}`)
+const karaoke = await import(pathToFileURL(join(dest, 'lib/karaoke.js')).href)
+for (const fn of ['litWordIndex', 'begunCount', 'litDeclarations', 'wordStateCss']) if (typeof karaoke[fn] !== 'function') fail(`./karaoke has no ${fn}`)
 console.log(`check-packed: ${filename}, ${paths.length} files`)
 
 const next = join(root, 'node_modules/next/dist/bin/next')

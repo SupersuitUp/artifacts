@@ -19,13 +19,10 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject, type SyntheticEvent } from 'react'
 import type { NoteKind } from '../artifacts/voice-note.js'
 import { NOTE_AT, SEEK_TO } from '../reader/page-bridge.js'
-import { begunCount, litDeclarations, litWordIndex, type WordTiming } from '../reader/karaoke.js'
+import { AHEAD_CLASS, begunCount, LIT_CLASS, litWordIndex, WORD_CLASS, wordStateCss, type WordTiming } from '../reader/karaoke.js'
 
 const CSS =
-  '[data-artifact-voicenote] .vn-word{border-radius:3px;cursor:pointer;transition:background-color 120ms,opacity 200ms;-webkit-tap-highlight-color:transparent}' +
-  '[data-artifact-voicenote] .vn-word:hover{background:var(--a-surface-strong,rgba(127,127,127,0.12))}' +
-  '[data-artifact-voicenote] .vn-word.vn-ahead{opacity:0.5}' +
-  `[data-artifact-voicenote] .vn-word.vn-word-lit{${litDeclarations('var(--a-accent)')}opacity:1}` +
+  wordStateCss('[data-artifact-voicenote]', 'var(--a-accent)') +
   '[data-artifact-voicenote] input[type=range]{accent-color:var(--a-accent)}' +
   '[data-artifact-voicenote] button:focus-visible,[data-artifact-voicenote] input:focus-visible{outline:2px solid var(--a-accent);outline-offset:2px}'
 
@@ -80,12 +77,12 @@ export function VoiceNote({ src, label, media, paragraphs, block, kind = 'audio'
     const was = shown.current
     if (lit === was.lit && begun === was.begun) return
     if (was.lit !== lit) {
-      spans.current[was.lit]?.classList.remove('vn-word-lit')
-      spans.current[lit]?.classList.add('vn-word-lit')
+      spans.current[was.lit]?.classList.remove(LIT_CLASS)
+      spans.current[lit]?.classList.add(LIT_CLASS)
     }
     const from = Math.max(0, Math.min(begun, was.begun < 0 ? 0 : was.begun))
     const to = was.begun < 0 ? spans.current.length : Math.max(begun, was.begun)
-    for (let i = from; i < to; i++) spans.current[i]?.classList.toggle('vn-ahead', i >= begun)
+    for (let i = from; i < to; i++) spans.current[i]?.classList.toggle(AHEAD_CLASS, i >= begun)
     shown.current = { lit, begun }
   }
 
@@ -264,7 +261,7 @@ const Words = memo(function Words({ paragraphs, kind, spans, onWord }: {
                   {wi ? ' ' : null}
                   <span
                     ref={(el) => { if (el) spans.current[i] = el }}
-                    className="vn-word"
+                    className={WORD_CLASS}
                     onClick={() => onWord(w.s)}
                   >
                     {w.w}
