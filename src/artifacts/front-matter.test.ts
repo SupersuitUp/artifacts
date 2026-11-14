@@ -224,3 +224,18 @@ describe('comment_name', () => {
     expect(parseArtifactSource(page('comment_name: required\n'))).toEqual({ ok: false, error: 'comment_name: required needs links: per-reader' })
   })
 })
+
+describe('shelf:', () => {
+  const src = (line: string) => `---\ntitle: T\nsummary: S\n${line}\n---\nbody`
+  it('names the hub shelf a signed-in reader finds the page on', () => {
+    const r = parseArtifactSource(src('shelf: family'))
+    expect(r.ok && r.meta.shelf).toBe('family')
+  })
+  it('is absent when the line is', () => {
+    const r = parseArtifactSource(src('toc: true'))
+    expect(r.ok && r.meta.shelf).toBeUndefined()
+  })
+  it('refuses anything but a short lowercase name', () => {
+    for (const bad of ['shelf: Family', 'shelf: two words', 'shelf: 1st', `shelf: ${'a'.repeat(33)}`]) expect(parseArtifactSource(src(bad)).ok).toBe(false)
+  })
+})

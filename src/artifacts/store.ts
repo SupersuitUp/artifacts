@@ -57,6 +57,8 @@ export type ArtifactRecord = {
   goal?: ArtifactGoal
   /** `mark: none`: the page leaves out the pack's mark; see ArtifactMeta.mark. */
   mark?: 'none'
+  /** The hub shelf a signed-in reader finds this page on; see ArtifactMeta.shelf. */
+  shelf?: string
   /** The page's language and its translations by page id; see ArtifactMeta.lang/translations. */
   lang?: string
   translations?: Record<string, string>
@@ -110,7 +112,10 @@ export function newArtifactId(): string {
 }
 
 /** One line of the owner's list of pages: no body, no settings. */
-export type ArtifactListItem = { id: string; title: string; summary: string; template: ArtifactKind; createdAt: string; updatedAt: string; views: number; source?: string; file?: { name: string; type: string; bytes: number } }
+export type ArtifactListItem = { id: string; title: string; summary: string; template: ArtifactKind; createdAt: string; updatedAt: string; views: number; source?: string; file?: { name: string; type: string; bytes: number }
+  /** What the reader home needs to decide who sees a page, and never the password itself:
+   *  `locked` says only that the page has one. */
+  access?: Access; links?: 'per-reader' | 'tracked'; shelf?: string; locked?: true; unpublished?: true }
 
 /** The kind a stored page is: anything not saved as a broadcast is a document, so pages saved
  *  before kinds existed list where they always would have. */
@@ -121,7 +126,9 @@ export function listOfKind(pages: Iterable<Partial<ArtifactRecord> & { id: strin
   return [...pages]
     .filter((p) => kindOf(p) === kind)
     .map((p) => ({ id: p.id, title: p.title ?? '', summary: p.summary ?? '', template: kind, createdAt: p.createdAt ?? '', updatedAt: p.updatedAt ?? '', views: p.views ?? 0,
-      ...(p.file ? { source: p.file.source, file: { name: p.file.name, type: p.file.type, bytes: p.file.bytes } } : {}) }))
+      ...(p.file ? { source: p.file.source, file: { name: p.file.name, type: p.file.type, bytes: p.file.bytes } } : {}),
+      ...(p.access ? { access: p.access } : {}), ...(p.links ? { links: p.links } : {}), ...(p.shelf ? { shelf: p.shelf } : {}),
+      ...(p.password ? { locked: true as const } : {}), ...(p.unpublishedAt ? { unpublished: true as const } : {}) }))
     .sort((x, y) => y.updatedAt.localeCompare(x.updatedAt) || x.id.localeCompare(y.id))
 }
 
@@ -200,7 +207,7 @@ export function createArtifactStore(db: Firestore, collection = 'artifacts'): Ar
     },
     list: async (kind) => {
       // `select` keeps every body out of the listing; a tenant's pages number in the hundreds.
-      const snap = await col().select('title', 'summary', 'template', 'createdAt', 'updatedAt', 'views', 'file').get()
+      const snap = await col().select('title', 'summary', 'template', 'createdAt', 'updatedAt', 'views', 'file', 'access', 'links', 'shelf', 'password', 'unpublishedAt').get()
       return listOfKind(snap.docs.map((d) => ({ ...(d.data() as Partial<ArtifactRecord>), id: d.id })), kind)
     },
   }
@@ -295,6 +302,7 @@ async function saveArtifact(col: Col, input: SaveInput): Promise<SaveResult> {
     ...(input.meta.forward ? { forward: input.meta.forward } : {}),
     ...(input.meta.goal ? { goal: input.meta.goal } : {}),
     ...(input.meta.mark ? { mark: input.meta.mark } : {}),
+    ...(input.meta.shelf ? { shelf: input.meta.shelf } : {}),
     ...(input.meta.lang ? { lang: input.meta.lang } : {}),
     ...(input.meta.translations ? { translations: input.meta.translations } : {}),
     ...(input.meta.history ? { history: input.meta.history } : {}),
@@ -358,6 +366,7 @@ async function saveArtifact(col: Col, input: SaveInput): Promise<SaveResult> {
       ...(input.meta.history ? {} : { history: FieldValue.delete() }),
       ...(input.meta.goal ? {} : { goal: FieldValue.delete() }),
       ...(input.meta.mark ? {} : { mark: FieldValue.delete() }),
+      ...(input.meta.shelf ? {} : { shelf: FieldValue.delete() }),
       ...(input.meta.lang ? {} : { lang: FieldValue.delete() }),
       // A whole map replaces the stored one (update merges nested maps otherwise), or clears it.
       translations: input.meta.translations ?? FieldValue.delete(),

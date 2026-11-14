@@ -40,14 +40,15 @@ describe('the hub host template', () => {
 
   it('serves every route the setup and the publisher call', () => {
     for (const r of ['[id]/page.tsx', '[id]/share.png/route.tsx', 'api/artifacts/route.ts', 'api/reader/enter/route.ts',
-      'api/reader/ack/route.ts', 'api/reader/ask/route.ts', 'api/health/route.ts', 'api/comments/route.ts', 'api/artifact-pass/route.ts', 'api/activity/route.ts',
+      'api/reader/ack/route.ts', 'api/reader/ask/route.ts', 'api/health/route.ts', 'api/comments/route.ts', 'api/artifact-pass/route.ts', 'api/activity/route.ts', 'api/shelves/route.ts',
       'artifact/sign-in/page.tsx', 'brand.json/route.ts', 'frapp/route.ts']) {
       expect(existsSync(join(hub, 'app', r)), r).toBe(true)
     }
   })
-  it('shows its owner the dashboard on the home (HubHome) and everyone else the plain front page', () => {
+  it('shows a signed-in reader their shelves (ReaderHome) first, its owner the dashboard (HubHome), and a visitor the door', () => {
     const home = readFileSync(join(hub, 'app/page.tsx'), 'utf8')
-    expect(home).toMatch(/hubRoutes\(\)\.HubHome\(\{ searchParams \}\)/)
+    expect(home).toMatch(/hubRoutes\(\)\.ReaderHome\(\{ searchParams \}\)\)\s*\?\?\s*\(await hubRoutes\(\)\.HubHome\(\{ searchParams \}\)/)
     expect(home).toContain('shares by link')
+    expect(readFileSync(join(hub, 'src/lib/routes.ts'), 'utf8')).toContain('shelves: tenant.shelves')
   })
 })

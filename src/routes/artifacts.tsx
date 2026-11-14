@@ -66,10 +66,17 @@ import type { Transcriber } from '../artifacts/transcribe.js'
 import { guardRouteTable } from './backend-auth.js'
 import { fetchSends } from '../analytics/index.js'
 import { ArtifactsTile, themeFromPageVars, type HubPage } from '../owner/index.js'
+import { ReaderShelves, shelvesFor, type Shelf } from './reader-home.js'
+
+/** Enough of an email to look a reader up by: one @, no spaces. */
+const EMAIL_ISH = /^[^\s@]+@[^\s@]+$/
 
 export type ArtifactRoutesConfig = {
   /** HubHome's Waiting on: after how many days an unopened send is waiting. Default 3. */
   ownerQuietDays?: number
+  /** The shelves of the "Shared with you" home (ReaderHome), in page order: each page's `shelf:`
+   *  names one. A page whose shelf is not named here gets a shelf of its own name; none, "Other". */
+  shelves?: readonly Shelf[]
   store: ArtifactStore
   /** Where readers' answers live. Without it every state route answers 501. */
   state?: StateStore
@@ -1602,6 +1609,52 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     return NextResponse.json({ deleted: true, files })
   }
 
+  /** Every page this hub holds, of every kind, as its list gives them (no bodies, no passwords). */
+  async function everyPage() {
+    return (await Promise.all(ARTIFACT_KINDS.map((k) => store.list!(k)))).flat()
+  }
+  /** The shelves one reader's "Shared with you" home lists: the hub's own decide() over every page. */
+  async function shelvesOf(reader: Reader) {
+    const readers = config.readers
+    return shelvesFor({
+      reader, pages: await everyPage(), shelves: config.shelves, pageUrl,
+      allowList: (id) => (readers ? readers.allowList(id) : Promise.resolve([])),
+      sessions: readers ? (id) => readers.sessions(id) : undefined,
+    })
+  }
+  /** The hub's home for a signed-in reader who is not its owner or an admin: "Shared with you", the
+   *  pages decide() opens for them on the hub's shelves (./reader-home). Null for a visitor signed
+   *  out, so the host keeps its door, and null for the owner and admins, who get HubHome, unless
+   *  they ask `?as=<email>` to see exactly what that person sees (`&member=1` for a Supersuit
+   *  member). Only the owner and admins may look through someone else's eyes. */
+  async function ReaderHome({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
+    const readCookie = config.readCookie ?? defaultReadCookie
+    const me = readerSecret() ? verifyGrant(readerSecret(), await readCookie(GRANT_COOKIE).catch(() => undefined)) : null
+    if (!me || !store.list) return null
+    const sp = (await searchParams) ?? {}
+    const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v)
+    const as = one(sp.as)?.trim().toLowerCase()
+    if (isAdmin(me)) {
+      if (!as || !EMAIL_ISH.test(as)) return null
+      const them: Reader = { uid: 'preview', email: as, name: null, member: one(sp.member) === '1' }
+      return <ReaderShelves pack={pack} brand={brand} owner={owner} name={null} groups={await shelvesOf(them)} seeingAs={as} />
+    }
+    return <ReaderShelves pack={pack} brand={brand} owner={owner} name={me.name ? me.name.split(/\s+/)[0] : null} groups={await shelvesOf(me)} />
+  }
+  /** GET /api/shelves?as=<email>[&member=1]: exactly what that reader's "Shared with you" home lists,
+   *  by shelf. The publish key, or the owner or an admin signed in: what `hub shelves --as` asks. */
+  async function SHELVES(request: NextRequest) {
+    const refused = keyOrOwner(request, ownerAuth)
+    if (refused) return refused
+    const no = (error: string, status: number) => NextResponse.json({ error }, { status, headers: { 'cache-control': 'no-store' } })
+    if (!store.list) return no('this store cannot list its pages', 501)
+    const q = request.nextUrl.searchParams
+    const as = q.get('as')?.trim().toLowerCase()
+    if (!as || !EMAIL_ISH.test(as)) return no("as must be the reader's email", 400)
+    const member = q.get('member') === '1'
+    const groups = await shelvesOf({ uid: 'preview', email: as, name: null, member })
+    return NextResponse.json({ as, member, shelves: groups }, { headers: { 'cache-control': 'no-store' } })
+  }
   /** The hub's home for its owner or an admin signed in: the Artifacts tile (`../owner`) over the whole hub, read
    *  from this host's own stores (the analytics rules, the same numbers GET /views and /api/activity answer with),
    *  with every page listed under it. Null for anyone else, so the host draws its own plain front page. `?p=`,
@@ -1722,5 +1775,5 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     return new Response(html, { status: 410, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'x-robots-tag': 'noindex, nofollow' } })
   }
 
-  return guardRouteTable({ Page, HubHome, generateMetadata, VersionPage, generateVersionMetadata, VERSIONS, POST, GET, DELETE, LIST, ACTIVITY, shutPageResponse, PUT_ASSET, UPLOAD, SHARE_IMAGE, ENTER, LEAVE, TRACK, ACK, ASK, ACCESS, SETTINGS, READS, sweepReaders, TRANSCRIBE: voiceRoutes.TRANSCRIBE, ...stateRoutes, ...personalRoutes, ...recipientsRoutes, dynamic: 'force-dynamic' as const, maxDuration: 30 })
+  return guardRouteTable({ Page, HubHome, ReaderHome, SHELVES, generateMetadata, VersionPage, generateVersionMetadata, VERSIONS, POST, GET, DELETE, LIST, ACTIVITY, shutPageResponse, PUT_ASSET, UPLOAD, SHARE_IMAGE, ENTER, LEAVE, TRACK, ACK, ASK, ACCESS, SETTINGS, READS, sweepReaders, TRANSCRIBE: voiceRoutes.TRANSCRIBE, ...stateRoutes, ...personalRoutes, ...recipientsRoutes, dynamic: 'force-dynamic' as const, maxDuration: 30 })
 }

@@ -97,6 +97,11 @@ export type ArtifactMeta = {
   /** `mark: none` (supersuit-dev#2151): this page leaves out the pack's mark that every page of a
    *  branded hub shows above the kicker. Content, like `toc:`: a republish without it shows it. */
   mark?: 'none'
+  /** `shelf: family`: the shelf a signed-in reader finds this page on, on the hub's "Shared with
+   *  you" home (the hub's `shelves` setting names and orders them). A short lowercase name. Content,
+   *  like `toc:`: a republish without it takes the page off its shelf. Never opens the page to
+   *  anyone: who sees it is still `access:` and its list. */
+  shelf?: string
   /** `lang: es` (supersuit-dev#2156): the language the page is written in, a BCP 47 tag. Marks the
    *  page's words for screen readers and translation, and sets og:locale. Content, like `toc:`. */
   lang?: string
@@ -133,10 +138,13 @@ const PRIVATE_REF_IN_BODY = /^private:/
 /** A pack name, as a host registers one. */
 export const PACK_NAME = /^[a-z0-9][a-z0-9-]{0,39}$/
 
+/** A shelf name: lowercase letters, digits and dashes, at most 32. */
+export const SHELF_RE = /^[a-z][a-z0-9-]{0,31}$/
+
 /** The longest `to:` a page may carry: a name or two, never a sentence. */
 export const MAX_TO_CHARS = 60
 
-const KNOWN = new Set(['title', 'summary', 'subtitle', 'to', 'template', 'audience', 'cover', 'id', 'voice', 'narration', 'timings', 'narrationHash', 'password', 'access', 'state', 'theme', 'pack', 'toc', 'definitions', 'change', 'comments', 'comments_visible', 'links', 'media', 'comment_name', 'history', 'forward', 'goal', 'mark', 'lang', 'translations', 'file', 'asks'])
+const KNOWN = new Set(['title', 'summary', 'subtitle', 'to', 'template', 'audience', 'cover', 'id', 'voice', 'narration', 'timings', 'narrationHash', 'password', 'access', 'state', 'theme', 'pack', 'toc', 'definitions', 'change', 'comments', 'comments_visible', 'links', 'media', 'comment_name', 'history', 'forward', 'goal', 'mark', 'shelf', 'lang', 'translations', 'file', 'asks'])
 
 export function parseArtifactSource(
   text: string,
@@ -221,6 +229,10 @@ export function parseArtifactSource(
   if (d.mark !== undefined && d.mark !== null) {
     if (d.mark !== 'none') return { ok: false, error: 'mark must be none (it hides the brand mark on this page)' }
     meta.mark = 'none'
+  }
+  if (d.shelf !== undefined && d.shelf !== null) {
+    if (typeof d.shelf !== 'string' || !SHELF_RE.test(d.shelf)) return { ok: false, error: 'shelf must be a short lowercase name, like family or school' }
+    meta.shelf = d.shelf
   }
   if (d.lang !== undefined && d.lang !== null) {
     const l = parseLang(d.lang)

@@ -39,6 +39,8 @@ export function hubRoutes() {
     ownerEmail: ownerEmail(),
     admins: admins(),
     history: 'admins',
+    // The "Shared with you" home a signed-in reader lands on (ReaderHome): its shelves, in order.
+    shelves: tenant.shelves,
   })
   return routes
 }
