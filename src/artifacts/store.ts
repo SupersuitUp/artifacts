@@ -37,8 +37,9 @@ export type ArtifactRecord = {
   narrationHash?: string
   password?: string
   access?: Access
-  /** `per-reader`: opens only through a link made for one reader. */
-  links?: 'per-reader'
+  /** `per-reader`: opens only through a link made for one reader. `tracked`: opens for anyone, and
+   *  counts a reader who came through their own link. Never `open`: that clears the field. */
+  links?: 'per-reader' | 'tracked'
   /** Body media are stored unlisted and served only to a valid reader. */
   privateMedia?: true
   file?: FileBody
@@ -346,7 +347,8 @@ async function saveArtifact(col: Col, input: SaveInput): Promise<SaveResult> {
     const look = {
       // Who may open the page is a door, not content: like `access`, a file that leaves these lines
       // out changes nothing, so a publisher that strips unknown keys can never reopen the page.
-      ...(input.meta.links ? { links: input.meta.links } : {}),
+      // `open` is the one word that clears it, so a page set per-reader by mistake can be set back.
+      ...(input.meta.links === 'open' ? { links: FieldValue.delete() } : input.meta.links ? { links: input.meta.links } : {}),
       ...(input.meta.privateMedia ? { privateMedia: true } : {}),
       ...(input.meta.theme ? {} : { theme: FieldValue.delete() }),
       ...(input.meta.pack ? {} : { pack: FieldValue.delete() }),
@@ -385,7 +387,7 @@ async function saveArtifact(col: Col, input: SaveInput): Promise<SaveResult> {
     ...fields,
     ...(live.access ? { access: live.access } : {}),
     ...(live.password ? { password: live.password } : {}),
-    ...(input.meta.links ? { links: input.meta.links } : {}),
+    ...(input.meta.links && input.meta.links !== 'open' ? { links: input.meta.links } : {}),
     ...(input.meta.privateMedia ? { privateMedia: true } : {}),
     ...(live.state ? { state: live.state } : {}),
     ...(live.comments ? { comments: live.comments } : {}),

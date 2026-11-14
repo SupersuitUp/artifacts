@@ -346,7 +346,7 @@ summary: Three bets, what each costs, and what we stop doing to afford them.
 | `pack` | A brand pack the host registered by name (`packs` in the routes config). An unknown name renders in the host's default pack; a republish without the line goes back to it |
 | `toc` | The table of contents. Absent, it appears once the page has four `##` sections; `false` never; `true` from one |
 | `definitions` | Terms defined inline (below). A republish without it removes them |
-| `links` | `per-reader`: the page opens only through a link made for one reader (see Per-reader links). Sticky: a republish whose file leaves the line out changes nothing |
+| `links` | `per-reader`: the page opens only through a link made for one reader (see Per-reader links). `tracked`: the page opens for anyone at its address, and a reader who arrives through a link made for them is counted as that reader (see Tracked links). `open`: clears the setting. Sticky: a republish whose file leaves the line out changes nothing, so only `tracked` or `open` sets a per-reader page back |
 | `media` | `private`: the page's body media is kept private and served through short-lived signed URLs. Needs `links: per-reader`. Sticky like `links` |
 | `comment_name` | `required`: on a per-reader page, a comment through a group link needs a typed first name, and each browser on a group link is its own reader (see Per-reader links). Needs `links: per-reader` |
 | `forward` | `off`, `signed-in` or `open`: whether a reader of a per-reader page may make a link to pass it on (see Forward links). Absent is `off`. Needs `links: per-reader`. Sticky like `links` |
@@ -1182,6 +1182,19 @@ media: private
 ![sound: the first night](river.mp4)
 ![a voice note, as it came](note.m4a)
 ```
+
+### Tracked links (0.70.0)
+
+`links: tracked` keeps the page open at its address and still gives each reader a link of their own.
+A reader who opens their link is that reader, exactly as on a per-reader page: their note, the
+quiet view beacon, their opens and read time in `GET /views`. Anyone else (the plain address, a
+revoked or forged link, the owner signed in, a past version) gets the ordinary open page, uncounted.
+`POST /recipients` mints links for it like a per-reader page. It stands alone (no `password` or
+`access`) and keeps public media (`media: private`, `forward`, `comment_name` and `asks` still need
+`per-reader`). A per-reader page whose plain address was already sent out is set back by
+republishing with `links: tracked` (keeping every link already minted, and its counts) or
+`links: open`. A page that keeps private media cannot be set back (409): its media plays only through
+a reader's link. A broadcast or a file page is always per-reader.
 
 `links: per-reader` shuts the page to everyone who does not arrive through a valid, unrevoked, unexpired link. It cannot be combined with `password`, `access` or `comments_visible: readers` (readers never see each other's comments). `media: private` keeps body media under the page's private prefix; `.mp4` and `.m4a` (and `.mp3`) are supported, and `sound:` at the start of a video's alt makes it a clip with controls and sound. Both lines are sticky: republishing a file that leaves them out changes nothing.
 

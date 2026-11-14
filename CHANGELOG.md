@@ -3,6 +3,14 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.70.0 (2026-11-14)
+
+**`links: tracked`: personal reader links that count opens, on a page anyone can open.** A reader who arrives through a link made for them is counted as that reader, as on a per-reader page (note, beacon, `GET /views`); the plain address, a revoked or forged link, an admin and a past version get the ordinary open page. `POST /recipients` mints links for a tracked page. **`links:` can now be set back:** a republish with `links: tracked` or `links: open` replaces a stored `per-reader` (leaving the line out still changes nothing). Before, `links` accepted only `per-reader` and was one-way, so a page switched to per-reader after its plain link went out turned that link into a door for good (2026-11-14, a release page emailed to seven people). A page keeping private media is refused (409) rather than opened with media nobody could play; a broadcast or file page saying `tracked` or `open` is refused in words. `GET /api/artifacts/<id>` answers `share.links: 'tracked'`, and the owner view offers reader links on a tracked page.
+
+- DETECTOR: a publish answering `400 links must be per-reader` to `links: open` or `links: tracked`; a per-reader page whose plain address was already sent.
+- REMEDY: bump; republish the page with `links: tracked` (keeps the links already minted and their counts) or `links: open`.
+- TESTS: `src/routes/tracked-links.test.tsx` (front matter, the open address, a reader's link counted, a revoked link open and uncounted, minting, setting a per-reader page back, the private-media refusal); `src/artifacts/store.test.ts` (tracked replaces per-reader, open clears it).
+
 ## 0.69.0 (2026-11-13)
 
 **The karaoke rules are their own entry.** The new `@supersuit/artifacts/karaoke` entry exports `litWordIndex`, `begunCount` and `litDeclarations`, and loads no React and no other package, so another surface that lights words imports them instead of copying them. Before, they were reachable only through `./reader`, which loads React, and `litDeclarations` was not exported at all. The voice note's word CSS (a word, the lit word, the words still to come) is now `wordStateCss(scope, accent)` in the same entry, with the class names `WORD_CLASS`, `LIT_CLASS` and `AHEAD_CLASS`; the voice note draws its words with it, so there is one copy. The CSS it emits is unchanged.
