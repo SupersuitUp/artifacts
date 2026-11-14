@@ -443,7 +443,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
         markdown={admin && source ? source : null}
         settings={admin ? settings ?? null : null}
         viewAsReader={admin && source ? `${pagePath(a.id)}?as=reader` : null}
-        ownerView={admin ? { id: a.id, title: a.title, url: pageUrl(a.id), home: `${siteUrl}/`, perReader: a.links === 'per-reader' } : null}
+        ownerView={admin ? { id: a.id, title: a.title, url: pageUrl(a.id), home: `${siteUrl}/`, perReader: a.links === 'per-reader' || a.links === 'tracked' } : null}
       />
     )
   }
@@ -561,7 +561,11 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     if (a.access) return GatedPage(a, id, render, n)
     const broadcast = kindOf(a) === 'broadcast'
     const isFile = kindOf(a) === 'file'
-    if (a.links === 'per-reader' || broadcast || isFile) {
+    // A tracked page (0.70.0) is an open page that also knows its readers: a valid link of a
+    // reader's own takes the per-reader path below and is counted, and anything else (the plain
+    // address, a revoked or forged link, an admin, a past version) falls through to the open page.
+    const tracked = a.links === 'tracked'
+    byLink: if (a.links === 'per-reader' || broadcast || isFile || (tracked && n === null)) {
       if (n !== null) notFound() // a past version of a per-reader page is never served
       const sp = (await searchParams) ?? {}
       const param = Array.isArray(sp.r) ? sp.r[0] : sp.r
@@ -574,6 +578,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
       const media = async (md: string) => (bot ? withoutMedia(md) : a.privateMedia ? await withPrivateUrls(md, id, privateUrl) : md)
       // A signed-in owner or admin gets through as the owner, with no link and no tracking.
       const me = readerSecret() ? verifyGrant(readerSecret(), await readCookie(GRANT_COOKIE).catch(() => undefined)) : null
+      if (tracked && isAdmin(me)) break byLink
       if (isAdmin(me)) {
         const markdown = await media(a.markdown)
         const viewer = wantsReaderView(sp) ? null : me
@@ -583,6 +588,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
       }
       const secret = usableSecret(config.recipientSecret?.())
       const g = await perReaderGate({ id, param, cookie: await readCookie(ridCookieName(id)).catch(() => undefined), secret, recipients: config.recipients })
+      if (g.state === 'shut' && tracked) break byLink
       if (g.state === 'shut') {
         // A signed-in visitor at the no-link door is a refusal like a gated page's: it goes on the
         // page's record (and to the publisher's read alerts), and the door says so only when it did.
@@ -1217,6 +1223,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     if (request.method === 'GET') return NextResponse.json({ id, access: a.access ?? null, readers: await config.readers.allowList(id) })
     const b = (await request.json().catch(() => null)) as { add?: unknown; remove?: unknown; access?: unknown } | null
     if (a.links === 'per-reader' && b?.access !== undefined) return NextResponse.json({ error: 'a per-reader page opens only from its own links, so its access and password cannot be changed' }, { status: 409 })
+    if (a.links === 'tracked' && b?.access !== undefined) return NextResponse.json({ error: 'a tracked page is open at its address and counts readers by their own links, so its access cannot be changed: publish it with links: open first' }, { status: 409 })
     let access = a.access ?? null
     if (b?.access !== undefined) {
       if (b.access !== 'public' && !ACCESS_LEVELS.includes(b.access as Access))
@@ -1267,6 +1274,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     try { b = JSON.parse(raw) } catch { return no('the body is not JSON', 400) }
     if (!b || typeof b !== 'object' || Array.isArray(b)) return no('the body is an object', 400)
     if (a.links === 'per-reader' && (b.access !== undefined || b.password !== undefined)) return no('a per-reader page opens only from its own links, so its access and password cannot be changed', 409)
+    if (a.links === 'tracked' && (b.access !== undefined || b.password !== undefined)) return no('a tracked page is open at its address and counts readers by their own links, so its access and password cannot be changed: publish it with links: open first', 409)
     const KEYS = ['access', 'password', 'comments', 'commentsVisible', 'add', 'remove']
     const unknown = Object.keys(b).filter((k) => !KEYS.includes(k))
     if (unknown.length) return no(`unknown setting: ${unknown.join(', ')}`, 400)
@@ -1377,6 +1385,11 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     // `media:` is sticky, so a stored page that already keeps private media counts too.
     if (!keepsPrivateMedia() && (parsed.meta.privateMedia || (id && (await kept.get(id))?.privateMedia)))
       return NextResponse.json({ error: NO_PRIVATE_STORE }, { status: 501 })
+    // Opening a page that keeps private media would leave its media unreachable at the open
+    // address (private media is signed only for a reader's own link), and `media:` is sticky, so
+    // the move is refused in words rather than half-made.
+    if (id && (parsed.meta.links === 'tracked' || parsed.meta.links === 'open') && (await kept.get(id))?.privateMedia)
+      return NextResponse.json({ error: `this page keeps private media, which only a reader's own link can play, so it cannot be made links: ${parsed.meta.links}: publish it as a new page with public media` }, { status: 409 })
     if (id && parsed.meta.state) {
       const existing = await kept.get(id)
       const changed = shapeChanges(existing?.state, parsed.meta.state)
@@ -1443,10 +1456,10 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
       // What a link to this page lets its reader do (0.57.0), so a sender can say so before the
       // reader's link exists: the send card is approved before anything is minted.
       share: {
-        links: a.links === 'per-reader' ? 'per-reader' : 'open',
+        links: a.links === 'per-reader' || a.links === 'tracked' ? a.links : 'open',
         forward: a.forward ?? 'off',
         comments: a.comments ?? 'off',
-        expires: a.links === 'per-reader' && config.recipients ? (await config.recipients.get(id))?.expireAt ?? null : null,
+        expires: (a.links === 'per-reader' || a.links === 'tracked') && config.recipients ? (await config.recipients.get(id))?.expireAt ?? null : null,
       },
     })
   }

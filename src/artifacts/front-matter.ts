@@ -42,8 +42,13 @@ export type ArtifactMeta = {
    *  ABSENT CHANGES NOTHING: the level is host-side state, so a republish that omits the line
    *  (or a publisher that strips unknown keys) can never reopen a confidential page. */
   access?: Access | 'public'
-  /** `per-reader`: the page opens only through a link made for one reader (recipients.ts). */
-  links?: 'per-reader'
+  /** `per-reader`: the page opens only through a link made for one reader (recipients.ts).
+   *  `tracked`: anyone can open the page at its address, and a reader who arrives through a link
+   *  made for them is counted as that reader, exactly as on a per-reader page. `open`: the page has
+   *  no reader links of its own (the stored setting is cleared). Absent changes nothing, so a
+   *  publisher that strips unknown keys can never reopen a per-reader page; only a file that says
+   *  `tracked` or `open` does. */
+  links?: LinksMode
   /** `media: private` in the file: body media are stored unlisted and served only to a valid reader. */
   privateMedia?: true
   /** `template: file`: the one file this page is (file-page.ts). */
@@ -99,6 +104,11 @@ export type ArtifactMeta = {
    *  (the publisher resolves each twin's file to its id). Draws the language switch. Content. */
   translations?: Record<string, string>
 }
+/** What `links:` may say. `per-reader` shuts the page to anyone without their own link; `tracked`
+ *  keeps the address open and counts the readers who came through their own link; `open` clears
+ *  the stored setting. */
+export const LINKS_MODES = ['per-reader', 'tracked', 'open'] as const
+export type LinksMode = (typeof LINKS_MODES)[number]
 export const FORWARD_MODES = ['off', 'signed-in', 'open'] as const
 export type ForwardMode = (typeof FORWARD_MODES)[number]
 
@@ -188,9 +198,13 @@ export function parseArtifactSource(
     meta.access = d.access as Access | 'public'
   }
   if (d.links !== undefined && d.links !== null) {
-    if (d.links !== 'per-reader') return { ok: false, error: 'links must be per-reader' }
-    if (meta.password || meta.access) return { ok: false, error: 'per-reader links stand alone: drop password and access' }
-    meta.links = 'per-reader'
+    if (!LINKS_MODES.includes(d.links as LinksMode)) return { ok: false, error: 'links must be per-reader, tracked or open' }
+    if (d.links !== 'open' && (meta.password || meta.access)) return { ok: false, error: `${d.links} links stand alone: drop password and access` }
+    // A broadcast and a file page ARE per-reader: a door that opened them to anyone would make them
+    // something else, so saying otherwise is refused rather than quietly overridden below.
+    if (d.links !== 'per-reader' && (meta.template === 'broadcast' || meta.template === 'file'))
+      return { ok: false, error: `a ${meta.template} opens only through each person's own link: drop links: ${d.links}` }
+    meta.links = d.links as LinksMode
   }
   if (d.media !== undefined && d.media !== null) {
     if (d.media !== 'private') return { ok: false, error: 'media must be private' }

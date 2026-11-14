@@ -143,7 +143,8 @@ export function createRecipientsRoutes(given: RecipientsRoutesCtx) {
     const a = ARTIFACT_ID_RE.test(id) ? await ctx.store.get(id) : null
     if (!a) return json({ error: `no artifact with id ${id}` }, 404)
     if (req.method === 'GET') return json(await listing(id))
-    if (a.links !== 'per-reader') return json({ error: 'this page is not links: per-reader' }, 409)
+    // A tracked page (0.70.0) takes reader links too: they open it as that reader and count opens.
+    if (a.links !== 'per-reader' && a.links !== 'tracked') return json({ error: 'this page is not links: per-reader or links: tracked' }, 409)
     const b = (await req.json().catch(() => null)) as { add?: unknown; revoke?: unknown; expires?: unknown; closes?: unknown; sent?: unknown } | null
     if (!b) return json({ error: 'body must be JSON' }, 400)
     const secret = ctx.recipientSecret()!
