@@ -69,6 +69,28 @@ export type HubEnvConfig = {
   pack?: HubPack
   /** The sign-in providers the hub turned on in its Firebase project. The tenant defaults to Google. */
   signIn?: ('google' | 'microsoft')[]
+  /** The shelves of the "Shared with you" home a signed-in reader lands on, in order. Each page's
+   *  `shelf:` names one by id. Absent, pages are grouped under their shelf names as written. */
+  shelves?: HubShelf[]
+}
+
+export type HubShelf = { id: string; label: string; blurb?: string }
+
+const SHELF_ID = /^[a-z][a-z0-9-]{0,31}$/
+
+function parseShelves(v: unknown): HubShelf[] | undefined {
+  if (v === undefined) return undefined
+  if (!Array.isArray(v) || v.length === 0) throw new Error('HUB_TENANT shelves must be a non-empty list of { id, label }')
+  const seen = new Set<string>()
+  return v.map((x: any, i) => {
+    if (!x || typeof x !== 'object' || typeof x.id !== 'string' || !SHELF_ID.test(x.id)) throw new Error(`HUB_TENANT shelves[${i}].id must be a short lowercase name, like family`)
+    if (seen.has(x.id)) throw new Error(`HUB_TENANT shelves names ${x.id} twice`)
+    seen.add(x.id)
+    const label = str(x.label, `shelves[${i}].label`)
+    if (!label) throw new Error(`HUB_TENANT shelves[${i}].label is required`)
+    const blurb = str(x.blurb, `shelves[${i}].blurb`)
+    return { id: x.id, label, ...(blurb ? { blurb } : {}) }
+  })
 }
 
 function parseSignIn(v: unknown): ('google' | 'microsoft')[] | undefined {
@@ -97,5 +119,6 @@ export function parseHubEnv(raw: string | undefined): HubEnvConfig | null {
   if (adopt && c.pack !== undefined) throw new Error('HUB_TENANT cannot carry both adopt and pack: an adopted row has its own look')
   const pack = c.pack !== undefined ? parsePack(c.pack) : undefined
   const signIn = parseSignIn(c.signIn)
-  return { host, owner, firebase: c.firebase, ...(adopt ? { adopt } : {}), ...(pack ? { pack } : {}), ...(signIn ? { signIn } : {}) }
+  const shelves = parseShelves(c.shelves)
+  return { host, owner, firebase: c.firebase, ...(adopt ? { adopt } : {}), ...(pack ? { pack } : {}), ...(signIn ? { signIn } : {}), ...(shelves ? { shelves } : {}) }
 }
