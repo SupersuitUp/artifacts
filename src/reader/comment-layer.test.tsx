@@ -1,6 +1,7 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { CommentLayer, startsBox } from './comment-layer.js'
+import { PRIVATE_NOTE_LABEL } from './comment-card.js'
 import { deviceNotes, deviceNotesKey } from './device-notes.js'
 import { indexText, offsetAt, placeAnchor } from './comment-place.js'
 import { textAnchorFrom } from '../artifacts/anchor.js'
@@ -187,6 +188,52 @@ describe('CommentLayer', () => {
     expect(sent.url).toBe('/api/artifacts/abc23456/state')
     expect(sent.body).toMatchObject({ slot: 'comments', op: 'append', value: { body: 'Every year?', version: 3, anchor: { kind: 'text', quote: 'floods' } } })
     expect(deviceNotes('abc23456')).toEqual([])
+  })
+
+  it('on a comments-off page the note box is labelled a private note, only you (supersuit-artifacts#18)', async () => {
+    stubFetch()
+    await mount()
+    selectWord('north')
+    await act(async () => { document.getElementById('root')!.dispatchEvent(new MouseEvent('mouseup', { bubbles: true })) })
+    await act(async () => { document.querySelector<HTMLButtonElement>('[data-comment-chip]')!.click() })
+    expect(document.querySelector('[data-comment-private-label]')!.textContent).toBe(PRIVATE_NOTE_LABEL)
+    expect(PRIVATE_NOTE_LABEL).toBe('Private note, only you')
+    const box = document.querySelector('textarea')!
+    expect(box.getAttribute('aria-label')).toBe('Private note, only you')
+    expect(box.getAttribute('placeholder')).toBe('Private note, only you')
+  })
+
+  it('once comments are on, a private note offers Share as a comment, which posts it and removes the note', async () => {
+    localStorage.setItem(deviceNotesKey('abc23456'), JSON.stringify([{ id: 'd-1', value: value(text('north'), 'Mine to share'), at: '2026-09-28T00:00:00Z' }]))
+    stubFetch({ shared: [] })
+    await mount({ comments: 'anyone', canShare: true })
+    await act(async () => { document.querySelector<HTMLButtonElement>('[data-comment-id="d-1"]')!.click() })
+    const btn = document.querySelector<HTMLButtonElement>('[data-comment-share-note]')!
+    expect(btn.textContent).toBe('Share as a comment')
+    await act(async () => { btn.click() })
+    const sent = calls.find((c) => c.method === 'POST')!
+    expect(sent.url).toBe('/api/artifacts/abc23456/state')
+    expect(sent.body).toMatchObject({ slot: 'comments', op: 'append', value: { body: 'Mine to share', version: 3, anchor: { kind: 'text', quote: 'north' } } })
+    expect(deviceNotes('abc23456')).toEqual([])
+  })
+
+  it('a private note offers no Share as a comment while the page takes no comments', async () => {
+    localStorage.setItem(deviceNotesKey('abc23456'), JSON.stringify([{ id: 'd-1', value: value(text('north'), 'Mine'), at: '2026-09-28T00:00:00Z' }]))
+    stubFetch()
+    await mount()
+    await act(async () => { document.querySelector<HTMLButtonElement>('[data-comment-id="d-1"]')!.click() })
+    expect(document.querySelector('[data-comment-thread]')!.textContent).toContain('Mine')
+    expect(document.querySelector('[data-comment-share-note]')).toBeNull()
+  })
+
+  it('a refused share keeps the private note and says why', async () => {
+    localStorage.setItem(deviceNotesKey('abc23456'), JSON.stringify([{ id: 'd-1', value: value(text('north'), 'Mine'), at: '2026-09-28T00:00:00Z' }]))
+    stubFetch({ shared: [], refuseAppend: 'feedback on this draft is closed' })
+    await mount({ comments: 'anyone', canShare: true })
+    await act(async () => { document.querySelector<HTMLButtonElement>('[data-comment-id="d-1"]')!.click() })
+    await act(async () => { document.querySelector<HTMLButtonElement>('[data-comment-share-note]')!.click() })
+    expect(deviceNotes('abc23456')).toHaveLength(1)
+    expect(document.querySelector('[data-comment-thread] [role="alert"]')!.textContent).toContain('feedback on this draft is closed')
   })
 
   it('a personal note\'s thread has no reply; a shared comment\'s does', async () => {

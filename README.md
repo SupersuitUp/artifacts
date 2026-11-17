@@ -898,7 +898,12 @@ comments_visible: readers # every reader who can comment sees the whole thread
   Signed in, the note is stored under the reader's id through `/personal`; signed out, it stays in
   the browser (`localStorage`) and moves to the account on sign-in. **No publisher route reads
   personal notes**: `src/routes/personal-privacy.test.tsx` calls every handler the factory returns
-  with the publish key and fails if one ever does.
+  with the publish key and fails if one ever does. The note box itself is labelled *"Private note,
+  only you"* on such a page, so a note is never mistaken for a comment. Once the page takes
+  comments, each of the reader's notes with words in it offers **Share as a comment**: the words post
+  as a shared comment on the same passage, and the note is removed only once that saved (its
+  recording stays private). A reader's own Pluma reads their notes through their signed-in session
+  (`GET /api/artifacts/<id>/personal` with their sign-in cookie), never the publish key.
 - **Anchors survive a republish.** A text comment stores its quote with 32 characters either side
   and the heading it sat under; a region comment stores the block it was drawn on (every top-level
   block carries a stable `data-block` id from its content) and the box as fractions of it. One

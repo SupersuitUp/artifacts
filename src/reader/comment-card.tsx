@@ -25,6 +25,9 @@ export function warningLine(ownerName: string, mode: CommentsMode, closed = fals
     : `${ownerName} takes comments on this page from signed-in readers`
   return `Only you will see this. ${why}, so this is a personal note. They won't see it.`
 }
+/** The note box's own label on a page that takes no comments: a reader must never mistake a note
+ *  for a comment the owner will read (supersuit-artifacts#18). */
+export const PRIVATE_NOTE_LABEL = 'Private note, only you'
 export const DEVICE_LINE = 'Saved on this device. Sign in to keep it everywhere.'
 /** Where a reader's declared name is remembered, so their next comment is already signed. */
 export const NAME_KEY = 'artifacts:comment-name'
@@ -117,6 +120,7 @@ export function CommentCard({
       ) : null}
       {moment ? <button type="button" data-comment-moment onClick={moment.onSeek} className="mb-2 block text-xs font-semibold underline">{`At ${moment.label}`}</button> : null}
       {quote ? <p className="mb-2 line-clamp-3 border-l-2 pl-2 text-[13px] italic opacity-75" style={{ borderColor: accent }}>{quote}</p> : null}
+      {!canShare ? <p data-comment-private-label className="m-0 mb-1 text-[11px] font-semibold uppercase tracking-[0.15em]" style={{ color: accent }}>{PRIVATE_NOTE_LABEL}</p> : null}
       <textarea
         value={text}
         autoFocus
@@ -125,8 +129,8 @@ export function CommentCard({
         onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) void submit() }}
         maxLength={MAX_COMMENT_CHARS}
         rows={3}
-        aria-label={personal ? 'A personal note' : `A comment for ${ownerName}`}
-        placeholder={personal ? 'A note for yourself' : `A comment for ${ownerName}`}
+        aria-label={!canShare ? PRIVATE_NOTE_LABEL : personal ? 'A personal note' : `A comment for ${ownerName}`}
+        placeholder={!canShare ? PRIVATE_NOTE_LABEL : personal ? 'A note for yourself' : `A comment for ${ownerName}`}
         className="w-full rounded-lg border border-[color:var(--a-line)] bg-[color:var(--a-ground,transparent)] p-2 text-[15px]"
       />
       <VoiceRecorder accent={accent}
