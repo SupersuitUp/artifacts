@@ -946,6 +946,13 @@ four audio methods `createArtifactAssets` provides (`signAudioUpload`, `audioSiz
 its own `ArtifactAssets` and none of them, keeps memos on the reader's device. Memos recorded before
 0.38.0 sat in the public bucket: `scripts/migrate-memos-private.mjs` moves them (see CHANGELOG).
 
+**The private bucket needs a CORS rule naming every hub address** (GET, HEAD and PUT, with the
+upload headers), or a reader's browser can neither open a private file nor upload a memo, and
+nothing says why. `ensurePrivateBucketCors(bucket, hosts)` (from `@supersuit/artifacts/artifacts`)
+reads the bucket's rules and sets the missing one; a re-run changes nothing. A shared host calls it
+for each tenant's private bucket in its tenant setup and in `update-artifacts`;
+`scripts/ensure-private-bucket-cors.mjs --bucket <b> --host <host>` does the same by hand.
+
 To transcribe on the server, pass `transcribe` and add the route. The key stays on the server;
 without `transcribe` the route answers 404 and readers keep the browser's live transcript (or an
 empty box). 20 transcriptions per reader per page per hour.
