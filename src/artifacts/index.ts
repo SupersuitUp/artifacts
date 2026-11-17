@@ -30,6 +30,7 @@ export { ridLink, parseRidParam, verifyRid, isUnfurlAgent, usableSecret, RECIPIE
 export { createRecipientsStore, memoryRecipientsStore, summarizeViews, type RecipientsStore, type Recipient, type RecipientsRecord, type ViewDoc, type RecipientSummary, type SummarizeOptions, type Provenance } from './recipients-store.js'
 export { parseGoal, goalCta, ctasIn, outcomeThresholds, GOAL_KINDS, DEFAULT_GOAL, CTA_ID, ACK_CTA, MAX_CLICKS_PER_SESSION, OUTCOMES, OUTCOME_READ_SECONDS, OUTCOME_RETURN_GAP_MS, OUTCOME_THRESHOLDS, type ArtifactGoal, type Outcome, type OutcomeThresholds } from './goal.js'
 export { migrateMemosToPrivate, MEMO_KEY, type MemoMigration } from './migrate-memos.js'
+export { ensurePrivateBucketCors, privateBucketCorsRule, mergePrivateCors, ruleCovers, hubOriginsOf, PRIVATE_CORS_METHODS, PRIVATE_CORS_HEADERS, type CorsRule, type PrivateCorsResult } from './bucket-cors.js'
 export { parseTranscriptFence, scanVoiceNotes, transcriptFenceFromWords, wordsFromWhisperJson, isAudioSrc, isVideoSrc, TRANSCRIPT_LANG, MAX_TRANSCRIPT_WORDS, type TranscriptParagraphs, type TimedWord, type VoiceNoteBlock, type NoteKind } from './voice-note.js'
 export { fileLinks, fileNoun, sizeWords, parseFileBody, type FileBody, type PrivateUrl } from './file-page.js'
 export { SIGN_IN_PROVIDERS, SIGN_IN_WORDS, providersFor, signInOutcome, providerOf, shouldLink, shouldSendVerification, isFreshSignIn, FRESH_SIGN_IN_SECONDS, type SignInProviderId, type SignInProvider, type SignInShow } from './sign-in.js'

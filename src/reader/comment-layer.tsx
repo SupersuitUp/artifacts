@@ -550,6 +550,22 @@ export function CommentLayer({
     if (thread === item.id) setThread(null)
   }
 
+  /** A private note, offered to the owner once the page takes comments (supersuit-artifacts#18): the
+   *  words post as a shared comment on the same passage, and the note goes only once that is saved.
+   *  A note's recording is the reader's own (device or account), so it stays with nobody else. */
+  const shareNote = async (item: Item): Promise<string | null> => {
+    if (item.kind !== 'personal' || !share || !item.value.body.trim()) return null
+    const { resolved: _r, audio: _a, transcript: _t, ...rest } = item.value
+    const by = requireName && !knownName && !signedIn ? recallName().trim() : ''
+    if (requireName && !knownName && !signedIn && !by) return 'Add your first name in a new comment first, then share this note.'
+    const value: CommentValue = { ...rest, version, ...(by ? { by } : {}) }
+    const r = await call(stateUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ slot: COMMENTS_SLOT, op: 'append', value }) })
+    if (r.status !== 200) return typeof r.body.error === 'string' ? r.body.error : 'that did not share; try again'
+    setShared(sharedFrom(r.body))
+    await remove(item)
+    return null
+  }
+
   const edit = async (item: Item, body: string): Promise<string | null> => {
     // `resolved` is the owner's to set, and the server keeps it through an edit; sending it back is refused.
     const { resolved: _resolved, ...rest } = item.value
@@ -639,7 +655,7 @@ export function CommentLayer({
       ) : null}
       {openItem && open ? (
         <Floating x={open.left + 28} y={open.top}>
-          <Thread key={openItem.id} item={openItem} replies={items.filter((i) => i.value.parent === openItem.id)} canReply={openItem.kind === 'shared' && share} awaiting={closesAt != null} askName={requireName && !knownName} onJump={jump}
+          <Thread key={openItem.id} item={openItem} replies={items.filter((i) => i.value.parent === openItem.id)} canReply={openItem.kind === 'shared' && share} onShareNote={share && openItem.kind === 'personal' && openItem.value.body.trim() ? shareNote : undefined} awaiting={closesAt != null} askName={requireName && !knownName} onJump={jump}
             canResolve={openItem.kind === 'shared' && isOwner} startExpanded={expanded === openItem.id}
             accent={accent} audioDb={audioDb} onClose={() => { setThread(null); setExpanded(null) }} onRemove={remove} onEdit={edit} onReply={reply} onResolve={resolveThread} />
         </Floating>
@@ -737,10 +753,12 @@ function Floating({ x, y, children }: { x: number; y: number; children: ReactNod
   return <div className="absolute z-50" style={{ left, top: y }}>{children}</div>
 }
 
-function Thread({ item, replies, canReply, awaiting = false, askName = false, onJump, canResolve = false, startExpanded = false, accent, audioDb, onClose, onRemove, onEdit, onReply, onResolve }: {
+function Thread({ item, replies, canReply, onShareNote, awaiting = false, askName = false, onJump, canResolve = false, startExpanded = false, accent, audioDb, onClose, onRemove, onEdit, onReply, onResolve }: {
   item: Item; replies: Item[]; canReply: boolean; awaiting?: boolean; askName?: boolean; onJump?: (i: Item) => void; canResolve?: boolean; startExpanded?: boolean; accent: string; audioDb: DeviceAudio
   onClose: () => void; onRemove: (i: Item) => Promise<void>; onEdit: (i: Item, body: string) => Promise<string | null>; onReply: (i: Item, body: string, by?: string) => Promise<string | null>
   onResolve?: (i: Item, resolved: boolean, note?: string) => Promise<string | null>
+  /** Set when this private note can become a shared comment: the page takes comments now. */
+  onShareNote?: (i: Item) => Promise<string | null>
 }) {
   const [replying, setReplying] = useState(false)
   const [resolving, setResolving] = useState(false)
@@ -787,6 +805,9 @@ function Thread({ item, replies, canReply, awaiting = false, askName = false, on
       })}</ul> : null}
       {awaiting && item.mine && item.kind === 'shared' && !resolved && !replies.some((r) => r.value.publisher === true)
         ? <p data-comment-waiting className="m-0 mt-2 text-xs opacity-70">Waiting for a reply.</p> : null}
+      {onShareNote ? (
+        <button type="button" data-comment-share-note onClick={async () => setError(await onShareNote(item))} className="mt-2 text-xs underline">Share as a comment</button>
+      ) : null}
       {canReply ? (
         replying
           ? <InlineForm label="Reply" accent={accent} askName={askName} onCancel={() => setReplying(false)} onSubmit={async (b, by) => { const e = await onReply(item, b, by); if (!e) setReplying(false); return e }} />

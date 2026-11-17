@@ -898,7 +898,12 @@ comments_visible: readers # every reader who can comment sees the whole thread
   Signed in, the note is stored under the reader's id through `/personal`; signed out, it stays in
   the browser (`localStorage`) and moves to the account on sign-in. **No publisher route reads
   personal notes**: `src/routes/personal-privacy.test.tsx` calls every handler the factory returns
-  with the publish key and fails if one ever does.
+  with the publish key and fails if one ever does. The note box itself is labelled *"Private note,
+  only you"* on such a page, so a note is never mistaken for a comment. Once the page takes
+  comments, each of the reader's notes with words in it offers **Share as a comment**: the words post
+  as a shared comment on the same passage, and the note is removed only once that saved (its
+  recording stays private). A reader's own Pluma reads their notes through their signed-in session
+  (`GET /api/artifacts/<id>/personal` with their sign-in cookie), never the publish key.
 - **Anchors survive a republish.** A text comment stores its quote with 32 characters either side
   and the heading it sat under; a region comment stores the block it was drawn on (every top-level
   block carries a stable `data-block` id from its content) and the box as fractions of it. One
@@ -945,6 +950,13 @@ four audio methods `createArtifactAssets` provides (`signAudioUpload`, `audioSiz
 `audioUrl`), which it defines only when it is given a private bucket; a host without one, or with
 its own `ArtifactAssets` and none of them, keeps memos on the reader's device. Memos recorded before
 0.38.0 sat in the public bucket: `scripts/migrate-memos-private.mjs` moves them (see CHANGELOG).
+
+**The private bucket needs a CORS rule naming every hub address** (GET, HEAD and PUT, with the
+upload headers), or a reader's browser can neither open a private file nor upload a memo, and
+nothing says why. `ensurePrivateBucketCors(bucket, hosts)` (from `@supersuit/artifacts/artifacts`)
+reads the bucket's rules and sets the missing one; a re-run changes nothing. A shared host calls it
+for each tenant's private bucket in its tenant setup and in `update-artifacts`;
+`scripts/ensure-private-bucket-cors.mjs --bucket <b> --host <host>` does the same by hand.
 
 To transcribe on the server, pass `transcribe` and add the route. The key stays on the server;
 without `transcribe` the route answers 404 and readers keep the browser's live transcript (or an
