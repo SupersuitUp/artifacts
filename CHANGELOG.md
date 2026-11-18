@@ -3,6 +3,16 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.71.0 (2026-11-18)
+
+**`ensurePrivateBucketCors`: one call gives a private bucket the browser rule its hub needs.** `ensurePrivateBucketCors(bucket, hosts, { dryRun })`, exported from `@supersuit/artifacts/artifacts`, reads the bucket's CORS rules. It writes them only when no rule covers every hub address with GET, HEAD and PUT and the upload headers. A rule that names a hub address is widened in place, every other rule is kept, and a second run changes nothing. It refuses an empty address list. `privateBucketCorsRule`, `mergePrivateCors`, `ruleCovers` and `hubOriginsOf` are exported beside it. `scripts/ensure-private-bucket-cors.mjs` runs it by hand. Without this rule a reader's browser refuses a private file, so a spreadsheet page shows only its fallback line and a voice memo does not upload (supersuit-dev#2519).
+
+**A note on a comments-off page says what it is.** The box reads "Private note, only you" when the reader cannot share. On a page that takes comments, a private note's thread offers "Share as a comment". The note is removed only after the comment is saved (supersuit-artifacts#18).
+
+- DETECTOR: a shared host's `ensure-private-bucket-cors.mjs` printing that the installed package has no `ensurePrivateBucketCors`; a private bucket with no CORS rule naming its hub addresses; a spreadsheet page showing only its fallback line.
+- REMEDY: bump. `^0.70.0` does not take 0.71.0, so run `npm run update-artifacts -- 0.71.0` in each consuming host. The shared host then sets the rule on its private bucket after the deploy. A hub on its own cloud already gets the rule from Supersuit's hub setup.
+- TESTS: `src/artifacts/bucket-cors.test.ts` (the rule, a covered bucket left alone, a rule widened in place, the dry run, the empty list); `src/reader/comment-layer.test.tsx`; `test/hub-template.test.mjs`.
+
 ## 0.70.0 (2026-11-14)
 
 **`links: tracked`: personal reader links that count opens, on a page anyone can open.** A reader who arrives through a link made for them is counted as that reader, as on a per-reader page (note, beacon, `GET /views`); the plain address, a revoked or forged link, an admin and a past version get the ordinary open page. `POST /recipients` mints links for a tracked page. **`links:` can now be set back:** a republish with `links: tracked` or `links: open` replaces a stored `per-reader` (leaving the line out still changes nothing). Before, `links` accepted only `per-reader` and was one-way, so a page switched to per-reader after its plain link went out turned that link into a door for good (2026-11-14, a release page emailed to seven people). A page keeping private media is refused (409) rather than opened with media nobody could play; a broadcast or file page saying `tracked` or `open` is refused in words. `GET /api/artifacts/<id>` answers `share.links: 'tracked'`, and the owner view offers reader links on a tracked page.
