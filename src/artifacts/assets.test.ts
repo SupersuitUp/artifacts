@@ -56,6 +56,26 @@ describe('artifact assets', () => {
     expect(opts.version).toBe('v4')
     expect(opts.contentType).toBe('audio/mpeg')
   })
+  // supersuit-dev#2951: a page could not hold a normal short video (about 100 MB), because every file was held to the
+  // direct PUT's 16 MiB. A big file goes by these signed uploads, and neither may carry a size cap: a range header in
+  // the signature makes the bucket refuse anything over it, the old limit back in a new place. The reader's voice memo
+  // keeps its cap; that is a reader's upload, not the publisher's.
+  it('signs a page file\'s direct upload, public or private, with no size cap, so a 100 MB video goes', async () => {
+    const signed: Record<string, unknown>[] = []
+    const getSignedUrl = vi.fn(async (o: Record<string, unknown>) => { signed.push(o); return ['https://signed.example/put'] })
+    const bucket = (name: string) => ({ name, file: vi.fn(() => ({ getSignedUrl })) }) as unknown as import('@google-cloud/storage').Bucket
+    const assets = createArtifactAssets(bucket('b'), 'tenants/t/artifacts', { privateBucket: bucket('p') })
+    const outs = [
+      await assets.signUpload!('abc23456', 'cut.mp4', '0123abcd', 'video/mp4'),
+      await assets.signPrivateUpload!('abc23456', 'cut.mp4', '0123abcd', 'video/mp4'),
+    ]
+    expect(signed).toHaveLength(2)
+    for (const o of signed) {
+      const headers = Object.keys((o.extensionHeaders ?? {}) as Record<string, string>).map((h) => h.toLowerCase())
+      expect(headers).not.toContain('x-goog-content-length-range')
+    }
+    for (const out of outs) expect(Object.keys(out.headers).map((h) => h.toLowerCase())).not.toContain('x-goog-content-length-range')
+  })
   it('finishes an upload only when the object arrived', async () => {
     const makePublic = vi.fn(async () => {})
     let there = true
