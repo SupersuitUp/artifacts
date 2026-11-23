@@ -1,7 +1,7 @@
 // A reader who taps the verification link and then reloads the page holds a user whose email is
 // verified but a cached ID token that still says email_verified: false. The pass route reads the
 // token, so it answered 403 and the page showed a dead end: "That account has no verified email"
-// (Gary, Firefly's hub, Microsoft 365 account, 2026-11-23). The pass request now always sends a fresh
+// (an operator, on a client's hub, Microsoft 365 account, 2026-11-23). The pass request now always sends a fresh
 // token, and a 403 offers Continue (reload, refresh, try again) instead of a dead end.
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'

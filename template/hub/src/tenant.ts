@@ -17,8 +17,9 @@ export type Tenant = {
   /** Who a confidential page's banner says grants access. */
   owner?: string
   /** Readers sign in on this host against the hub's own Firebase project, with the providers it
-   *  turned on (HUB_TENANT `signIn`, default Google only). */
-  localSignIn?: { firebase: FirebaseWebConfig; providers: SignInProviderId[] }
+   *  turned on (HUB_TENANT `signIn`, default Google only). `microsoftClientId` (HUB_TENANT
+   *  `microsoft.clientId`) turns on trusting a Microsoft email whose domain the tenant verified. */
+  localSignIn?: { firebase: FirebaseWebConfig; providers: SignInProviderId[]; microsoftClientId?: string }
   /** False until HUB_TENANT is set: the app builds, and every page says so. */
   configured: boolean
 }
@@ -51,7 +52,7 @@ export function tenantFromConfig(c: HubEnvConfig | null): Tenant {
       ...(p.mark && { Mark: markFromUrl(p.mark.src, p.mark.width, p.mark.height) }),
     }),
   }
-  return { id: 'hub', siteUrl: `https://${c.host}`, pack, owner: c.owner, localSignIn: { firebase: c.firebase, providers: c.signIn ?? ['google'] }, configured: true }
+  return { id: 'hub', siteUrl: `https://${c.host}`, pack, owner: c.owner, localSignIn: { firebase: c.firebase, providers: c.signIn ?? ['google'], ...(c.microsoft ? { microsoftClientId: c.microsoft.clientId } : {}) }, configured: true }
 }
 
 let cached: Tenant | null = null

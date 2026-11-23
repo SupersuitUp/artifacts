@@ -2,15 +2,16 @@ import { describe, it, expect } from 'vitest'
 import { SIGN_IN_PROVIDERS, SIGN_IN_WORDS, providersFor } from './sign-in.js'
 
 describe('the sign-in providers', () => {
-  it('lists Google first, then Microsoft, each with its button and Firebase id', () => {
-    expect(SIGN_IN_PROVIDERS.map((p) => [p.id, p.button, p.firebaseId])).toEqual([['google', 'Sign in with Google', 'google.com'], ['microsoft', 'Sign in with Microsoft', 'microsoft.com']])
+  it('lists Google, then Microsoft, then the email link, each with its button and Firebase id', () => {
+    expect(SIGN_IN_PROVIDERS.map((p) => [p.id, p.button, p.firebaseId])).toEqual([['google', 'Sign in with Google', 'google.com'], ['microsoft', 'Sign in with Microsoft', 'microsoft.com'], ['email', 'Email me a sign-in link', 'password']])
   })
   it('a hub draws only the providers it turned on, in list order', () => {
     expect(providersFor(['google']).map((p) => p.id)).toEqual(['google'])
     expect(providersFor(['microsoft', 'google']).map((p) => p.id)).toEqual(['google', 'microsoft'])
   })
   it('its words name no provider', () => {
-    for (const w of [SIGN_IN_WORDS.ask, SIGN_IN_WORDS.notVerified, SIGN_IN_WORDS.failed, SIGN_IN_WORDS.signedInNotOpened('a@example.com')]) expect(w).not.toMatch(/Google|Microsoft/)
+    for (const w of [SIGN_IN_WORDS.ask, SIGN_IN_WORDS.notVerified, SIGN_IN_WORDS.failed, SIGN_IN_WORDS.signedInNotOpened('a@example.com'),
+      SIGN_IN_WORDS.emailLabel, SIGN_IN_WORDS.emailLinkSent('a@example.com'), SIGN_IN_WORDS.emailAskAgain, SIGN_IN_WORDS.emailNotAnAddress, SIGN_IN_WORDS.emailLinkFailed, SIGN_IN_WORDS.emailSendFailed]) expect(w).not.toMatch(/Google|Microsoft/)
     expect(SIGN_IN_WORDS.ask).toBe('Sign in with the account this page was shared with.')
   })
 })
@@ -43,6 +44,7 @@ describe('the provider a pass was made for', () => {
   it('reads Firebase\'s sign_in_provider claim', () => {
     expect(providerOf({ firebase: { sign_in_provider: 'microsoft.com' } })).toBe('microsoft')
     expect(providerOf({ firebase: { sign_in_provider: 'google.com' } })).toBe('google')
+    expect(providerOf({ firebase: { sign_in_provider: 'password' } })).toBe('email')
     expect(providerOf({})).toBe('other')
   })
 })
@@ -96,7 +98,7 @@ describe('a fresh sign-in', () => {
 
 // A Microsoft account with no mailbox (a test or unlicensed 365 user) signs in with no email at all.
 // It was told "That account has no verified email", which reads as a fault to fix by verifying
-// (Gary, Firefly's hub, 2026-11-23). It now says the account gave no email address.
+// (an operator, on a client's hub, 2026-11-23). It now says the account gave no email address.
 describe('an account that signs in with no email', () => {
   it('says the account gave no email address, not that it is unverified', () => {
     const o = signInOutcome({ user: { email: null, emailVerified: false, providerId: 'microsoft.com' } })
@@ -104,5 +106,40 @@ describe('an account that signs in with no email', () => {
     expect(o.words).toBe(SIGN_IN_WORDS.noEmail)
     expect(o.words).not.toBe(SIGN_IN_WORDS.notVerified)
     expect(SIGN_IN_WORDS.noEmail).not.toMatch(/Google|Microsoft/)
+  })
+})
+
+import { isPopupProvider, shouldTryMicrosoftTrust, emailLinkContinueUrl, looksLikeEmail } from './sign-in.js'
+
+describe('the email link door', () => {
+  it('is drawn as a form, not a popup button', () => {
+    expect(isPopupProvider('google')).toBe(true)
+    expect(isPopupProvider('microsoft')).toBe(true)
+    expect(isPopupProvider('email')).toBe(false)
+  })
+  it('sends the reader back to this sign-in page, with the page they asked for', () => {
+    expect(emailLinkContinueUrl('https://artifacts.example.com', '/abcdefgh'))
+      .toBe('https://artifacts.example.com/artifact/sign-in?to=https%3A%2F%2Fartifacts.example.com%2Fabcdefgh')
+  })
+  it('says where the link went, one idea per sentence', () => {
+    expect(SIGN_IN_WORDS.emailLinkSent('a@example.com')).toBe('We sent a sign-in link to a@example.com. Open it on this device.')
+  })
+  it('checks an address has a name, an @ and a domain', () => {
+    expect(looksLikeEmail('a@example.com')).toBe(true)
+    expect(looksLikeEmail(' a@example.com ')).toBe(true)
+    for (const v of ['', 'a', 'a@', '@example.com', 'a@example', 'a b@example.com']) expect(looksLikeEmail(v)).toBe(false)
+  })
+})
+
+describe('when the page asks the hub to trust a Microsoft email', () => {
+  const base = { providerId: 'microsoft' as const, emailVerified: false, hasMicrosoftIdToken: true, trustOn: true }
+  it('asks for an unverified Microsoft email with a Microsoft ID token in hand, on a hub that trusts', () => {
+    expect(shouldTryMicrosoftTrust(base)).toBe(true)
+  })
+  it('does not ask for another provider, a verified email, no token, or a hub with no Microsoft client id', () => {
+    expect(shouldTryMicrosoftTrust({ ...base, providerId: 'google' })).toBe(false)
+    expect(shouldTryMicrosoftTrust({ ...base, emailVerified: true })).toBe(false)
+    expect(shouldTryMicrosoftTrust({ ...base, hasMicrosoftIdToken: false })).toBe(false)
+    expect(shouldTryMicrosoftTrust({ ...base, trustOn: false })).toBe(false)
   })
 })
