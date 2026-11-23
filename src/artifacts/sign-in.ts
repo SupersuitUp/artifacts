@@ -10,7 +10,11 @@ export const providersFor = (enabled: readonly SignInProviderId[]): SignInProvid
 export const SIGN_IN_WORDS = {
   ask: 'Sign in with the account this page was shared with.',
   notVerified: 'That account has no verified email. Sign in with one that does.',
+  // A Microsoft account with no mailbox (a test or unlicensed user) signs in with no email at all.
+  noEmail: 'That account did not share an email address, so this page cannot check it was shared with you. Sign in with an account that has its own mailbox.',
   failed: 'That did not finish. Try again.',
+  // The pass was refused for an unverified email: point at the link already sent, never a dead end.
+  verifyThenContinue: (email: string) => `${email} is not verified yet. Tap the link we emailed you, then come back and tap Continue.`,
   // Microsoft can return an account with no email, so that case names none.
   signedInNotOpened: (email: string | null) => email
     ? `Signed in as ${email}, but the page did not open. Reload to try again.`
@@ -30,7 +34,7 @@ export function signInOutcome(i: { user: { email: string | null; emailVerified: 
   if (i.errorCode === 'auth/admin-restricted-operation')
     return { show: 'blocked', words: 'Your company does not let this account sign in to apps it has not approved. Sign in with another account.' }
   if (i.errorCode || !i.user) return { show: 'failed', words: SIGN_IN_WORDS.failed }
-  if (!i.user.email) return { show: 'failed', words: SIGN_IN_WORDS.notVerified }
+  if (!i.user.email) return { show: 'failed', words: SIGN_IN_WORDS.noEmail }
   if (i.user.emailVerified) return { show: 'open', words: 'Opening…' }
   return i.verificationSent
     ? { show: 'sent', words: `The link went to ${i.user.email}. Tap it, then come back and tap Continue.` }
