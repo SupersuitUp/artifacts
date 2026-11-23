@@ -37,7 +37,7 @@ const HEAD = { id: 'headline', type: 'pick-one' as const, question: 'Which headl
 const PRICE = { id: 'price', type: 'accept-or-reject' as const, question: 'Show the activation price on this page?', hash: 'abcdef012345',
   options: [{ label: 'Accept: show it', because: 'No surprise on the first call.', recommended: true }, { label: 'Reject: say it on the call', because: 'A shorter page.', recommended: false }] }
 let n = 0
-const ctx = (over: Partial<AskCtx> = {}): AskCtx => ({ artifactId: `page${++n}abc`.slice(0, 8), asks: [HEAD, PRICE], owner: 'Gary', reader: 'Dana', requireName: false, display: 'serif', ...over })
+const ctx = (over: Partial<AskCtx> = {}): AskCtx => ({ artifactId: `page${++n}abc`.slice(0, 8), asks: [HEAD, PRICE], owner: 'Sam', reader: 'Dana', requireName: false, display: 'serif', ...over })
 const served = (mine: unknown[] = []) => vi.fn(async (_u: string, init?: RequestInit) =>
   new Response(init?.method === 'POST' ? '{"ok":true}' : JSON.stringify({ slots: { asks: { mine } } }), { status: init?.method === 'POST' ? 201 : 200 }))
 
@@ -45,7 +45,7 @@ describe('an ask card', () => {
   it('says who asks, which of how many, and Dana says something else', async () => {
     const c = ctx(); askStoreFor(c.artifactId, served())
     await render(<AskFence id="headline" ctx={c} />)
-    expect(screen.getByText('Gary asks · Pick one')).toBeTruthy()
+    expect(screen.getByText('Sam asks · Pick one')).toBeTruthy()
     expect(screen.getByText('1 of 2')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Dana says something else' })).toBeTruthy()
   })
@@ -68,10 +68,10 @@ describe('an ask card', () => {
     await waitFor(() => expect(f.mock.calls.some(([, i]) => i?.method === 'POST')).toBe(true))
     expect(JSON.parse(String(f.mock.calls.find(([, i]) => i?.method === 'POST')![1]!.body)).value).toEqual({ ask: 'headline', hash: '0123456789ab', choice: null, words: 'Neither. Say what it costs.' })
   })
-  it('an answer to an earlier version shows "Gary changed this. Please look again"', async () => {
+  it('an answer to an earlier version shows "Sam changed this. Please look again"', async () => {
     const c = ctx(); askStoreFor(c.artifactId, served([{ id: 'e1', value: { ask: 'headline', hash: 'oldoldoldold', choice: 'Stop doing the toil by hand', words: null }, at: 'x' }]))
     await render(<AskFence id="headline" ctx={c} />)
-    await screen.findByText('Gary changed this. Please look again')
+    await screen.findByText('Sam changed this. Please look again')
   })
   it('on a group link it asks for a first name before the first answer, and sends it', async () => {
     const c = ctx({ reader: null, requireName: true }); const f = served(); askStoreFor(c.artifactId, f)
@@ -91,7 +91,7 @@ describe('Your answers', () => {
     expect(screen.getByText('Not made yet. Recommended: Accept: show it')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Change: Which headline should the page open with?' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Make it: Show the activation price on this page?' })).toBeTruthy()
-    expect(screen.getByText('Saved as you go. Your answers reach Gary within a few minutes.')).toBeTruthy()
+    expect(screen.getByText('Saved as you go. Your answers reach Sam within a few minutes.')).toBeTruthy()
   })
 })
 
@@ -107,7 +107,7 @@ describe('a name on a group link, and the slot in a page', () => {
   it('an askcard fence draws the card for a known id and nothing for an unknown one', () => {
     const c = ctx(); askStoreFor(c.artifactId, served())
     const html = renderToStaticMarkup(<ArtifactMarkdown markdown={'```askcard\nheadline\n```\n\n```askcard\nnope\n```'} asks={c} />)
-    expect(html).toContain('Gary asks')
+    expect(html).toContain('Sam asks')
     expect(html.match(/data-ask-card/g)).toHaveLength(1)
     expect(renderToStaticMarkup(<ArtifactMarkdown markdown={'```askcard\nheadline\n```'} />)).not.toContain('data-ask-card')
   })

@@ -1,6 +1,6 @@
 // Ask for access (0.63.0). A signed-in visitor turned away at a private page's door can ask the
 // publisher for it, with an optional note. The request is a flag on the page's record and an
-// `asked` reader event, so the host's read alerts tell the publisher. Gary, 2026-11-08: "there
+// `asked` reader event, so the host's read alerts tell the publisher. The operator, 2026-11-08: "there
 // should be some kind of notification that you don't have permission to view this document".
 import { describe, it, expect, vi } from 'vitest'
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))

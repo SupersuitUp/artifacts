@@ -216,7 +216,7 @@ describe('admin-only data never reaches anyone else', () => {
   })
 })
 
-// Gary, 2026-10-15: "if you're an admin ... this should be a view as mode ... so I can preview what
+// The operator, 2026-10-15: "if you're an admin ... this should be a view as mode ... so I can preview what
 // it looks like on someone else's phone". The owner always saw owner-only chrome (the version number,
 // Version history, the markdown), so there was no way to see the page a reader is sent.
 describe('view as a reader', () => {

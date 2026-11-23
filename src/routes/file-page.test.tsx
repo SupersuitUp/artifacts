@@ -51,7 +51,7 @@ async function fileRoutes(file: typeof FILE.file, extra: Record<string, unknown>
   const recipients = memoryRecipientsStore()
   const [dana] = await recipients.add('fkpg2345', [{ label: 'Dana' }])
   const signer = vi.fn(async (_i: string, s: string, o?: { download?: string }) => `https://signed.example.com/${s}${o?.download ? '?dl=1' : ''}`)
-  const r = createArtifactRoutes(testConfig({ store: memoryArtifactStore([{ ...FILE, file }]), recipients, recipientSecret: () => S, owner: 'Gary',
+  const r = createArtifactRoutes(testConfig({ store: memoryArtifactStore([{ ...FILE, file }]), recipients, recipientSecret: () => S, owner: 'Sam',
     assets: { put: async () => '', privateUrl: signer } as never, ...extra }))
   return { r, recipients, dana, signer, link: `${dana.rid}.${ridSig(S, 'fkpg2345', dana.rid)}` }
 }
@@ -60,7 +60,7 @@ describe('the file page a reader opens', () => {
   it('a PDF: title, For Dana, the box, the viewer, Open the PDF and Download', async () => {
     const { r, link } = await fileRoutes(FILE.file)
     const html = renderToStaticMarkup(await r.Page(props('fkpg2345', link)))
-    expect(html).toContain('A file from Gary')
+    expect(html).toContain('A file from Sam')
     expect(html).toContain('Pricing model')
     expect(html).toContain('For Dana. This link is yours alone.')
     expect(html).toContain('data-file-card')

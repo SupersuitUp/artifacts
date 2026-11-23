@@ -6,7 +6,7 @@ import { firestoreIndexesFor, missingIndexOf, COMMENTS_FEED_INDEX } from './fire
 
 describe('firestoreIndexesFor', () => {
   it('names the comments feed composite on <base>State by its collection id: slot ASC, at ASC', () => {
-    expect(firestoreIndexesFor(['tenants/gary/artifact'])).toEqual({
+    expect(firestoreIndexesFor(['tenants/example/artifact'])).toEqual({
       indexes: [{
         collectionGroup: 'artifactState', queryScope: 'COLLECTION',
         fields: [{ fieldPath: 'slot', order: 'ASCENDING' }, { fieldPath: 'at', order: 'ASCENDING' }],

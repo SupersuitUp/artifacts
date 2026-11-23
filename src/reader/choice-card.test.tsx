@@ -18,10 +18,10 @@ const click = (el: Element) => act(async () => { el.dispatchEvent(new MouseEvent
 
 describe('ChoiceCard', () => {
   it('draws the kicker, the count, the question, each option with its reason, the Recommended mark and the other button', async () => {
-    await mount(<ChoiceCard kicker={`Gary asks · ${CHOICE_TYPE_WORDS['pick-one']}`} number={1} total={2} question="Which headline?" options={options}
+    await mount(<ChoiceCard kicker={`Sam asks · ${CHOICE_TYPE_WORDS['pick-one']}`} number={1} total={2} question="Which headline?" options={options}
       picked="Your own AI" said={null} changed={null} otherWords="Dana says something else" onPick={() => {}} onOther={() => {}} look={HUB_CHOICE_LOOK} attrs={{ 'data-ask-card': 'headline' }} />)
     const text = document.body.textContent ?? ''
-    expect(text).toContain('Gary asks · Pick one')
+    expect(text).toContain('Sam asks · Pick one')
     expect(text).toContain('1 of 2')
     expect(document.querySelector('[role="heading"][aria-level="3"]')!.textContent).toBe('Which headline?')
     const on = btn(/Your own AI/)
@@ -40,11 +40,11 @@ describe('ChoiceCard', () => {
     await click(btn('Say something else'))
     expect(onPick).toHaveBeenCalledWith('Stop the toil')
     expect(onOther).toHaveBeenCalledOnce()
-    await act(async () => root!.render(card({ otherWords: 'x', said: 'Dana said: Neither', changed: 'Gary changed this. Please look again', box: <textarea aria-label="Your answer" /> })))
+    await act(async () => root!.render(card({ otherWords: 'x', said: 'Dana said: Neither', changed: 'Sam changed this. Please look again', box: <textarea aria-label="Your answer" /> })))
     expect(btn('x')).toBeUndefined()
     expect(document.querySelector('textarea[aria-label="Your answer"]')).toBeTruthy()
     expect(document.body.textContent).toContain('Dana said: Neither')
-    expect(document.body.textContent).toContain('Gary changed this. Please look again')
+    expect(document.body.textContent).toContain('Sam changed this. Please look again')
   })
   it('the ./choice-card entry imports react only, so a Vite app can use it', () => {
     const src = readFileSync('src/reader/choice-card.tsx', 'utf8') + readFileSync('src/choice-card.ts', 'utf8')

@@ -1,6 +1,6 @@
 // The "Updated" line under an artifact's summary, to the exact minute with its zone named.
 // The server renders UTC; the reader swaps in the viewer's own zone once it runs, so the minute
-// is always one a person can place (Gary, 2026-09-27).
+// is always one a person can place (the operator, 2026-09-27).
 export function formatUpdated(iso: string, timeZone = 'UTC'): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return ''

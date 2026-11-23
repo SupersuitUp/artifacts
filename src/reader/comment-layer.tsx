@@ -75,7 +75,7 @@ const BOX_TARGETS = 'img, svg, canvas, picture, video, iframe, hr, [data-boxable
  * Whether a press here starts a comment box rather than the browser's own selection. Only on
  * content with no text to select: a press in the gap between paragraphs, in a line's empty end,
  * or anywhere in a text block is the start of a normal highlight, and a box there stole it
- * (Gary, 2026-10-15: "it should also just allow people to do normal copying functionality").
+ * (the operator, 2026-10-15: "it should also just allow people to do normal copying functionality").
  */
 export function startsBox(el: Element): boolean {
   if (el.closest(NOT_FOR_BOXES) || el.closest('figcaption')) return false
@@ -489,7 +489,7 @@ export function CommentLayer({
   const saveNew = async (body: string, share: boolean, d: Draft, memo?: SavedMemo, by?: string): Promise<string | null> => {
     const value: CommentValue = { anchor: d.anchor, body, version, ...(memo?.transcript ? { transcript: memo.transcript } : {}), ...(share && by ? { by } : {}) }
     const toDevice = !share && !(signedIn && onServer)
-    // A recording that did not upload never holds the words back (Gary, 2026-11-09, iPhone: the
+    // A recording that did not upload never holds the words back (the operator, 2026-11-09, iPhone: the
     // bucket refused the PUT and the typed comment could not be saved at all). The words save on
     // their own and the recording is kept on this device, saying so.
     let stranded: SavedMemo | null = null
@@ -637,7 +637,7 @@ export function CommentLayer({
       )) : null}
       {chip && !draft ? (
         // On a phone the button sits at the TOP of the screen, never beside the selection: that is
-        // where iOS draws its own Copy / Look Up menu, and the two fought for the same tap (Gary,
+        // where iOS draws its own Copy / Look Up menu, and the two fought for the same tap (the operator,
         // 2026-09-29: "I keep trying to fight with the Apple pop-up"). A mouse keeps it by the text.
         <button type="button" data-comment-chip data-comment-chip-at={onTouch() ? 'top' : 'selection'}
           className={onTouch() ? 'fixed left-1/2 z-50 -translate-x-1/2 rounded-full px-5 py-2 text-sm font-medium shadow-lg' : 'absolute z-50 -translate-x-full rounded-full px-3 py-1 text-xs font-medium shadow-lg'}
@@ -668,7 +668,7 @@ export function CommentLayer({
         {panel ? (
           <div data-comment-panel className="flex max-h-[min(70vh,32rem)] w-80 max-w-[calc(100vw-2rem)] flex-col rounded-xl border border-[color:var(--a-line-strong)] bg-[color:var(--a-surface)] p-3 text-xs text-[color:var(--a-strong)] shadow-xl">
             {/* Every comment, in page order, open ones first. The button says how many there are, so
-                pressing it shows them; a tap scrolls to the comment and opens its thread (Gary,
+                pressing it shows them; a tap scrolls to the comment and opens its thread (the operator,
                 2026-10-15: "I have to like scroll somewhere in the page to find the comment"). */}
             {panelList.length ? (
               <ul data-comment-list className="-mx-1 mb-2 min-h-0 flex-1 list-none overflow-y-auto p-0">

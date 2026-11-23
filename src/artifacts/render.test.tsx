@@ -27,7 +27,7 @@ describe('ArtifactMarkdown', () => {
     expect(html('![still](https://cdn.example.com/a.png)')).toContain('<img')
   })
   it('an .mp3 in image syntax is a clip the reader plays: controls, a caption, nothing downloaded on open', () => {
-    const out = html('![Gary on skill files, 42:10](https://cdn.example.com/clip-03.abc12345.mp3)')
+    const out = html('![Sam on skill files, 42:10](https://cdn.example.com/clip-03.abc12345.mp3)')
     expect(out).toContain('<audio')
     expect(out).toContain('src="https://cdn.example.com/clip-03.abc12345.mp3"')
     expect(out).toContain('controls')
@@ -36,7 +36,7 @@ describe('ArtifactMarkdown', () => {
     expect(out).toContain('preload="none"')
     expect(out).not.toContain('autoplay')
     // The alt is the clip's caption, shown and read, so a list of clips is not a list of bare players.
-    expect(out).toContain('Gary on skill files, 42:10')
+    expect(out).toContain('Sam on skill files, 42:10')
     expect(out).not.toContain('<img')
     // A caption with markup in it is text, never markup.
     expect(html('![a <b>x</b> "y"](https://cdn.example.com/c.mp3)')).not.toContain('<b>x</b>')
@@ -51,7 +51,7 @@ describe('ArtifactMarkdown', () => {
   it('unwraps a relative file link to its text, because the file is on the author\'s disk', () => {
     // A workspace link like ../../meeting-transcripts/x.md points at nothing the
     // reader can reach; an anchor to it 404s and reads as a broken page.
-    const out = html('See [the transcript](../../meeting-transcripts/2026-09-11-wilson.md) and [notes](./notes.md).')
+    const out = html('See [the transcript](../../meeting-transcripts/2026-09-11-call.md) and [notes](./notes.md).')
     expect(out).not.toContain('meeting-transcripts')
     expect(out).not.toContain('notes.md')
     expect(out).not.toContain('<a')
