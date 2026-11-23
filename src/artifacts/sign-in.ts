@@ -1,12 +1,17 @@
 // The hub's sign-in providers (Microsoft sign-in, 2026-11-11). The page draws one button for each
 // provider the hub turned on, and its words name none of them, so adding a provider is a row here.
-export type SignInProviderId = 'google' | 'microsoft'
+// `email` is Firebase email link sign-in ("Email me a sign-in link"): a door for ANY address, drawn as
+// a form rather than a popup button. Its ID tokens say `sign_in_provider: password`.
+export type SignInProviderId = 'google' | 'microsoft' | 'email'
 export const SIGN_IN_PROVIDERS = [
   { id: 'google', button: 'Sign in with Google', firebaseId: 'google.com' },
   { id: 'microsoft', button: 'Sign in with Microsoft', firebaseId: 'microsoft.com' },
+  { id: 'email', button: 'Email me a sign-in link', firebaseId: 'password' },
 ] as const satisfies readonly { id: SignInProviderId; button: string; firebaseId: string }[]
 export type SignInProvider = (typeof SIGN_IN_PROVIDERS)[number]
 export const providersFor = (enabled: readonly SignInProviderId[]): SignInProvider[] => SIGN_IN_PROVIDERS.filter((p) => enabled.includes(p.id))
+/** Google and Microsoft open a popup; the email link door is a form on the page. */
+export const isPopupProvider = (id: SignInProviderId): id is 'google' | 'microsoft' => id !== 'email'
 export const SIGN_IN_WORDS = {
   ask: 'Sign in with the account this page was shared with.',
   notVerified: 'That account has no verified email. Sign in with one that does.',
@@ -19,9 +24,17 @@ export const SIGN_IN_WORDS = {
   signedInNotOpened: (email: string | null) => email
     ? `Signed in as ${email}, but the page did not open. Reload to try again.`
     : 'You are signed in, but the page did not open. Reload to try again.',
+  // The email link door.
+  emailLabel: 'Your email address',
+  emailLinkSent: (email: string) => `We sent a sign-in link to ${email}. Open it on this device.`,
+  // The link was opened where the address was not kept (another device, or storage cleared).
+  emailAskAgain: 'Type the email address the link was sent to.',
+  emailNotAnAddress: 'That is not an email address. Check it and try again.',
+  emailLinkFailed: 'That link did not work. It may be old or already used. Ask for a new one.',
+  emailSendFailed: 'The link did not send. Try again.',
 }
 
-const NAMES: Record<SignInProviderId, string> = { google: 'Google', microsoft: 'Microsoft' }
+const NAMES: Record<SignInProviderId, string> = { google: 'Google', microsoft: 'Microsoft', email: 'an email link' }
 export type SignInShow = 'open' | 'verify' | 'sent' | 'use-other' | 'blocked' | 'failed'
 
 /** What the page shows. A Microsoft email is not verified unless Microsoft issued the domain, and a work
@@ -59,3 +72,22 @@ export const shouldSendVerification = (i: { hasPage: boolean; email: string | nu
 export const FRESH_SIGN_IN_SECONDS = 300
 export const isFreshSignIn = (claims: { auth_time?: unknown }, nowSeconds: number): boolean =>
   typeof claims.auth_time === 'number' && Math.abs(nowSeconds - claims.auth_time) <= FRESH_SIGN_IN_SECONDS
+
+/** After a Microsoft popup: ask the hub to trust the email (its tenant verified the domain, the ID
+ *  token's `xms_edov` claim) before Firebase's verification email is sent. Only for an unverified
+ *  email, with Microsoft's ID token in hand, on a hub that has its Microsoft client id. */
+export const shouldTryMicrosoftTrust = (i: { providerId: SignInProviderId; emailVerified: boolean; hasMicrosoftIdToken: boolean; trustOn: boolean }): boolean =>
+  i.providerId === 'microsoft' && !i.emailVerified && i.hasMicrosoftIdToken && i.trustOn
+
+/** Where an emailed sign-in link returns: this same sign-in page, with the page the reader asked for. */
+export const emailLinkContinueUrl = (siteUrl: string, to: string): string => {
+  const u = new URL('/artifact/sign-in', siteUrl)
+  u.searchParams.set('to', new URL(to, siteUrl).toString())
+  return u.toString()
+}
+
+/** A plain check before sending a link: a name, an @, a domain with a dot, no spaces. */
+export const looksLikeEmail = (v: string): boolean => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim())
+
+/** Where the page keeps the address a link was sent to, so the return can finish on this device. */
+export const EMAIL_LINK_STORAGE_KEY = 'artifact-email-link'

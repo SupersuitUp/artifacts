@@ -67,16 +67,31 @@ export type HubEnvConfig = {
   adopt?: string
   /** The hub's own brand look. Not with `adopt`: an adopted row has its own look. */
   pack?: HubPack
-  /** The sign-in providers the hub turned on in its Firebase project. The tenant defaults to Google. */
-  signIn?: ('google' | 'microsoft')[]
+  /** The sign-in doors the hub turned on in its Firebase project. The tenant defaults to Google.
+   *  `email` is the "Email me a sign-in link" door (Firebase email link sign-in). */
+  signIn?: HubSignIn[]
+  /** The hub's Microsoft app registration. With it, a Microsoft work email whose domain the tenant
+   *  verified (the ID token's `xms_edov` claim) is trusted without the emailed link. */
+  microsoft?: { clientId: string }
 }
 
-function parseSignIn(v: unknown): ('google' | 'microsoft')[] | undefined {
+export type HubSignIn = 'google' | 'microsoft' | 'email'
+const SIGN_IN_IDS: readonly HubSignIn[] = ['google', 'microsoft', 'email']
+
+function parseSignIn(v: unknown): HubSignIn[] | undefined {
   if (v === undefined) return undefined
-  if (!Array.isArray(v) || v.length === 0 || !v.every((x) => x === 'google' || x === 'microsoft')) {
-    throw new Error('HUB_TENANT signIn must be a non-empty list of "google" and "microsoft"')
+  if (!Array.isArray(v) || v.length === 0 || !v.every((x) => SIGN_IN_IDS.includes(x))) {
+    throw new Error('HUB_TENANT signIn must be a non-empty list of "google", "microsoft" and "email"')
   }
-  return [...new Set(v as ('google' | 'microsoft')[])]
+  return [...new Set(v as HubSignIn[])]
+}
+
+function parseMicrosoft(v: unknown): { clientId: string } | undefined {
+  if (v === undefined) return undefined
+  if (!v || typeof v !== 'object' || Array.isArray(v)) throw new Error('HUB_TENANT microsoft must be an object like { "clientId": "..." }')
+  const clientId = str((v as { clientId?: unknown }).clientId ?? '', 'microsoft.clientId')
+  if (!clientId) throw new Error('HUB_TENANT microsoft.clientId must be a non-empty string')
+  return { clientId }
 }
 
 export function parseHubEnv(raw: string | undefined): HubEnvConfig | null {
@@ -97,5 +112,6 @@ export function parseHubEnv(raw: string | undefined): HubEnvConfig | null {
   if (adopt && c.pack !== undefined) throw new Error('HUB_TENANT cannot carry both adopt and pack: an adopted row has its own look')
   const pack = c.pack !== undefined ? parsePack(c.pack) : undefined
   const signIn = parseSignIn(c.signIn)
-  return { host, owner, firebase: c.firebase, ...(adopt ? { adopt } : {}), ...(pack ? { pack } : {}), ...(signIn ? { signIn } : {}) }
+  const microsoft = parseMicrosoft(c.microsoft)
+  return { host, owner, firebase: c.firebase, ...(adopt ? { adopt } : {}), ...(pack ? { pack } : {}), ...(signIn ? { signIn } : {}), ...(microsoft ? { microsoft } : {}) }
 }
