@@ -3,6 +3,14 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.72.0 (2026-11-23)
+
+**Hub sign-in: no dead end after a reader verifies their email, and the door names the hub's own providers.** A Microsoft 365 reader on a hub with Microsoft sign-in gets the hub's verification email, taps it, and comes back. The page sent the cached ID token, which still said `email_verified: false`, so the pass route answered 403 and the page showed "That account has no verified email. Sign in with one that does." with no way forward (Firefly's hub, 2026-11-23). The pass request now always sends `getIdToken(true)`, and a refused pass shows `SIGN_IN_WORDS.verifyThenContinue(email)` with a Continue button that reloads the account and asks again. An account that signs in with no email at all gets `SIGN_IN_WORDS.noEmail` instead of the "no verified email" line. The private page's door line comes from `signInNoteFor(providers)` in the hub template, so a hub with Microsoft on says "the Google or Microsoft account it was shared with" instead of naming Google alone.
+
+DETECTOR: a hub deployed with `signIn: ["google", "microsoft"]`; a reader who verified their email still sees "That account has no verified email", or the door says "the Google account it was shared with".
+REMEDY: redeploy the hub (`hub.mjs update --project <id>`), which installs this version.
+Tests: `test/hub-sign-in-fresh-token.test.mjs`, `test/door-note.test.ts`, `src/artifacts/sign-in.test.ts`. Also carries a test that a page file's signed upload signs no size range (6a31b32, no code change).
+
 ## 0.71.0 (2026-11-18)
 
 **`ensurePrivateBucketCors`: one call gives a private bucket the browser rule its hub needs.** `ensurePrivateBucketCors(bucket, hosts, { dryRun })`, exported from `@supersuit/artifacts/artifacts`, reads the bucket's CORS rules. It writes them only when no rule covers every hub address with GET, HEAD and PUT and the upload headers. A rule that names a hub address is widened in place, every other rule is kept, and a second run changes nothing. It refuses an empty address list. `privateBucketCorsRule`, `mergePrivateCors`, `ruleCovers` and `hubOriginsOf` are exported beside it. `scripts/ensure-private-bucket-cors.mjs` runs it by hand. Without this rule a reader's browser refuses a private file, so a spreadsheet page shows only its fallback line and a voice memo does not upload (supersuit-dev#2519).
