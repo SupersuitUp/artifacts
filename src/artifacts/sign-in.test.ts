@@ -93,3 +93,16 @@ describe('a fresh sign-in', () => {
     expect(isFreshSignIn({ auth_time: '1000' }, 1000)).toBe(false)
   })
 })
+
+// A Microsoft account with no mailbox (a test or unlicensed 365 user) signs in with no email at all.
+// It was told "That account has no verified email", which reads as a fault to fix by verifying
+// (Gary, Firefly's hub, 2026-11-23). It now says the account gave no email address.
+describe('an account that signs in with no email', () => {
+  it('says the account gave no email address, not that it is unverified', () => {
+    const o = signInOutcome({ user: { email: null, emailVerified: false, providerId: 'microsoft.com' } })
+    expect(o.show).toBe('failed')
+    expect(o.words).toBe(SIGN_IN_WORDS.noEmail)
+    expect(o.words).not.toBe(SIGN_IN_WORDS.notVerified)
+    expect(SIGN_IN_WORDS.noEmail).not.toMatch(/Google|Microsoft/)
+  })
+})

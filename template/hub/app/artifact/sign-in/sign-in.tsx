@@ -65,7 +65,9 @@ export function SignIn({ firebase, to, accent, ground, switchAccount = false, pr
   async function openPage(u: User) {
     setState('working')
     try {
-      const res = await fetch(`/api/artifact-pass?to=${encodeURIComponent(to ?? '')}`, { headers: { authorization: `Bearer ${await u.getIdToken()}` } })
+      // Always a fresh token: after the reader taps the verification link and reloads, the cached
+      // token still says email_verified: false, and the pass route would refuse a verified reader.
+      const res = await fetch(`/api/artifact-pass?to=${encodeURIComponent(to ?? '')}`, { headers: { authorization: `Bearer ${await u.getIdToken(true)}` } })
       const d = await res.json().catch(() => ({}))
       if (res.ok && typeof d.url === 'string') { window.location.replace(d.url); return }
       setState(res.status === 403 ? 'unverified' : 'error')
@@ -160,7 +162,14 @@ export function SignIn({ firebase, to, accent, ground, switchAccount = false, pr
       </>
     )
   }
-  if (state === 'unverified') return <p style={{ opacity: 0.75 }}>{SIGN_IN_WORDS.notVerified}</p>
+  // A refused pass is never a dead end: the reader may still have a link to tap, and Continue reloads
+  // the account and refreshes its token before it asks again.
+  if (state === 'unverified') return user.email ? (
+    <>
+      <p style={{ opacity: 0.75, marginBottom: '1.4rem' }}>{SIGN_IN_WORDS.verifyThenContinue(user.email)}</p>
+      <button style={button} onClick={() => { void continueAfterVerify() }}>Continue</button>
+    </>
+  ) : <p style={{ opacity: 0.75 }}>{SIGN_IN_WORDS.noEmail}</p>
   if (state === 'error') return <p style={{ opacity: 0.75 }}>{SIGN_IN_WORDS.signedInNotOpened(user.email)}</p>
   if (outcome?.show === 'failed') return <p style={{ opacity: 0.75 }}>{outcome.words}</p>
   if (outcome?.show === 'verify' || outcome?.show === 'sent') {
