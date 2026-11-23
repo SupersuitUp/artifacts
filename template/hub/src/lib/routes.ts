@@ -4,9 +4,7 @@ import { createArtifactAssets, createArtifactRoutes, createArtifactStore, create
 import { getAdminBucket, getAdminDb, getAdminPrivateBucket } from '@/lib/firebase-admin'
 import { admins, ownerEmail, publishKey } from '@/lib/hub-env'
 import { hubTenant } from '@/tenant'
-
-/** The line a private page's door shows: readers sign in here, with Google. */
-export const LOCAL_SIGN_IN_NOTE = 'This page is private. Sign in with the Google account it was shared with.'
+import { signInNoteFor } from '@/lib/door-note'
 
 let routes: ReturnType<typeof createArtifactRoutes> | null = null
 
@@ -26,7 +24,8 @@ export function hubRoutes() {
     readers: createReadersStore(getAdminDb(), base),
     readerSecret: () => process.env.ARTIFACT_PASS_SECRET,
     signInOrigin: tenant.siteUrl,
-    signInNote: LOCAL_SIGN_IN_NOTE,
+    // The door names the providers this hub turned on (Google, Microsoft or both).
+    signInNote: signInNoteFor(tenant.localSignIn?.providers),
     // Per-reader links (`links: per-reader`): who each link was made for, signed with one secret.
     recipients: createRecipientsStore(getAdminDb(), base),
     recipientSecret: () => process.env.ARTIFACT_RECIPIENT_SECRET?.trim() || undefined,
