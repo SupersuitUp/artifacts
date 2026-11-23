@@ -213,7 +213,7 @@ describe('the hub config and the labels', () => {
   })
 })
 
-// NEEDS YOU LEAVES OUT A COMMENT ONCE IT IS HANDLED (Gary, 2026-11-09: "fix whatever you need to fix"). A comment
+// NEEDS YOU LEAVES OUT A COMMENT ONCE IT IS HANDLED (the operator, 2026-11-09: "fix whatever you need to fix"). A comment
 // whose thread the owner resolved, or that the owner replied to after it was written, no longer needs them; a reader
 // writing again after the reply brings the thread back.
 describe('needsYou and handled comments', () => {

@@ -134,7 +134,7 @@ async function sendsOf(cfg: AnalyticsConfig, stores: HubStores, p: ArtifactListI
 }
 
 /**
- * Whether a reader's comment is handled (Gary, 2026-11-09): its thread was resolved after it was written, or the
+ * Whether a reader's comment is handled (the operator, 2026-11-09): its thread was resolved after it was written, or the
  * publisher replied in its thread after it. A reader writing again after either is news, so it is not handled.
  */
 function handledBy(thread: readonly { id: string; at: string; value: unknown }[]) {

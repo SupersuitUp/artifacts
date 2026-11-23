@@ -1,6 +1,6 @@
-// A LETTER'S GREETING AND SIGN-OFF KEEP THEIR LINES (Gary, 2026-11-02: "Permanently fix the newline
+// A LETTER'S GREETING AND SIGN-OFF KEEP THEIR LINES (the operator, 2026-11-02: "Permanently fix the newline
 // issue with the salutation"). Markdown joins a soft line break with a space, so "Your friend in
-// Christ," then "Gary" drew as one line, and no writer types the two trailing spaces a hard break
+// Christ," then "Sam" drew as one line, and no writer types the two trailing spaces a hard break
 // needs. A paragraph that opens on a short line (40 characters or fewer) ending in a comma is a
 // greeting or a sign-off: each soft break after a short line in it becomes a real break. Hard-wrapped
 // prose fills its lines, so it never opens a paragraph on one and still joins. The review page's

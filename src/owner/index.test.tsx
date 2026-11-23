@@ -57,7 +57,7 @@ const renderMany = async (query: Record<string, string> = {}) =>
     data: await many(), query, title: 'Artifact analytics', theme, back: () => null, notFound,
   })), 'text/html')
 
-describe('ArtifactsTile on a phone: one list at a time (Gary, 2026-11-09: "It\'s like a giant scroll")', () => {
+describe('ArtifactsTile on a phone: one list at a time (the operator, 2026-11-09: "It\'s like a giant scroll")', () => {
   it('opens on Needs you: the waiting send and the comment, and no other list', async () => {
     const d = await render()
     expect(phoneLists(d)).toEqual(['needs'])

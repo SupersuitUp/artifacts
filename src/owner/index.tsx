@@ -17,7 +17,7 @@
 //
 // From Tailwind's lg breakpoint (1024px) the filters sit on the left; the Activity view puts the feed in the centre and
 // Waiting on on the right, the outcome view spans the kanban across the rest, and the page list sits under the columns.
-// UNDER lg (a phone) the screen is ONE LIST AT A TIME (Gary, 2026-11-09: "It's like a giant scroll ... Feels
+// UNDER lg (a phone) the screen is ONE LIST AT A TIME (the operator, 2026-11-09: "It's like a giant scroll ... Feels
 // overwhelming"): the tabs are Needs you (the default: sends waiting and recent comments), Activity, Pages (when the
 // app passes `pages`; a title search on top, `pq`) and Outcomes, `tab=needs|activity|pages` in the address, and only
 // the chosen list shows. Every phone list shows PHONE_PAGE_SIZE rows and a Show more that adds as many again (`n`);
@@ -499,7 +499,7 @@ export function ArtifactsTile({ data, query: q, title, theme, back, notFound, ba
   return (
     <Shell c={c} title={title} back={homeHref} fetchedAt={data.fetchedAt} backRow={back}>
       <Counts c={c} data={data} q={q} now={now} />
-      {/* ONE row of tabs (Gary, 2026-11-09): two rows that both began with Activity read as a bug. On a phone the row is
+      {/* ONE row of tabs (the operator, 2026-11-09): two rows that both began with Activity read as a bug. On a phone the row is
           Needs you, Activity, Pages and Outcomes, one list each; from lg up it is Activity and Outcomes as before, and
           the phone's Activity is a link of its own so each size marks its own current tab. */}
       <nav data-view-switch className="flex flex-wrap gap-2 px-5 pb-3 text-sm" aria-label="View">

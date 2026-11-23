@@ -187,7 +187,7 @@ export function VoiceRecorder({ onStart, onLive, onStop, onError, accent = 'curr
   }
 
   if (!supported) return null
-  // A small microphone, never a word (Gary, 2026-11-09: "a little microphone button is superior to
+  // A small microphone, never a word (the operator, 2026-11-09: "a little microphone button is superior to
   // a button that says record"). The glyph is the Helm recorder's own (helm2 golden/recorder), so
   // the two surfaces draw one microphone; while recording it is a stop square with the clock beside
   // it. A 44 px target, the size the Helm settled on for a mic inside a text box.

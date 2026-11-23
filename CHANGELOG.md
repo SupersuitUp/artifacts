@@ -110,9 +110,9 @@ Tests: `test/hub-sign-in-fresh-token.test.mjs`, `test/door-note.test.ts`, `src/a
 
 ## 0.65.0 (2026-11-09)
 
-**Needs you leaves out a handled comment.** A reader's comment no longer needs the owner once its thread is resolved, or once the publisher replied in its thread after it; a reader writing again brings it back. Comments carry `handled` on `Send`. DETECTOR: Gary, reviewing the phone dashboard. REMEDY: `handledBy` in `src/analytics/index.ts`. TESTS: `src/analytics/index.test.ts`.
+**Needs you leaves out a handled comment.** A reader's comment no longer needs the owner once its thread is resolved, or once the publisher replied in its thread after it; a reader writing again brings it back. Comments carry `handled` on `Send`. DETECTOR: the operator, reviewing the phone dashboard. REMEDY: `handledBy` in `src/analytics/index.ts`. TESTS: `src/analytics/index.test.ts`.
 
-**The owner tile is short on a phone: one list at a time.** Gary, 2026-11-09, on the live hub dashboard: "It's like a giant scroll. That feels unscalable." Below Tailwind's `lg` the tabs are Needs you (the default: sends waiting past `quietDays` and readers' comments from the last 30 days), Activity, Pages (with a title search, `pq`) and Outcomes, chosen by `tab=needs|activity|pages` and `view=outcomes`, and only the chosen list shows; Pages no longer sits under the feed. Every phone list shows 10 rows and a Show more (`n`) that adds 10. The opened and waiting counts are links (Outcomes and Needs you). From `lg` up the columns, the 30-row pages and Load more are as before. `tab=waiting` (the old Waiting on tab) now opens Needs you. New exports: `needsYou`, `NeedsItem`, `PHONE_PAGE_SIZE` (`./analytics`). Measured with invented sample data at 390x844: Needs you 1.75 screens, Activity 1.73, Pages 1.45, Outcomes 2.18.
+**The owner tile is short on a phone: one list at a time.** The operator, 2026-11-09, on the live hub dashboard: "It's like a giant scroll. That feels unscalable." Below Tailwind's `lg` the tabs are Needs you (the default: sends waiting past `quietDays` and readers' comments from the last 30 days), Activity, Pages (with a title search, `pq`) and Outcomes, chosen by `tab=needs|activity|pages` and `view=outcomes`, and only the chosen list shows; Pages no longer sits under the feed. Every phone list shows 10 rows and a Show more (`n`) that adds 10. The opened and waiting counts are links (Outcomes and Needs you). From `lg` up the columns, the 30-row pages and Load more are as before. `tab=waiting` (the old Waiting on tab) now opens Needs you. New exports: `needsYou`, `NeedsItem`, `PHONE_PAGE_SIZE` (`./analytics`). Measured with invented sample data at 390x844: Needs you 1.75 screens, Activity 1.73, Pages 1.45, Outcomes 2.18.
 
 - DETECTOR: an owner opening the hub home or the continent app's Artifacts tile on a phone.
 - REMEDY: none for a host; it ships in `ArtifactsTile`. A host's Tailwind must keep scanning `lib/owner` (it now uses `max-lg:hidden`, Tailwind 3.2 or later).
@@ -289,7 +289,7 @@ line. `remarkLetterBreaks` (in `ArtifactMarkdown`'s plugin list) turns a paragra
 short line (40 characters or fewer) ending in a comma into real breaks after each short line in it.
 Hard-wrapped prose still joins.
 
-- DETECTOR: a page whose sign-off reads "Love, Gary" on one line.
+- DETECTOR: a page whose sign-off reads "Love, Sam" on one line.
 - REMEDY: update; nothing to change in the page.
 - Tests: `src/artifacts/letter-breaks.test.tsx`.
 
@@ -1051,7 +1051,7 @@ reader.
 
 ## 0.34.0
 
-**Commenters hear when their comments are resolved, in one email per page per burst** (Gary,
+**Commenters hear when their comments are resolved, in one email per page per burst** (the operator,
 2026-10-12: "Can those notifications around resolved comments batch plz"). 0.33.0 let the owner
 resolve threads, but the reader who asked never found out unless someone texted them.
 
@@ -1096,7 +1096,7 @@ resolve threads, but the reader who asked never found out unless someone texted 
 ## 0.33.1
 
 **The player bar: the speed button no longer reflows the bar, 2x is a speed, and the narrator
-line is gone** (Gary, 2026-10-12: "The bottom bar speed dial shouldn't cause reflow when clicked.
+line is gone** (the operator, 2026-10-12: "The bottom bar speed dial shouldn't cause reflow when clicked.
 2x should be an option. And read by freedom should be removed."). Ships after 0.33.0, which was
 already tagged when these were asked for.
 
@@ -1123,7 +1123,7 @@ already tagged when these were asked for.
 
 ## 0.33.0
 
-**A comment thread can be resolved** (Gary, 2026-10-12: "Are you going to resolve the comments at
+**A comment thread can be resolved** (the operator, 2026-10-12: "Are you going to resolve the comments at
 some point?"). Until now a shared comment could only be replied to, so a page whose every comment
 had been dealt with still read as a page full of open questions, and the publisher's notifier kept
 listing them.
@@ -1161,7 +1161,7 @@ listing them.
 
 ## 0.32.0
 
-**The page's owner and the hub's admins always get past a locked page's door** (Gary, 2026-10-11).
+**The page's owner and the hub's admins always get past a locked page's door** (the operator, 2026-10-11).
 Before, an admin who set a page to "only the list" without being on it landed on the door at their
 next reload. `decide()` takes a fourth argument, `staff`, which opens the page with
 `why: 'staff'`; the page, the agreement, the reading heartbeat and the state API all pass it.

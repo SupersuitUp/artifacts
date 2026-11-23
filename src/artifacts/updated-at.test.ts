@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { formatUpdated } from './updated-at.js'
 
-// Gary, 2026-09-27: "Artifacts should have exact minute of last updated too." A day was not
+// The operator, 2026-09-27: "Artifacts should have exact minute of last updated too." A day was not
 // enough: a page republished three times in one evening read identically each time.
 describe('formatUpdated', () => {
   it('names the exact minute and the zone it is in', () => {

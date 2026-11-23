@@ -160,7 +160,7 @@ describe('owner bypass and settings', () => {
     const dana = { uid: 'u3', email: 'dana@example.com', name: 'Dana', member: true }
     expect(renderToStaticMarkup(await createArtifactRoutes(cfg(dana, recipients)).Page(props))).toContain(NO_LINK)
   })
-  // Wilson, a hub admin, opened a per-reader page's bare address signed out and met a door with
+  // A hub admin opened a per-reader page's bare address signed out and met a door with
   // no way in, though the host lets an admin through once signed in (2026-10-27).
   it('the no-link door offers sign-in to a signed-out visitor, so an owner or admin can get in', async () => {
     const { recipients } = await seeded()
@@ -176,7 +176,7 @@ describe('owner bypass and settings', () => {
     expect(html).toContain(NO_LINK)
     expect(html).not.toContain('data-per-reader-sign-in')
   })
-  // Gary, 2026-11-08, on the old one-line door ("This page opens from the link it was sent with."):
+  // The operator, 2026-11-08, on the old one-line door ("This page opens from the link it was sent with."):
   // "I should be able to log in if I believe that I should have access, or there should be some
   // kind of notification that you don't have permission." The door says what kind of page this is,
   // what to do, and who the visitor is signed in as.

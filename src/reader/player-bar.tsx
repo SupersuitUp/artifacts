@@ -4,10 +4,10 @@
 // reader and the browser read-aloud, so a page looks the same whichever one is speaking. It is
 // pure chrome: each reader owns its engine and hands the bar what to show and what to call.
 //
-// No narrator line (0.33.1, Gary: "read by freedom should be removed"): the bar is the play
+// No narrator line (0.33.1, the operator: "read by freedom should be removed"): the bar is the play
 // button, the seek line, the progress and the speed. The speed button has a FIXED width wide enough
 // for its longest label ("1.25x"), so stepping 1x -> 1.25x -> 2x never resizes it and never shifts
-// the seek line beside it (Gary: "the bottom bar speed dial shouldn't cause reflow when clicked").
+// the seek line beside it (the operator: "the bottom bar speed dial shouldn't cause reflow when clicked").
 import { litDeclarations } from './karaoke.js'
 
 export function PlayerBar({
