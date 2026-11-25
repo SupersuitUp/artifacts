@@ -71,8 +71,12 @@ export const VOICE_ECARD_CSS = String.raw`
 @media (hover: hover) { .ve-li:hover .ve-seal { opacity: 0; transform: translateY(-8px) scale(0.9); transition: opacity 0.2s ease, transform 0.3s ease; } }
 
 /* ADDED: the small line under the closed envelope. */
-.ve-made { position: fixed; left: 50%; bottom: calc(22px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 3; font: 500 11px/1 system-ui, -apple-system, sans-serif; letter-spacing: 0.32em; text-indent: 0.32em; text-transform: uppercase; color: rgba(255, 246, 222, 0.72); text-decoration: none; white-space: nowrap; opacity: 0; animation: ve-fade-in 1s ease 2.2s forwards; text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6); }
-.ve-made:hover { color: var(--ve-foil); }
+.ve-made { position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 3; font: 500 11px/1 system-ui, -apple-system, sans-serif; letter-spacing: 0.32em; text-transform: uppercase; color: rgba(255, 246, 222, 0.92); text-decoration: none; white-space: nowrap; opacity: 0; animation: ve-fade-in 1s ease 2.2s forwards;
+  /* A soft dark pill, so the line reads over light art as well as dark (the right padding is the
+     tracking after the last letter, which keeps the word centred in the pill). */
+  padding: 8px calc(14px - 0.32em) 8px 14px; border-radius: 999px; background: rgba(9, 22, 77, 0.42); border: 1px solid color-mix(in srgb, var(--ve-foil) 30%, transparent);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45); }
+.ve-made:hover { color: var(--ve-foil); background: rgba(9, 22, 77, 0.6); }
 
 @media (max-width: 767px) {
   .ve-li { width: 300px !important; height: 200px !important; }
