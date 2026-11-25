@@ -1634,7 +1634,7 @@ same check as the owner panel's endpoints.
 
 | Request | Body | Answer |
 |---|---|---|
-| `POST /api/record` | `{ title?, music?: <https bed>, people: [{ slug, name, note, photo? }] }` (up to 200) | `201 { batch, url }`, `url` is `/record/<batch>` |
+| `POST /api/record` | `{ title?, music?: <track id or https bed>, people: [{ slug, name, note, photo? }] }` (up to 200) | `201 { batch, url }`, `url` is `/record/<batch>` |
 | `GET /api/record/<batch>` | | `{ batch, next }`, `next` the index the recorder resumes at |
 | `GET /api/record/<batch>/<slug>` | | `{ entry }` |
 | `PATCH /api/record/<batch>/<slug>` | `{ timings: [{ w, s, e, br? }] }` or `{ built: { pageId } }` | `{ entry }` (409 before there is a take) |
@@ -1662,6 +1662,46 @@ mix's timeline; then it publishes the voice eCard and marks the entry `built`.
 `RecordPage` (app/record/[batch]/page.tsx), `RECORD`, `RECORD_BATCH`, `RECORD_ENTRY` and
 `RECORD_TAKE`; the hub template carries all five route files. A demo runs at
 `demo/voice-ecard/record.html`.
+
+## Music and the mixer outside the browser
+
+**The music library** (`music.ts`) is BlessOut's 22 background tracks as a typed catalog: `id`,
+`name`, `file`, `startAt` (where in the song the bed starts, BlessOut's `fadeInTime`: its mixer
+passed it to ffmpeg as `-ss` and its preview set `currentTime` to it), `addedDate`, `idealFor`
+(BlessOut's message types) and, where known, `artist`, `song`, `genres`, `sourceUrl`. **No audio
+ships in the package**: the tracks are other artists' music. A host keeps the files in its own
+storage and says where with `musicLibrary` in the routes config: a base address the files sit
+under, or `async (file) => signedUrl` for a private bucket. `scripts/import-blessout-music.mjs
+--source <https base> (--to-dir <dir> | --uploader <module.mjs>) [--dry-run]` copies every catalog
+file into that storage (rerunnable; it skips what is there).
+
+- `music:` on a voice eCard and `music` on a recorder batch take a catalog id (`silent-night`), an
+  https address of a custom track, or `none`. An unknown id is refused in words. `audio:` stays the
+  finished mix; the recorder mixes over the resolved bed from the track's `startAt`, and a card
+  naming a catalog track credits it under the letter ("Music: Silent Night by HillTopTrio").
+- `suggestTracks({ occasion })` or `suggestTracks({ messageType })` answers the tracks marked for
+  it, in catalog order (a type nothing is marked for gets the encouragement tracks).
+- `resolveMusic(ref, library)` answers `{ url, startAt, track }`, or null for an unknown track or a
+  host with no library.
+
+**`artifacts-mix`** renders the same recipe (`MIX`) with ffmpeg, the port of BlessOut's
+`scripts/mix-voiceover.mjs` with every option it had:
+
+```
+artifacts-mix --voice <file> --music <file|url|track-id> [--library <base url or dir>] [--out <file>]
+  [--timings <words.json>] [--music-start s] [--voice-delay s] [--fade-in s] [--fade-out s]
+  [--music-vol v] [--duck-release ms] [--duck-threshold v] [--duck-ratio r] [--no-duck]
+  [--no-normalize] [--mp3] [--dry-run] [--json]
+```
+
+It writes the mix (m4a, or mp3 at 192k), `<out>.mix.json` (where the voice starts, every setting)
+and, with `--timings`, `<out>.timings.json`: `{w, s, e}` words shifted by the voice delay. A track
+id plays from `--library` from its `startAt` unless `--music-start` says otherwise. It keeps
+BlessOut's two fixes (no 10x voice boost: loudness-normalized to -16 LUFS instead; `amix
+duration=longest` over a padded voice, so the tail fade is heard). One recipe, two renderers:
+`ffmpegMixGraph(voiceSeconds, settings)` and the browser's `bedCurve` read the same `MIX`, and
+`mixSettings({...})` checks an override. The browser uses a speech-level RMS target where ffmpeg
+uses `loudnorm`. Needs `ffmpeg` and `ffprobe` on the PATH.
 
 ## Product analytics (`analytics`)
 
