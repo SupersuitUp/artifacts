@@ -136,12 +136,14 @@ const SUGGESTION: Record<Outcome, (quietDays: number) => string> = {
   opened: () => 'Next: resend it with a shorter hook.',
   read: () => 'Next: ask the question directly.',
   returned: () => 'Next: they came back to it; ask the question directly.',
+  listened: () => 'Next: they heard it to the end; a short note back.',
   acted: () => 'Next: a thank-you, or the next step.',
 }
 function goalWords(g: ArtifactGoal): string {
   if (g === 'read') return 'read it'
   if (g === 'respond') return 'a reply'
   if (g === 'ack') return 'an acknowledgement'
+  if (g === 'listen') return 'listen to the end'
   return `press “${g.click}”`
 }
 

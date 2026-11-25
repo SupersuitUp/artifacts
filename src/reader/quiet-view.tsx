@@ -3,6 +3,7 @@
 // reader (the publisher chose that). It waits until the page is actually on screen for two
 // seconds, which a link preview fetcher never does because it never runs the page.
 import { useEffect } from 'react'
+import { LISTENED } from './page-bridge.js'
 
 const VIEW_AFTER_MS = 2000
 const BEAT_MS = 15_000
@@ -30,7 +31,15 @@ export function QuietView({ id, rid, sig, token, endpoint }: { id: string; rid: 
     let since = 0
     // CTAs pressed before the view earned its beat: sent once it lands (issue #12).
     let pending: string[] = []
-    const sendClicks = () => { if (!beat) return; for (const cta of pending) void post({ event: 'click', beat, cta }); pending = [] }
+    // Recordings heard to the end before the view earned its beat, sent once it lands (0.74.0).
+    let heard: string[] = []
+    const sendClicks = () => {
+      if (!beat) return
+      for (const cta of pending) void post({ event: 'click', beat, cta })
+      for (const media of heard) void post({ event: 'listened', beat, media })
+      pending = []
+      heard = []
+    }
     const post = async (body: Record<string, unknown>) => {
       try {
         const r = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...base, ...body }), keepalive: true })
@@ -84,6 +93,13 @@ export function QuietView({ id, rid, sig, token, endpoint }: { id: string; rid: 
       pending.push(cta)
       sendClicks()
     }
+    const onListened = (e: Event) => {
+      const media = (e as CustomEvent<{ media?: string }>).detail?.media
+      if (typeof media !== 'string' || !media) return
+      heard.push(media)
+      sendClicks()
+    }
+    window.addEventListener(LISTENED, onListened)
     document.addEventListener('click', onClick, true)
     document.addEventListener('visibilitychange', onVisibility)
     document.addEventListener('prerenderingchange', onVisibility)
@@ -95,6 +111,7 @@ export function QuietView({ id, rid, sig, token, endpoint }: { id: string; rid: 
       document.removeEventListener('prerenderingchange', onVisibility)
       document.removeEventListener('play', onPlay, true)
       document.removeEventListener('click', onClick, true)
+      window.removeEventListener(LISTENED, onListened)
       window.removeEventListener('pagehide', disarm)
       disarm()
     }

@@ -28,3 +28,7 @@ export function signInBack(signIn: string): string {
     return u.toString()
   } catch { return signIn }
 }
+
+/** A voice eCard's recording reached its last word (0.74.0): the page's quiet view tells the host.
+ *  Detail: { media: string } (the stored file's name, as a play names it). */
+export const LISTENED = 'artifact:listened'

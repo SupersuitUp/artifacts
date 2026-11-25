@@ -24,7 +24,7 @@ describe('a page goal (front matter `goal:`)', () => {
   })
   it('refuses an unknown goal with a clear message', () => {
     const p = parseArtifactSource(doc('goal: buy'))
-    expect(p).toEqual({ ok: false, error: 'goal must be read, respond, ack, or { click: <cta id> }' })
+    expect(p).toEqual({ ok: false, error: 'goal must be read, respond, ack, listen, or { click: <cta id> }' })
     expect(parseArtifactSource(doc('goal:\n  click: Book Call')).ok).toBe(false)
     expect(parseArtifactSource(doc('goal:\n  click: x\n  extra: y')).ok).toBe(false)
     expect(parseGoal(['read']).ok).toBe(false)
@@ -47,7 +47,7 @@ describe('the thresholds are named and exported', () => {
     expect(OUTCOME_READ_SECONDS).toBe(30)
     expect(OUTCOME_RETURN_GAP_MS).toBe(3_600_000)
     expect(OUTCOME_THRESHOLDS).toEqual({ readSeconds: 30, returnGapMs: 3_600_000 })
-    expect(OUTCOMES).toEqual(['not-opened', 'opened', 'read', 'returned', 'acted'])
+    expect(OUTCOMES).toEqual(['not-opened', 'opened', 'read', 'returned', 'listened', 'acted'])
   })
 })
 

@@ -21,7 +21,9 @@ export type Provenance = { actor: string; authority: string; at: string; link?: 
 export type RecipientsRecord = { recipients: Record<string, Recipient>; expireAt: string | null; keep: boolean; revokedAll?: string }
 /** `clicks` (issue #12): each CTA the reader pressed in this session, in order. Absent on a view
  *  recorded before clicks existed, which reads as none. */
-export type ViewDoc = { artifactId: string; rid: string; session: string; device: string; firstAt: string; lastAt: string; activeSeconds: number; plays: Record<string, number>; clicks?: { cta: string; at: string }[] }
+export type ViewDoc = { artifactId: string; rid: string; session: string; device: string; firstAt: string; lastAt: string; activeSeconds: number; plays: Record<string, number>; clicks?: { cta: string; at: string }[]
+  /** (0.74.0) Each recording a play reached the last word of in this session, once each. */
+  listened?: string[] }
 /** What rendered the link before it was sent: never counted as the reader, shown so a publisher
  *  can see it happened (usually themselves, checking the page). Null when no send was recorded. */
 export type BeforeSend = { sessions: number; devices: number; activeSeconds: number; firstAt: string | null } | null
@@ -31,6 +33,8 @@ export type BeforeSend = { sessions: number; devices: number; activeSeconds: num
  *  reached the page's `goal`, and `daysSinceSent` whole days from `sentAt` (null with no send). */
 export type RecipientSummary = { rid: string; label: string; group: boolean; revoked: boolean; closesAt: string | null; sentAt: string | null; provenance: Provenance | null; parent: string | null; forwardedBy: ForwardedBy | null; beforeSend: BeforeSend; opened: boolean; firstOpenAt: string | null; cameBack: boolean; activeSeconds: number; plays: number; devices: number; comments: { id: string | null; parent: string | null; at: string; text: string }[]
   lastOpenAt: string | null; sessions: number; opens: { at: string; activeSeconds: number; device: string }[]; clicks: { cta: string; at: string }[]
+  /** (0.74.0) Whether a play of the page's recording reached its last word. */
+  listened: boolean
   goal: ArtifactGoal; outcome: Outcome; succeeded: boolean; daysSinceSent: number | null }
 /** What summarizeViews measures outcomes by: the page's goal (default read), the thresholds (default
  *  OUTCOME_THRESHOLDS) and the clock `daysSinceSent` counts to (default now). */
@@ -51,7 +55,7 @@ export interface RecipientsStore {
   setExpiry(artifactId: string, expireAt: string | null): Promise<void>
   useToken(key: string, expiresAt: number): Promise<boolean>
   /** `click` (issue #12): a CTA id the reader pressed, kept on the session with its time. */
-  recordView(v: { artifactId: string; rid: string; session: string; device: string; at: string; addSeconds: number; play?: string; click?: string }): Promise<void>
+  recordView(v: { artifactId: string; rid: string; session: string; device: string; at: string; addSeconds: number; play?: string; click?: string; listened?: string }): Promise<void>
   views(artifactId: string): Promise<ViewDoc[]>
   expiring(nowIso: string): Promise<string[]>
   forget(artifactId: string): Promise<void>
@@ -112,11 +116,12 @@ function sentIn(rec: RecipientsRecord, rids: string[] | '*', sentAt: string): st
 }
 
 function addView(prev: ViewDoc | undefined, v: Parameters<RecipientsStore['recordView']>[0]): ViewDoc {
-  const doc: ViewDoc = prev ? { ...prev, plays: { ...prev.plays }, ...(prev.clicks ? { clicks: [...prev.clicks] } : {}) } : { artifactId: v.artifactId, rid: v.rid, session: v.session, device: v.device, firstAt: v.at, lastAt: v.at, activeSeconds: 0, plays: {} }
+  const doc: ViewDoc = prev ? { ...prev, plays: { ...prev.plays }, ...(prev.clicks ? { clicks: [...prev.clicks] } : {}), ...(prev.listened ? { listened: [...prev.listened] } : {}) } : { artifactId: v.artifactId, rid: v.rid, session: v.session, device: v.device, firstAt: v.at, lastAt: v.at, activeSeconds: 0, plays: {} }
   doc.activeSeconds += Math.max(0, Math.min(60, v.addSeconds))
   if (v.at > doc.lastAt) doc.lastAt = v.at
   if (v.play) doc.plays[v.play] = (doc.plays[v.play] ?? 0) + 1
   if (v.click && (doc.clicks?.length ?? 0) < MAX_CLICKS_PER_SESSION) doc.clicks = [...(doc.clicks ?? []), { cta: v.click, at: v.at }]
+  if (v.listened && !doc.listened?.includes(v.listened) && (doc.listened?.length ?? 0) < MAX_CLICKS_PER_SESSION) doc.listened = [...(doc.listened ?? []), v.listened]
   return doc
 }
 
@@ -260,7 +265,9 @@ export function summarizeViews(rec: RecipientsRecord, views: ViewDoc[], comments
     const acted = goal === 'respond' ? responded : cta !== null && clicks.some((c) => c.cta === cta)
     const read = mine.length > 0 && activeSeconds >= t.readSeconds
     const returned = firsts.length > 1 && firsts[firsts.length - 1] - firsts[0] >= t.returnGapMs
-    const outcome: Outcome = acted ? 'acted' : returned ? 'returned' : read ? 'read' : mine.length ? 'opened' : 'not-opened'
+    // A play to the last word, by the same rule: only the reader's own sessions count.
+    const listened = mine.some((v) => (v.listened?.length ?? 0) > 0)
+    const outcome: Outcome = acted ? 'acted' : listened ? 'listened' : returned ? 'returned' : read ? 'read' : mine.length ? 'opened' : 'not-opened'
     return {
       rid: r.rid, label: r.label, group: r.group === true, revoked: !!r.revokedAt, closesAt: r.closesAt ?? null,
       sentAt: r.sentAt ?? null,
@@ -279,9 +286,10 @@ export function summarizeViews(rec: RecipientsRecord, views: ViewDoc[], comments
       sessions: mine.length,
       opens: mine.map((v) => ({ at: v.firstAt, activeSeconds: v.activeSeconds, device: v.device })),
       clicks,
+      listened,
       goal, outcome,
-      // `read` succeeds on reading; every other goal only on its action.
-      succeeded: goal === 'read' ? read : acted,
+      // `read` succeeds on reading, `listen` on a play to the last word; every other goal only on its action.
+      succeeded: goal === 'read' ? read : goal === 'listen' ? listened : acted,
       daysSinceSent: Number.isFinite(sentMs) ? Math.max(0, Math.floor((nowMs - sentMs) / 86_400_000)) : null,
     }
   })

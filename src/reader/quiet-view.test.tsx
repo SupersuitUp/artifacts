@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { QuietView } from './quiet-view.js'
+import { LISTENED } from './page-bridge.js'
 
 let visibility: 'visible' | 'hidden' = 'visible'
 let prerendering = false
@@ -120,5 +121,16 @@ describe('QuietView', () => {
     document.getElementById('plain')!.click()
     await vi.advanceTimersByTimeAsync(0)
     expect(posts.filter((p) => p.body.event === 'click')).toHaveLength(2)
+  })
+  it('a voice eCard heard to the end sends listened under the view\'s beat, waiting for it when early (0.74.0)', async () => {
+    render(<QuietView {...props} />)
+    window.dispatchEvent(new CustomEvent(LISTENED, { detail: { media: 'card.m4a' } }))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(posts.filter((p) => p.body.event === 'listened')).toHaveLength(0)
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(posts.filter((p) => p.body.event === 'listened').map((p) => p.body)).toMatchObject([{ media: 'card.m4a', beat: 'b'.repeat(16), rid: props.rid }])
+    window.dispatchEvent(new CustomEvent(LISTENED, { detail: {} }))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(posts.filter((p) => p.body.event === 'listened')).toHaveLength(1)
   })
 })
