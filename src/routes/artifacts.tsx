@@ -57,6 +57,8 @@ import { createStateRoutes } from './state-routes.js'
 import { createRecipientsRoutes } from './recipients-routes.js'
 import type { OutcomeThresholds } from '../artifacts/goal.js'
 import { QuietView } from '../reader/quiet-view.js'
+import { VoiceEcard } from '../reader/voice-ecard.js'
+import { dateLine, letterBlockId, letterText, recordingName, voiceEcardLook, voiceEcardWords } from '../artifacts/voice-ecard-page.js'
 import { PageAnalytics } from '../reader/page-analytics.js'
 import { analyticsPlan, type AnalyticsConfig } from '../reader/analytics-plan.js'
 import { createPersonalRoutes } from './personal-routes.js'
@@ -939,8 +941,60 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     )
   }
 
+  /** A voice eCard (`template: voice-ecard`, 0.74.0): the envelope scene, its letter read along to the
+   *  sender's voice, and everything a document keeps around it for a reader: the menu, the comment
+   *  layer (a reply is a shared comment, pinned to the letter), the quiet view and the analytics.
+   *  Open, gated, per-reader and tracked pages all reach it through Body, so every door is the same. */
+  async function VoiceEcardBody(a: Rec, { reader, perReader, untracked = false }: { reader: Reader | null; untracked?: boolean; perReader?: { rid: string; sig: string; label: string; note: string | null; owner: boolean; group: boolean; forwarded?: boolean; closesAt: string | null; token: string } }) {
+    const { brand } = lookOf(a)
+    const spec = a.voiceEcard!
+    const words = await voiceEcardWords(spec, a.timings, async (url) => {
+      const r = await fetch(/^https?:/.test(url) ? url : `${siteUrl}${url}`, { next: { revalidate: 3600 } })
+      if (!r.ok) throw new Error(String(r.status))
+      return r.json()
+    })
+    const look = voiceEcardLook(spec, brand.type)
+    const mode: CommentsMode = config.state && a.state && a.comments && a.comments !== 'off' && a.state.slots[COMMENTS_SLOT] ? a.comments : 'off'
+    const canShare = mode !== 'off' && (reader !== null || (effectiveWriters(a.state!, a.access, COMMENTS_SLOT) === 'anyone' && !(perReader && signInToAct(a, perReader))))
+    const rootId = 'voice-ecard-root'
+    const Mark = brand.Mark
+    return (
+      <>
+        <Menu a={a} reader={reader} perReader={perReader} comments={mode !== 'off'} history={await historyOf(a.id)} viewing={a.version ?? (a.versions?.length ?? 0) + 1}
+          settings={await settingsFor(a, reader)} source={isAdmin(reader) ? sourceOf(a.id, a, a.markdown) : null} />
+        <VoiceEcard
+          rootId={rootId} to={a.to ?? ''} from={spec.from} letter={letterText(a.markdown)} words={words.length ? words : undefined}
+          {...look}
+          cover={a.cover} inner={spec.inner} background={spec.background} cinemagraph={spec.cinemagraph}
+          audio={spec.audio} media={spec.audio ? recordingName(spec.audio) : undefined}
+          seal={Mark ? <Mark className="ve-seal-mark" /> : undefined}
+          mark={spec.mark && a.mark !== 'none'} reply={canShare} blockId={letterBlockId(a.to ?? '', spec.from)} dateLine={dateLine(a.createdAt)}
+        />
+        <CommentLayer
+          artifactId={a.id}
+          rootId={rootId}
+          ownerName={owner}
+          comments={mode}
+          canShare={canShare}
+          signedIn={reader !== null}
+          isOwner={isAdmin(reader)}
+          version={a.version ?? (a.versions?.length ?? 0) + 1}
+          accent={brand.accent}
+          ground={brand.ground}
+          signIn={signInOrigin ? signInUrl(signInOrigin, pageUrl(a.id)) : null}
+          closesAt={perReader && !perReader.owner ? perReader.closesAt : null}
+          requireName={a.commentName === 'required' && perReader?.group === true}
+          knownName={a.commentName === 'required' && perReader && !perReader.group && !perReader.owner ? perReader.label : null}
+        />
+        {perReader && !perReader.owner ? <QuietView id={a.id} rid={perReader.rid} sig={perReader.sig} token={perReader.token} /> : null}
+        {await Analytics(a, { reader, perReader, untracked })}
+      </>
+    )
+  }
+
   /** The page itself, shared by open and gated pages. */
   async function Body(a: Rec, { top, reader, perReader, untracked = false }: { top: boolean; reader: Reader | null; untracked?: boolean; perReader?: { rid: string; sig: string; label: string; note: string | null; owner: boolean; group: boolean; forwarded?: boolean; closesAt: string | null; token: string } }) {
+    if (kindOf(a) === 'voice-ecard' && a.voiceEcard) return VoiceEcardBody(a, { reader, perReader, untracked })
     const { pack, brand } = lookOf(a)
     let words: WordTiming[] = []
     if (a.narration && a.timings) {
@@ -1360,6 +1414,13 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     }
     const text = await request.text()
     let parsed = parseArtifactSource(text)
+    // A voice eCard is sticky too (0.74.0): a republish that leaves `template:` out is read as one, so
+    // its own lines (from:, audio: ...) parse instead of being refused as lines of a document.
+    const askedId = request.nextUrl.searchParams.get('id') ?? (parsed.ok ? parsed.meta.id : undefined)
+    if (askedId && ARTIFACT_ID.test(askedId) && (!parsed.ok || parsed.meta.template === 'document') && !/^template:/m.test(text.split(/\n---/)[0] ?? '')) {
+      const stored = await kept.get(askedId)
+      if (stored && kindOf(stored) === 'voice-ecard') parsed = parseArtifactSource(text, { defaultKind: 'voice-ecard' })
+    }
     if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 })
     const id = request.nextUrl.searchParams.get('id') ?? parsed.meta.id ?? undefined
     // The kind is sticky, like `links:`: a republish of a broadcast that leaves `template:` out is
@@ -1379,6 +1440,8 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
       const stored = await kept.get(id)
       if (stored && (kindOf(stored) === 'file') !== (parsed.meta.template === 'file'))
         return NextResponse.json({ error: kindOf(stored) === 'file' ? 'this page is a file page and stays one: publish the file again, or the markdown as a new page' : 'this page is not a file page: publish the file as a new page' }, { status: 409 })
+      if (stored && (kindOf(stored) === 'voice-ecard') !== (parsed.meta.template === 'voice-ecard'))
+        return NextResponse.json({ error: kindOf(stored) === 'voice-ecard' ? 'this page is a voice eCard and stays one: drop template, or publish the page as a new one' : 'this page is not a voice eCard: publish the voice eCard as a new page' }, { status: 409 })
     }
     // Fail closed: private media needs a private store. Without one the media would have to sit in
     // the public bucket, which may carry a bucket-wide public read grant, so nothing is saved.

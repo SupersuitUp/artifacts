@@ -1,0 +1,235 @@
+// The voice eCard in a browser (jsdom): the phases on BlessOut's clock, Esc and the medallion back
+// to idle, the geometry at a phone, a landscape phone and a desktop with the re-layout on rotation,
+// the reduced-motion fade, the read-along off the recording's clock, the reply opening the page's
+// own comment card, and the listen signal.
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { act } from 'react'
+import { createRoot, type Root } from 'react-dom/client'
+import { VoiceEcard, type VoiceEcardProps } from './voice-ecard.js'
+import { LISTENED, NOTE_AT } from './page-bridge.js'
+import type { VoiceEcardTiming } from '../artifacts/voice-ecard.js'
+
+const WORDS: VoiceEcardTiming[] = [
+  { w: 'Dear', s: 4.0, e: 4.3 }, { w: 'Robin,', s: 4.35, e: 4.9, br: 1 },
+  { w: 'Thank', s: 5.6, e: 5.9 }, { w: 'you.', s: 5.95, e: 6.4 },
+]
+const props: VoiceEcardProps = {
+  rootId: 'voice-ecard-root', to: 'Robin', from: 'Sam', letter: 'Dear Robin,\n\nThank you.', words: WORDS,
+  envelope: 'url("data:image/webp;base64,AA")', liner: 'none', paper: 'none', cover: 'https://cdn.example.com/wrap.webp',
+  audio: 'https://cdn.example.com/card.m4a', media: 'card.m4a', foil: '#e7cb75', navy: '#09164d', face: 'Georgia', italic: true,
+  title: 'Georgia', mark: true, reply: true, blockId: 'b-card-0123abcd',
+}
+
+let roots: Root[] = []
+let reducedMotion = false
+function size(w: number, h: number) {
+  Object.defineProperty(window, 'innerWidth', { configurable: true, value: w })
+  Object.defineProperty(window, 'innerHeight', { configurable: true, value: h })
+  Object.defineProperty(document.documentElement, 'clientWidth', { configurable: true, value: w })
+  Object.defineProperty(document.documentElement, 'clientHeight', { configurable: true, value: h })
+}
+function render(over: Partial<VoiceEcardProps> = {}) {
+  const el = document.createElement('div')
+  document.body.appendChild(el)
+  const root = createRoot(el)
+  roots.push(root)
+  act(() => root.render(<VoiceEcard {...props} {...over} />))
+  return el
+}
+const q = <T extends Element = HTMLElement>(s: string) => document.querySelector<T>(s)
+const phase = () => q('[data-voice-ecard]')!.getAttribute('data-phase')
+const advance = async (ms: number) => { await act(async () => { await vi.advanceTimersByTimeAsync(ms) }) }
+/** The three timed phases, one at a time (each timer is set by the phase before it). */
+const openAll = async () => { await advance(800); await advance(950); await advance(700) }
+const click = (el: Element | null) => act(() => { el!.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+
+beforeEach(() => {
+  ;(globalThis as any).IS_REACT_ACT_ENVIRONMENT = true
+  vi.useFakeTimers()
+  reducedMotion = false
+  size(1280, 800)
+  document.body.innerHTML = ''
+  window.matchMedia = ((m: string) => ({ matches: m.includes('reduce') ? reducedMotion : m.includes('hover: none') ? window.innerWidth < 768 : false, media: m, addEventListener() {}, removeEventListener() {} })) as any
+  vi.stubGlobal('requestAnimationFrame', (f: FrameRequestCallback) => setTimeout(() => f(performance.now()), 16) as unknown as number)
+  vi.stubGlobal('cancelAnimationFrame', (id: number) => clearTimeout(id))
+  Object.defineProperty(HTMLMediaElement.prototype, 'play', { configurable: true, value: function () { return Promise.resolve() } })
+  Object.defineProperty(HTMLMediaElement.prototype, 'pause', { configurable: true, value: () => {} })
+})
+afterEach(() => {
+  for (const r of roots.splice(0)) act(() => r.unmount())
+  vi.useRealTimers()
+  vi.unstubAllGlobals()
+})
+
+describe('the opening, on BlessOut\'s clock', () => {
+  it('idle → rising 800 → opening 950 → zooming 700 → open', async () => {
+    render()
+    expect(phase()).toBe('idle')
+    click(q('.ve-letter'))
+    expect(phase()).toBe('rising')
+    await advance(799); expect(phase()).toBe('rising')
+    await advance(1); expect(phase()).toBe('opening')
+    expect(q('.ve-fold')!.className).toContain('is-open')
+    await advance(949); expect(phase()).toBe('opening')
+    await advance(1); expect(phase()).toBe('zooming')
+    await advance(699); expect(phase()).toBe('zooming')
+    await advance(1); expect(phase()).toBe('open')
+    expect(q('[data-voice-ecard-page]')).not.toBeNull()
+    expect(q('.ve-li')).toBeNull()
+  })
+  it('the scene recedes while the card flies, and the card art was warmed while it idled', async () => {
+    const made: string[] = []
+    vi.stubGlobal('Image', class { set src(v: string) { made.push(v) } })
+    render({ inner: 'https://cdn.example.com/inner.webp' })
+    expect(made).toEqual(['https://cdn.example.com/wrap.webp', 'https://cdn.example.com/inner.webp'])
+    click(q('.ve-letter'))
+    expect(q('.ve-hover')!.className).toContain('ve-receding')
+  })
+  it('Esc closes: closing for 450 ms, then idle with the envelope back', async () => {
+    render()
+    click(q('.ve-letter'))
+    await openAll()
+    expect(phase()).toBe('open')
+    act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })) })
+    expect(phase()).toBe('closing')
+    expect(q('.ve-hover')!.className).toContain('ve-returning')
+    await advance(449); expect(phase()).toBe('closing')
+    await advance(1); expect(phase()).toBe('idle')
+    expect(q('.ve-li')).not.toBeNull()
+  })
+  it('the medallion on the card\'s corner closes it too', async () => {
+    render()
+    click(q('.ve-letter'))
+    await openAll()
+    const btn = q<HTMLButtonElement>('button[aria-label="Close card"]')!
+    expect(btn.style.top).toBe('38px')
+    expect(btn.style.left).toBe('1136px')
+    click(btn)
+    await advance(450)
+    expect(phase()).toBe('idle')
+  })
+  it('Enter on the envelope opens it from a keyboard', async () => {
+    render()
+    act(() => { q('.ve-li')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })
+    expect(phase()).toBe('rising')
+  })
+  it('reduced motion: straight to the open card, no flight, and a short fade back', async () => {
+    reducedMotion = true
+    render()
+    click(q('.ve-letter'))
+    expect(phase()).toBe('open')
+    click(q('button[aria-label="Close card"]'))
+    await advance(320)
+    expect(phase()).toBe('idle')
+  })
+})
+
+describe('desktop hover and phone tap', () => {
+  it('a desktop says "Hover over me"; a phone says "Tap me", and its first tap opens the flap, its second the card', async () => {
+    render()
+    expect(q('.ve-hover-text')!.textContent).toBe('Hover over me')
+    for (const r of roots.splice(0)) act(() => r.unmount())
+    document.body.innerHTML = ''
+    size(390, 844)
+    render()
+    expect(q('.ve-hover-text')!.textContent).toBe('Tap me')
+    click(q('.ve-letter'))
+    expect(phase()).toBe('idle')
+    expect(q('.ve-li')!.className).toContain('is-open')
+    click(q('.ve-letter'))
+    expect(phase()).toBe('rising')
+  })
+})
+
+describe('geometry', () => {
+  const host = () => q<HTMLElement>('[data-voice-ecard-page]')!
+  it('390x844: one page edge to edge, with the tilt hint', async () => {
+    size(390, 844)
+    render()
+    click(q('.ve-letter')); click(q('.ve-letter'))
+    await openAll()
+    expect(host().style.left).toBe('8px')
+    expect(host().style.width).toBe('374px')
+    expect(q('.ve-tilt')!.textContent).toContain('Tilt your phone to see the whole card')
+  })
+  it('a rotation to 844x390 re-lays out to the whole spread and the hint goes', async () => {
+    size(390, 844)
+    render()
+    click(q('.ve-letter')); click(q('.ve-letter'))
+    await openAll()
+    size(844, 390)
+    act(() => { window.dispatchEvent(new Event('orientationchange')) })
+    await advance(900)
+    expect(host().style.left).toBe('422px')
+    expect(parseFloat(host().style.width)).toBeCloseTo(844 * 0.46)
+    expect(q('.ve-tilt')).toBeNull()
+  })
+  it('1280x800: a 520 px page right of the spine', async () => {
+    render()
+    click(q('.ve-letter'))
+    await openAll()
+    expect(host().style.left).toBe('640px')
+    expect(host().style.width).toBe('520px')
+    expect(q('.ve-tilt')).toBeNull()
+  })
+})
+
+describe('the letter on the open card', () => {
+  async function opened(over: Partial<VoiceEcardProps> = {}) {
+    render(over)
+    click(q('.ve-letter'))
+    await openAll()
+  }
+  it('is the timings\' words, in their paragraphs, inside the comment root', async () => {
+    await opened()
+    const letter = q('#voice-ecard-root [data-voice-ecard-letter]')!
+    expect([...letter.querySelectorAll('p')].map((p) => p.textContent!.trim())).toEqual(['Dear Robin,', 'Thank you.'])
+    expect(q('#voice-ecard-root [data-block="b-card-0123abcd"]')).not.toBeNull()
+  })
+  it('lights the word at the recording\'s time, said words in full ink, the rest faded', async () => {
+    await opened()
+    const a = q<HTMLAudioElement>('audio')!
+    expect(a.getAttribute('data-artifact-media')).toBe('card.m4a')
+    let t = 0
+    Object.defineProperty(a, 'currentTime', { configurable: true, get: () => t, set: (v) => { t = v } })
+    click(q('.ve-listen'))
+    const states = () => [...document.querySelectorAll('.ve-word')].map((w) => w.className.replace('ve-word', '').trim())
+    t = 4.5; await advance(20)
+    expect(states()).toEqual(['ve-said', 've-saying', 've-coming', 've-coming'])
+    t = 5.7; await advance(20)
+    expect(states()).toEqual(['ve-said', 've-said', 've-saying', 've-coming'])
+  })
+  it('tells the quiet view once when the play reaches the last word', async () => {
+    await opened()
+    const heard: unknown[] = []
+    window.addEventListener(LISTENED, (e) => heard.push((e as CustomEvent).detail))
+    const a = q<HTMLAudioElement>('audio')!
+    let t = 0
+    Object.defineProperty(a, 'currentTime', { configurable: true, get: () => t, set: (v) => { t = v } })
+    click(q('.ve-listen'))
+    t = 5.0; await advance(20)
+    expect(heard).toEqual([])
+    t = 6.0; await advance(40)
+    expect(heard).toEqual([{ media: 'card.m4a' }])
+  })
+  it('"Reply with your voice" opens the page\'s comment card at this second of the recording', async () => {
+    await opened()
+    const asked: unknown[] = []
+    window.addEventListener(NOTE_AT, (e) => asked.push((e as CustomEvent).detail))
+    click(q('[data-voice-reply]'))
+    expect(asked).toEqual([{ block: 'b-card-0123abcd', at: 0 }])
+  })
+  it('no reply control when the page takes no comments; no Supersuit line with mark: false', async () => {
+    await opened({ reply: false, mark: false })
+    expect(q('[data-voice-reply]')).toBeNull()
+    expect(document.body.textContent).not.toContain('Made with Supersuit')
+  })
+  it('the closed envelope says "Made with Supersuit", linking to supersuit.co', () => {
+    render()
+    expect(q<HTMLAnchorElement>('.ve-made')!.href).toBe('https://supersuit.co/')
+  })
+  it('draws the brand seal on the flap when it has one', () => {
+    render({ seal: <svg data-test-mark /> })
+    expect(q('.ve-seal [data-test-mark]')).not.toBeNull()
+  })
+})
