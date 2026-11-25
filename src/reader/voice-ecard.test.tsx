@@ -1,7 +1,7 @@
 // The voice eCard in a browser (jsdom): the phases on BlessOut's clock, Esc and the medallion back
 // to idle, the geometry at a phone, a landscape phone and a desktop with the re-layout on rotation,
-// the reduced-motion fade, the read-along off the recording's clock, the reply opening the page's
-// own comment card, and the listen signal.
+// the reduced-motion fade, the read-along off the recording's clock, the reply sheet, and the
+// listen signal.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
@@ -244,7 +244,7 @@ describe('the letter on the open card', () => {
     t = 6.0; await advance(40)
     expect(heard).toEqual([{ media: 'card.m4a' }])
   })
-  it('"Reply with your voice" stops the voice and opens the recorder right on the page: no comment card', async () => {
+  it('"Reply with your voice" stops the voice and opens the reply sheet over the card: no comment card', async () => {
     await opened()
     const a = q<HTMLAudioElement>('audio')!
     const paused = vi.fn()
@@ -252,11 +252,11 @@ describe('the letter on the open card', () => {
     click(q('.ve-listen'))
     click(q('[data-voice-reply]'))
     expect(paused).toHaveBeenCalled()
-    expect(q('[data-voice-reply-panel]')).not.toBeNull()
-    expect(q('[data-voice-reply]')).toBeNull()
+    expect(q('[data-reply-sheet] [data-voice-reply-panel]')).not.toBeNull()
+    expect(q('[data-voice-ecard-page] [data-voice-reply-panel]')).toBeNull()
     expect(q('textarea')).toBeNull()
     expect(document.querySelector('[data-comment-layer], [data-comment-pin], [data-comment-button]')).toBeNull()
-    expect(q('[data-voice-ecard-page]')!.textContent).not.toMatch(/comment/i)
+    expect(q('[data-reply-sheet]')!.textContent).not.toMatch(/comment/i)
   })
   it('no reply control when the page takes no comments; no Supersuit line with mark: false', async () => {
     await opened({ reply: false, mark: false })

@@ -51,7 +51,13 @@ export type VoiceReplyProps = {
   requireName?: boolean
   /** The page's voice routes; tests pass a stub. */
   voice?: VoiceHost
+  /** What survives the sheet closing: a recorded take (and whether it was sent), so reopening
+   *  returns to it. A recording still running when the sheet closes is stopped and dropped. */
+  kept?: ReplyKept
+  onKeep?: (k: ReplyKept) => void
 }
+
+export type ReplyKept = { memo: VoiceMemo | null; took: number; sent: boolean }
 
 type Stage = 'ready' | 'recording' | 'review' | 'sending' | 'sent'
 
@@ -97,22 +103,31 @@ function TakePlayer({ src, fallbackMs }: { src: string; fallbackMs: number }) {
   )
 }
 
-export function VoiceReply({ artifactId, blockId, ownerName, version, at, requireName = false, voice }: VoiceReplyProps) {
+export function VoiceReply({ artifactId, blockId, ownerName, version, at, requireName = false, voice, kept, onKeep }: VoiceReplyProps) {
   const host = useMemo(() => voice ?? hostVoice(artifactId), [voice, artifactId])
-  const [memo, setMemo] = useState<VoiceMemo | null>(null)
-  const [took, setTook] = useState(0)
-  const [stage, setStage] = useState<Stage>('ready')
+  const [memo, setMemo] = useState<VoiceMemo | null>(kept?.memo ?? null)
+  const [took, setTook] = useState(kept?.took ?? 0)
+  const [stage, setStage] = useState<Stage>(kept?.sent ? 'sent' : kept?.memo ? 'review' : 'ready')
+  const discard = useRef(false)
   const [error, setError] = useState<string | null>(null)
   const [name, setName] = useState('')
   const url = useMemo(() => (memo ? URL.createObjectURL(memo.blob) : null), [memo])
   const elapsedRef = useRef(0)
   const rec = useVoiceRecording({
     onStart: () => { setStage('recording'); setError(null) },
-    onStop: (m) => { setTook(elapsedRef.current); setMemo(m); setStage('review') },
+    onStop: (m) => {
+      // Closed mid-recording: the take is dropped, and the sheet reopens at the record button.
+      if (discard.current) return
+      setTook(elapsedRef.current); setMemo(m); setStage('review')
+    },
     onError: (msg) => { setError(msg); setStage('ready') },
     maxMs: 3 * 60 * 1000,
   })
   elapsedRef.current = rec.elapsed
+  const recRef = useRef(rec)
+  recRef.current = rec
+  useEffect(() => { onKeep?.({ memo, took, sent: stage === 'sent' }) }, [memo, took, stage]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => { if (recRef.current.recording) { discard.current = true; recRef.current.stop() } }, [])
 
   const send = async () => {
     if (!memo) return
@@ -159,7 +174,7 @@ export function VoiceReply({ artifactId, blockId, ownerName, version, at, requir
             <button type="button" className="ve-rr-send" onClick={() => void send()} disabled={stage === 'sending'} data-voice-reply-send>
               {stage === 'sending' ? 'Sending…' : `Send to ${ownerName}`}
             </button>
-            <button type="button" className="ve-rr-again" onClick={() => { setMemo(null); setStage('ready'); setError(null) }} disabled={stage === 'sending'} data-voice-reply-again>Record again</button>
+            <button type="button" className="ve-rr-again" onClick={() => { setMemo(null); setTook(0); setStage('ready'); setError(null) }} disabled={stage === 'sending'} data-voice-reply-again>Record again</button>
           </div>
         </>
       ) : (
@@ -180,9 +195,30 @@ export function VoiceReply({ artifactId, blockId, ownerName, version, at, requir
   )
 }
 
-/** The reply's stylesheet, drawn beside the voice eCard's. Sizes are on the card's reference page,
- *  which a portrait phone draws at about 0.76, so a 60 px button is 46 px under the finger. A phone
- *  held sideways draws the whole card smaller, which Gary accepted for the card's proportions. */
+/** The sheet the reply lives in (Gary, 2026-11-25: "the controls should sit above the letter ...
+ *  more like a pop-up"): over the open card, in real screen pixels (never inside the scaled card),
+ *  sliding up from the bottom on a phone and a centred panel on a large screen. */
+export const REPLY_SHEET_CSS = String.raw`
+.ve-sheet-dim { position: fixed; inset: 0; z-index: 8; background: rgba(5, 10, 38, 0.45); animation: ve-fade-in 0.2s ease-out both; }
+.ve-sheet { position: fixed; z-index: 9; left: 0; right: 0; bottom: 0; margin: 0 auto; width: 100%; max-width: 520px; max-height: 100dvh; overflow-y: auto; box-sizing: border-box;
+  padding: 10px 18px calc(18px + env(safe-area-inset-bottom, 0px)); border-radius: 20px 20px 0 0; background: #f6efdf; background-image: var(--ve-paper); background-size: cover;
+  border: 1px solid color-mix(in srgb, var(--ve-foil) 65%, transparent); border-bottom: none; box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.35); color: ${REPLY_TOKENS.ink}; animation: ve-sheet-up 0.32s cubic-bezier(0.22, 0.9, 0.35, 1) both; }
+.ve-sheet::before { content: ''; position: absolute; inset: 6px; border: 1px solid color-mix(in srgb, var(--ve-foil) 45%, transparent); border-radius: 15px 15px 0 0; border-bottom: none; pointer-events: none; }
+@keyframes ve-sheet-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
+.ve-sheet-head { position: relative; display: flex; align-items: center; justify-content: center; min-height: 48px; margin-bottom: 4px; }
+.ve-sheet-title { margin: 0; font: 600 13px/1 system-ui, -apple-system, sans-serif; letter-spacing: 0.28em; text-indent: 0.28em; text-transform: uppercase; color: ${REPLY_TOKENS.muted}; }
+.ve-sheet-close { position: absolute; right: -6px; top: 2px; width: 44px; height: 44px; padding: 0; border-radius: 50%; border: 1.5px solid ${REPLY_TOKENS.ink}; background: #fffaf0; color: ${REPLY_TOKENS.ink}; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.ve-sheet .ve-reply-panel { margin: 0; background: transparent; border: none; padding: 4px 0 0; }
+@media (min-width: 768px) and (min-height: 560px) {
+  .ve-sheet { top: 50%; bottom: auto; transform: translateY(-50%); border-radius: 20px; border-bottom: 1px solid color-mix(in srgb, var(--ve-foil) 65%, transparent); padding-bottom: 22px; animation: ve-fade-in 0.25s ease-out both; }
+  .ve-sheet::before { border-radius: 15px; border-bottom: 1px solid color-mix(in srgb, var(--ve-foil) 45%, transparent); }
+}
+@media (max-height: 480px) { .ve-sheet { max-width: 560px; } .ve-sheet .ve-rr-actions { grid-template-columns: 1fr 1fr; } }
+@media (prefers-reduced-motion: reduce) { .ve-sheet { animation: ve-fade-in 0.2s ease-out both; } }
+`
+
+/** The reply's stylesheet, drawn beside the voice eCard's. Sizes are
+ *  real screen pixels (the sheet is never scaled with the card), so every control is its full size in every orientation. */
 export const VOICE_REPLY_CSS = String.raw`
 .ve-reply-panel { display: flex; flex-direction: column; align-items: stretch; gap: 12px; margin: 0 0 1.1rem; padding: 16px 16px 14px; border-radius: 14px; border: 1px solid color-mix(in srgb, var(--ve-foil) 70%, transparent); background: rgba(255, 252, 244, 0.55); font: 400 15px/1.3 system-ui, -apple-system, sans-serif; color: ${REPLY_TOKENS.ink}; }
 .ve-rr-slot { position: relative; display: grid; grid-template-rows: 84px 26px; justify-items: center; align-items: center; row-gap: 8px; }

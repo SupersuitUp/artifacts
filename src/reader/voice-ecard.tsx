@@ -13,8 +13,9 @@
 // package's own karaoke rules (readAlong → litWordIndex, begunCount), never a second copy.
 //
 // ADDED here: reduced motion fades instead of flying; the envelope opens from a keyboard; the
-// sender's brand mark as a wax seal; "Reply with your voice", the one way to answer, which opens
-// straight into the recorder (voice-reply.tsx) with no comment layer on the page at all; a play that reaches the last word tells the quiet view (LISTENED) so the send counts as
+// sender's brand mark as a wax seal; "Reply with your voice", the one way to answer, which opens a
+// sheet over the card holding the recorder (voice-reply.tsx), in real screen pixels, with no
+// comment layer on the page at all; a play that reaches the last word tells the quiet view (LISTENED) so the send counts as
 // listened; the letter shrinks to fit but never below readable, and scrolls past that.
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import {
@@ -22,7 +23,7 @@ import {
   spreadGeom, tiltHint, viewportSize, wordState, REF_PAGE, REF_LETTER_FONT, type Box, type VoiceEcardPhase, type VoiceEcardTiming,
 } from '../artifacts/voice-ecard.js'
 import { LISTENED } from './page-bridge.js'
-import { VoiceReply, VOICE_REPLY_CSS } from './voice-reply.js'
+import { VoiceReply, VOICE_REPLY_CSS, REPLY_SHEET_CSS, type ReplyKept } from './voice-reply.js'
 import { VOICE_ECARD_CSS } from './voice-ecard-css.js'
 
 export type VoiceEcardProps = {
@@ -204,13 +205,34 @@ export function VoiceEcard(p: VoiceEcardProps) {
     }
   }, [phase, calm])
 
-  // Esc closes the open card.
+  // The reply sheet: over the open card, outside it, so the letter never moves for it. What was
+  // recorded survives the sheet closing (kept); the reply button gets focus back.
+  const [sheet, setSheet] = useState(false)
+  const sheetRef = useRef<HTMLDivElement>(null)
+  const kept = useRef<ReplyKept>({ memo: null, took: 0, sent: false })
+  const replyAt = useRef(0)
+  const opener = useRef<HTMLElement | null>(null)
+  const openSheet = (at: number) => { replyAt.current = at; opener.current = document.activeElement as HTMLElement | null; setSheet(true) }
+  const closeSheet = useCallback(() => setSheet(false), [])
+  useEffect(() => {
+    if (sheet) {
+      const el = sheetRef.current
+      ;(el?.querySelector<HTMLElement>('[data-reply-record], [data-reply-play], [data-voice-reply-send]') ?? el?.querySelector<HTMLElement>('button'))?.focus()
+    } else if (opener.current) {
+      const back = document.querySelector<HTMLElement>('[data-voice-reply]') ?? opener.current
+      back.focus()
+      opener.current = null
+    }
+  }, [sheet])
+  useEffect(() => { if (phase !== 'open') setSheet(false) }, [phase])
+
+  // Esc closes the reply sheet when it is open, else the open card.
   useEffect(() => {
     if (phase !== 'open') return
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close() }
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') (sheet ? closeSheet() : close()) }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [phase, close])
+  }, [phase, close, sheet, closeSheet])
 
   const geom = useMemo(() => (typeof window === 'undefined' ? null : spreadGeom(viewportSize(window))), [tick, phase]) // eslint-disable-line react-hooks/exhaustive-deps
   const flyer: CSSProperties | undefined = from && geom && phase !== 'idle' ? cardBox(phase, from, flown, geom) : undefined
@@ -230,7 +252,7 @@ export function VoiceEcard(p: VoiceEcardProps) {
 
   return (
     <div className="ve-root" data-voice-ecard data-phase={phase} style={vars}>
-      <style dangerouslySetInnerHTML={{ __html: VOICE_ECARD_CSS + VOICE_REPLY_CSS }} />
+      <style dangerouslySetInnerHTML={{ __html: VOICE_ECARD_CSS + VOICE_REPLY_CSS + REPLY_SHEET_CSS }} />
       <div className="ve-bg" aria-hidden>
         {p.cinemagraph ? (
           <div className="ve-cinemagraph"><div className="ve-cinemagraph-inner">
@@ -288,7 +310,7 @@ export function VoiceEcard(p: VoiceEcardProps) {
       <div id={p.rootId} role={phase === 'open' ? 'dialog' : undefined} aria-modal={phase === 'open' ? true : undefined} aria-label={phase === 'open' ? `A card for ${p.to} from ${p.from}` : undefined}>
         {phase === 'open' && pageBox ? (
           <div className="ve-page-host" style={pageBox} data-voice-ecard-page>
-            <Letter {...p} />
+            <Letter {...p} onReply={openSheet} />
           </div>
         ) : null}
       </div>
@@ -298,18 +320,30 @@ export function VoiceEcard(p: VoiceEcardProps) {
       {tilt ? (
         <div className="ve-tilt" aria-hidden><span className="ve-tilt-phone" />Tilt your phone to see the whole card</div>
       ) : null}
+      {phase === 'open' && sheet && p.reply ? (
+        <>
+          <div className="ve-sheet-dim" data-reply-dim onClick={closeSheet} />
+          <div className="ve-sheet" ref={sheetRef} role="dialog" aria-modal="true" aria-label={`Reply to ${p.from}`} data-reply-sheet>
+            <div className="ve-sheet-head">
+              <p className="ve-sheet-title">{`Reply to ${p.from}`}</p>
+              <button type="button" className="ve-sheet-close" aria-label="Close" data-sheet-close onClick={closeSheet}><CloseIcon /></button>
+            </div>
+            <VoiceReply artifactId={p.artifactId} blockId={p.blockId} ownerName={p.ownerName} version={p.version} requireName={p.requireName}
+              at={() => replyAt.current} kept={kept.current} onKeep={(k) => { kept.current = k }} />
+          </div>
+        </>
+      ) : null}
     </div>
   )
 }
 
 /** The inside-right page: who it is to and from, the voice, the letter following it, the reply. */
-function Letter(p: VoiceEcardProps) {
+function Letter(p: VoiceEcardProps & { onReply?: (at: number) => void }) {
   const audio = useRef<HTMLAudioElement>(null)
   const pageRef = useRef<HTMLDivElement>(null)
   const litRef = useRef<HTMLSpanElement | null>(null)
   const [playing, setPlaying] = useState(false)
   const [now, setNow] = useState(0)
-  const [replying, setReplying] = useState(false)
   const heard = useRef(false)
   const words = p.words ?? []
   const paras = useMemo(() => withLines(words.length ? letterParagraphs(words) : letterFromText(p.letter)), [words, p.letter])
@@ -344,17 +378,15 @@ function Letter(p: VoiceEcardProps) {
 
   // The letter fits its page: the largest zoom that fits, found by halving (zoom reflows text, so
   // one ratio overshoots), never below MIN_LETTER_ZOOM; past that the page scrolls. The page is the
-  // reference size, so this depends on the letter alone, never on the screen. Only the LETTER
-  // shrinks: the names, the buttons and the reply stay their size, so a control never drops under
-  // a finger's size because the letter is long (Gary, 2026-11-25: hard-to-see reply controls).
+  // reference size and the reply lives in a sheet outside it, so this depends on the letter alone:
+  // never on the screen, never on the reply.
   useEffect(() => {
     const el = pageRef.current
     const host = el?.parentElement
-    const script = el?.querySelector<HTMLElement>('[data-voice-ecard-letter]')
-    if (!el || !host || !script) return
-    const style = script.style as CSSStyleDeclaration & { zoom: string }
+    if (!el || !host) return
+    const style = el.style as CSSStyleDeclaration & { zoom: string }
     const fit = () => {
-      const fits = (z: number) => { style.zoom = String(z); return el.scrollHeight <= host.clientHeight + 1 }
+      const fits = (z: number) => { style.zoom = String(z); return el.scrollHeight * z <= host.clientHeight + 1 }
       if (fits(1)) return
       let lo = MIN_LETTER_ZOOM, hi = 1
       if (!fits(lo)) return
@@ -365,10 +397,8 @@ function Letter(p: VoiceEcardProps) {
     document.fonts?.ready?.then(fit).catch(() => {})
     const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(fit)
     ro?.observe(host)
-    // The reply panel adds to the page: fit again when it opens, and as it changes (record, review, sent).
-    ro?.observe(el.querySelector('[data-voice-reply-panel]') ?? el)
     return () => ro?.disconnect()
-  }, [paras, replying])
+  }, [paras])
 
   const toggle = () => {
     const a = audio.current
@@ -381,7 +411,7 @@ function Letter(p: VoiceEcardProps) {
   const reply = () => {
     // The voice stops first, so the reader's microphone never records the sender's recording.
     if (playing) { audio.current?.pause(); setPlaying(false) }
-    setReplying(true)
+    p.onReply?.(audio.current?.currentTime ?? 0)
   }
 
   return (
@@ -398,12 +428,8 @@ function Letter(p: VoiceEcardProps) {
               {playing ? <><StopIcon /> Stop listening</> : <><PlayIcon /> Listen to the letter</>}
             </button>
           ) : null}
-          {p.reply && !replying ? <button type="button" className="ve-btn ve-reply" onClick={reply} data-voice-reply><MicIcon /> Reply with your voice</button> : null}
+          {p.reply ? <button type="button" className="ve-btn ve-reply" onClick={reply} data-voice-reply><MicIcon /> Reply with your voice</button> : null}
         </div>
-      ) : null}
-      {p.reply && replying ? (
-        <VoiceReply artifactId={p.artifactId} blockId={p.blockId} ownerName={p.ownerName} version={p.version} requireName={p.requireName}
-          at={() => audio.current?.currentTime ?? 0} />
       ) : null}
       <blockquote className={`ve-script${playing && words.length ? ' ve-following' : ''}`} data-voice-ecard-letter style={{ fontSize: REF_LETTER_FONT }}>
         {paras.map((para, i) => (
