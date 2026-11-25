@@ -973,6 +973,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
         <CommentLayer
           artifactId={a.id}
           rootId={rootId}
+          floatingButton={false}
           ownerName={owner}
           comments={mode}
           canShare={canShare}

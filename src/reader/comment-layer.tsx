@@ -112,7 +112,7 @@ export function onTouch(): boolean {
 }
 
 export function CommentLayer({
-  artifactId, rootId, ownerName, comments, canShare, signedIn, isOwner, version, accent, ground, signIn, voice, audioStore, closesAt = null, requireName = false, knownName = null,
+  artifactId, rootId, ownerName, comments, canShare, signedIn, isOwner, version, accent, ground, signIn, voice, audioStore, closesAt = null, requireName = false, knownName = null, floatingButton = true,
 }: {
   artifactId: string
   /** The element holding the page's prose, the same root the read-aloud lights. */
@@ -138,6 +138,9 @@ export function CommentLayer({
   requireName?: boolean
   /** Who the reader is, on a named link of a `comment_name: required` page: the card does not ask. */
   knownName?: string | null
+  /** The floating Comment button and its panel (0.74.0). A voice eCard turns it off: its own
+   *  "Reply with your voice" is the one way to answer, and opens the same comment card (NOTE_AT). */
+  floatingButton?: boolean
 }) {
   const host = useMemo(() => voice ?? hostVoice(artifactId), [voice, artifactId])
   const audioDb = useMemo(() => audioStore ?? defaultDeviceAudio, [audioStore])
@@ -664,7 +667,7 @@ export function CommentLayer({
         <div aria-hidden className="pointer-events-none fixed z-40 rounded-md border-2 border-dashed"
           style={{ left: Math.min(drag.x1, drag.x2), top: Math.min(drag.y1, drag.y2), width: Math.abs(drag.x2 - drag.x1), height: Math.abs(drag.y2 - drag.y1), borderColor: accent, background: `color-mix(in srgb, ${accent} 12%, transparent)` }} />
       ) : null}
-      <div className="fixed right-4 z-40 flex flex-col items-end gap-2" style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 5.5rem)' }}>
+      {floatingButton ? <div className="fixed right-4 z-40 flex flex-col items-end gap-2" style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 5.5rem)' }}>
         {panel ? (
           <div data-comment-panel className="flex max-h-[min(70vh,32rem)] w-80 max-w-[calc(100vw-2rem)] flex-col rounded-xl border border-[color:var(--a-line-strong)] bg-[color:var(--a-surface)] p-3 text-xs text-[color:var(--a-strong)] shadow-xl">
             {/* Every comment, in page order, open ones first. The button says how many there are, so
@@ -699,7 +702,7 @@ export function CommentLayer({
           style={{ borderColor: accent, color: accent, background: `color-mix(in srgb, ${ground} 85%, transparent)` }}>
           {count ? `Comments · ${count}` : 'Comment'}
         </button>
-      </div>
+      </div> : null}
     </div>
   ) : null
 

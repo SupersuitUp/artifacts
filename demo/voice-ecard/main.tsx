@@ -40,7 +40,7 @@ async function main() {
         inner={`${__BLESSOUT__}/backgrounds/fall-leaves.png`} background={`${__BLESSOUT__}/backgrounds/${bg}.png`}
         audio="/card.m4a" media={recordingName('/card.m4a')} seal={brand ? <Mark /> : undefined} mark reply
         blockId={letterBlockId('Robin', 'Sam')} dateLine={dateLine('2026-11-26T12:00:00Z')} />
-      <CommentLayer artifactId="demo2345" rootId="voice-ecard-root" ownerName="Sam" comments="anyone" canShare signedIn={false} isOwner={false}
+      <CommentLayer artifactId="demo2345" rootId="voice-ecard-root" floatingButton={false} ownerName="Sam" comments="anyone" canShare signedIn={false} isOwner={false}
         version={1} accent={freedomDefault.accent} ground={freedomDefault.ground} signIn={null} closesAt={null} requireName={false} knownName={null} />
     </>,
   )
