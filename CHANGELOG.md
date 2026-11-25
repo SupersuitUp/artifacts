@@ -3,6 +3,16 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.74.1 (2026-11-25)
+
+**A voice eCard's letter keeps its face on a brand pack** (issue #18). On a pack that sets its reading face on every paragraph (CW Maison: `[data-cw-maison] p { font-family: "DM Sans" }`), the letter drew in the pack's sans whatever `font:` said, because its paragraphs only inherited the card's face; `font: display` moved only the To/From names. The card now declares its face (and italic) on the letter's paragraphs, the envelope's peek, the cover fallback and the names, with selectors a pack's `[data-pack] p` cannot beat. `font: serif` (the default) draws BlessOut's serif stack, `display` the pack's display face, `sans` its body face, `script` the script.
+
+**The recorder's sign-in door says "Sign in to record"** (issue #17). `SignInDoor` takes `action`, the button's words; it defaults to "Sign in to read".
+
+- DETECTOR: a voice eCard on a pack whose CSS sets `font-family` on `p`; a `/record/<batch>` door.
+- REMEDY: bump. Nothing else.
+- TESTS: `src/reader/voice-ecard-css.test.ts` (new), `src/routes/voice-ecard-page.test.tsx`, `src/routes/record.test.tsx`.
+
 ## 0.74.0 (2026-11-25)
 
 **Voice eCards: `template: voice-ecard`.** A fourth page kind: a greeting card that arrives in an envelope over a scene, opened by a hover or a tap, rising (800 ms), swinging open (950 ms) and zooming (700 ms) to a spread whose inside-right page holds the letter, read along word by word to the sender's voice; Esc or the corner medallion closes it (450 ms); a phone held upright is told to tilt. Ported from BlessOut's card opening: phases, geometry, stylesheet and iOS viewport handling. New front matter, each checked with refusals in words: `from`, `occasion`, `envelope` (a paper or `brand`), `inner`, `background`, `cinemagraph`, `font`, `audio`, and on a voice eCard `to` (required), `cover` (the wrap, right half is the front), `timings` (inline or an address) and `mark: true | false`. Added: a reduced-motion fade, opening from the keyboard, a wax seal with the pack's mark, the gold-foil frame, and the papers shipped as data so a host mounts nothing. The open card keeps card proportions: each page is laid out at 480x640 (3:4, the spread 3:2) and the whole card is scaled as one unit to fit the visible screen in every orientation. A letter's greeting and sign-off keep their own lines ("With love," then "Sam"), by the same rule as markdown letters (`letterLineBreaksIn` in `letter-breaks.ts`). New exports: `VoiceEcard`, `VOICE_ECARD_CSS`, `LISTENED`, `NOTE_AT` (`./reader`); `parseVoiceEcard` and the geometry and read-along rules (`./artifacts`).

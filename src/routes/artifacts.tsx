@@ -567,7 +567,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
           </div>
           {me
             ? <p data-nospeak className="mx-auto max-w-sm px-6 pb-24 text-center text-sm opacity-70">{`Only the owner of this hub records here. You are signed in as ${me.email}.`}</p>
-            : <SignInDoor brand={brand} href={signInOrigin ? signInUrl(signInOrigin, `${siteUrl}/record/${batch}`) : undefined} note="Sign in as this hub's owner to record." />}
+            : <SignInDoor brand={brand} href={signInOrigin ? signInUrl(signInOrigin, `${siteUrl}/record/${batch}`) : undefined} note="Sign in as this hub's owner to record." action="Sign in to record" />}
         </BrandGround>
       )
     }

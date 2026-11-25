@@ -54,7 +54,8 @@ export const NO_PRINT_CSS = `@media print { body * { visibility: hidden !importa
  *  that signs readers in some other way passes `signInNote` to say so in its own words. */
 export const DEFAULT_SIGN_IN_NOTE = 'This page is confidential. Sign in with the Google account your Supersuit account uses, or the address it was shared with.'
 
-export function SignInDoor({ brand, href, note = DEFAULT_SIGN_IN_NOTE }: { brand: BrandPack; href?: string; note?: string }) {
+/** `action` is the button's words: what the reader is about to do (the recorder says "Sign in to record"). */
+export function SignInDoor({ brand, href, note = DEFAULT_SIGN_IN_NOTE, action = 'Sign in to read' }: { brand: BrandPack; href?: string; note?: string; action?: string }) {
   // No href means the host configured no sign-in authority: the door stays, with no way through.
   if (!href) {
     return (
@@ -71,7 +72,7 @@ export function SignInDoor({ brand, href, note = DEFAULT_SIGN_IN_NOTE }: { brand
         className="mt-5 inline-block rounded-lg px-5 py-2 text-sm font-medium"
         style={{ background: brand.accent, color: brand.ground }}
       >
-        Sign in to read
+        {action}
       </a>
     </div>
   )
