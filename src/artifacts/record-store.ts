@@ -4,6 +4,7 @@
 // The store is host-side, like the recipients store; the helpers are browser-safe (the recorder
 // page reads entriesOf and firstWaiting). One document per batch:
 //   <base>RecordBatches/<batchId>   RecordBatch, entries keyed by slug, `order` keeping the order given
+import { musicTrack } from './music.js'
 import type { Firestore } from 'firebase-admin/firestore'
 import { parseVoiceEcardTimings, type VoiceEcardTiming } from './voice-ecard.js'
 
@@ -27,6 +28,7 @@ export type RecordEntry = RecordPerson & {
   pageId?: string
   builtAt?: string
 }
+/** `music`: a track id from the music library (music.ts) or an https address of a bed. */
 export type RecordBatch = { id: string; title: string; music?: string; createdAt: string; order: string[]; entries: Record<string, RecordEntry> }
 export type RecordBatchInput = { title: string; music?: string; people: RecordPerson[] }
 export type RecordTake = { kind: 'raw' | 'mixed'; path: string; mime?: string; seconds?: number; voiceDelay?: number }
@@ -54,7 +56,7 @@ const https = (v: unknown) => { try { return typeof v === 'string' && new URL(v)
 export function parseBatchInput(b: unknown): { ok: true; value: RecordBatchInput } | { ok: false; error: string } {
   const o = (b && typeof b === 'object' ? b : {}) as Record<string, unknown>
   const title = typeof o.title === 'string' && o.title.trim() ? o.title.trim().slice(0, 120) : 'Voice eCards'
-  if (o.music !== undefined && o.music !== null && !https(o.music)) return { ok: false, error: 'music must be an https address of the bed' }
+  if (o.music !== undefined && o.music !== null && !https(o.music) && !(typeof o.music === 'string' && musicTrack(o.music))) return { ok: false, error: 'music must be a track id from the music library or an https address of the bed' }
   if (!Array.isArray(o.people) || !o.people.length) return { ok: false, error: 'people must be a non-empty list of { slug, name, note, photo? }' }
   if (o.people.length > MAX_BATCH_PEOPLE) return { ok: false, error: `a batch holds at most ${MAX_BATCH_PEOPLE} people` }
   const seen = new Set<string>()

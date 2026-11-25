@@ -69,6 +69,8 @@ export type VoiceEcardProps = {
   blockId: string
   /** The date line under the letter. */
   dateLine?: string
+  /** "Music: <song> by <artist>" for a library track (0.75.0): the bed is other artists' music. */
+  musicCredit?: string
 }
 
 const isTouch = () => typeof window !== 'undefined' && (window.matchMedia?.('(pointer: coarse)').matches || window.innerWidth < 768)
@@ -446,7 +448,7 @@ function Letter(p: VoiceEcardProps & { onReply?: (at: number) => void }) {
         ))}
       </blockquote>
       <div className="ve-foot" data-nospeak>
-        <span>{p.dateLine ?? ''}</span>
+        <span>{p.dateLine ?? ''}{p.musicCredit ? <span className="ve-credit" data-music-credit>{p.musicCredit}</span> : null}</span>
         {p.mark ? <a href="https://supersuit.co" target="_blank" rel="noopener">Made with Supersuit</a> : null}
       </div>
       {p.audio ? (

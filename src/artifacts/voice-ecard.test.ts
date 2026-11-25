@@ -109,6 +109,31 @@ describe('front matter: template: voice-ecard', () => {
   })
 })
 
+describe('music: the bed under the voice (0.75.0, BlessOut\'s music library)', () => {
+  it('takes a track id from the catalog, or an https address of a custom track', () => {
+    const t = parseArtifactSource(src(BASE + 'music: silent-night\n'))
+    if (!t.ok) throw new Error(t.error)
+    expect(t.meta.voiceEcard!.music).toEqual({ track: 'silent-night' })
+    const u = parseArtifactSource(src(BASE + 'music: https://cdn.example.com/our-song.mp3\n'))
+    if (!u.ok) throw new Error(u.error)
+    expect(u.meta.voiceEcard!.music).toEqual({ url: 'https://cdn.example.com/our-song.mp3' })
+  })
+  it('none is no music, the same as leaving it out', () => {
+    const r = parseArtifactSource(src(BASE + 'music: none\n'))
+    if (!r.ok) throw new Error(r.error)
+    expect(r.meta.voiceEcard!.music).toBeUndefined()
+  })
+  it('refuses a track the catalog does not hold, in words', () => {
+    const r = parseArtifactSource(src(BASE + 'music: silent-nite\n'))
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error).toContain('music must be')
+  })
+  it('belongs to a voice eCard only', () => {
+    const r = parseArtifactSource('---\ntitle: A page\nsummary: x\nmusic: silent-night\n---\nHello\n')
+    expect(r.ok).toBe(false)
+  })
+})
+
 describe('the choreography: BlessOut\'s phases and timings', () => {
   it('rises 800, opens 950, zooms 700, closes 450', () => {
     expect([RISE_MS, OPEN_MS, ZOOM_MS, CLOSE_MS]).toEqual([800, 950, 700, 450])

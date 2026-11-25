@@ -32,6 +32,18 @@ describe('a batch, as the API takes it', () => {
   }
 })
 
+describe('a batch\'s music (0.75.0)', () => {
+  it('takes a catalog track id as well as an https address', () => {
+    const r = parseBatchInput({ title: 'Christmas', music: 'silent-night', people: PEOPLE })
+    expect(r.ok && r.value.music).toBe('silent-night')
+  })
+  it('refuses an id the catalog does not hold', () => {
+    const r = parseBatchInput({ title: 'Christmas', music: 'silent-nite', people: PEOPLE })
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error).toContain('music')
+  })
+})
+
 describe('the store', () => {
   it('creates a batch with every person waiting, in the order given', async () => {
     const s = memoryRecordStore()

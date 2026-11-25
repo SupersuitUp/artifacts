@@ -202,6 +202,10 @@ describe('the letter on the open card', () => {
     click(q('.ve-letter'))
     await openAll()
   }
+  it('a library track is credited under the letter (0.75.0); no credit, no line', async () => {
+    await opened({ musicCredit: 'Music: Silent Night by HillTopTrio' })
+    expect(q('[data-music-credit]')!.textContent).toBe('Music: Silent Night by HillTopTrio')
+  })
   it('is the timings\' words, in their paragraphs, inside the comment root', async () => {
     await opened()
     const letter = q('#voice-ecard-root [data-voice-ecard-letter]')!

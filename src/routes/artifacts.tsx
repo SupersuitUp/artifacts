@@ -61,7 +61,8 @@ import { VoiceEcard } from '../reader/voice-ecard.js'
 import { Recorder } from '../reader/recorder.js'
 import { createRecordRoutes } from './record-routes.js'
 import { RECORD_BATCH_ID, firstWaiting, type RecordStore } from '../artifacts/record-store.js'
-import { dateLine, letterBlockId, letterText, recordingName, voiceEcardLook, voiceEcardWords } from '../artifacts/voice-ecard-page.js'
+import { parseMusicRef, resolveMusic, type MusicLibrary } from '../artifacts/music.js'
+import { dateLine, letterBlockId, letterText, recordingName, voiceEcardLook, voiceEcardMusicCredit, voiceEcardWords } from '../artifacts/voice-ecard-page.js'
 import { PageAnalytics } from '../reader/page-analytics.js'
 import { analyticsPlan, type AnalyticsConfig } from '../reader/analytics-plan.js'
 import { createPersonalRoutes } from './personal-routes.js'
@@ -184,6 +185,11 @@ export type ArtifactRoutesConfig = {
   /** The recorder's batches (0.74.0, record-store.ts): `/record/<batch>` and `/api/record/...`.
    *  Without it those routes answer 501 and the page 404. */
   record?: RecordStore
+  /** Where the music library's tracks live (0.75.0, music.ts): a base address the catalog's files
+   *  sit under (`https://media.example.com/music`), or a function answering a file's signed address
+   *  for a private bucket. The package ships no audio; without this a batch or card naming a
+   *  catalog track has no bed to play, and an https `music:` still works. */
+  musicLibrary?: MusicLibrary
   /** Signs per-reader links and render tokens. At least 32 characters. Read at request time. */
   recipientSecret?: () => string | undefined
   /** The thresholds `GET /views` measures each send's outcome by (issue #12), over the package's
@@ -573,9 +579,11 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     }
     const b = config.record && RECORD_BATCH_ID.test(batch) ? await config.record.get(batch) : null
     if (!b) notFound()
+    const ref = b.music ? parseMusicRef(b.music) : null
+    const bed = ref?.ok && ref.music ? await resolveMusic(ref.music, config.musicLibrary) : null
     return (
       <BrandGround pack={pack}>
-        <Recorder batch={b} start={firstWaiting(b)} accent={brand.accent} />
+        <Recorder batch={b} start={firstWaiting(b)} accent={brand.accent} {...(bed ? { bed: { url: bed.url, startAt: bed.startAt } } : {})} />
       </BrandGround>
     )
   }
@@ -1002,6 +1010,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
           cover={a.cover} inner={spec.inner} background={spec.background} cinemagraph={spec.cinemagraph}
           audio={spec.audio} media={spec.audio ? recordingName(spec.audio) : undefined}
           seal={Mark ? <Mark className="ve-seal-mark" /> : undefined}
+          musicCredit={voiceEcardMusicCredit(spec)}
           mark={spec.mark && a.mark !== 'none'} reply={canShare} blockId={letterBlockId(a.to ?? '', spec.from)} dateLine={dateLine(a.createdAt)}
           artifactId={a.id} version={a.version ?? (a.versions?.length ?? 0) + 1} ownerName={owner} requireName={a.commentName === 'required' && perReader?.group === true}
         />

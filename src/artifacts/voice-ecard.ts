@@ -8,6 +8,7 @@
 // here number for number so the two cannot be told apart; what this package adds is listed in
 // README "Cards". Pure and browser-safe: the parser, the reader's browser and the tests all read
 // the same rules from this one file.
+import { parseMusicRef, type MusicRef } from './music.js'
 import { normalizeWord } from './narration.js'
 import { begunCount, litWordIndex } from '../reader/karaoke.js'
 import { letterLineBreaksIn } from './letter-breaks.js'
@@ -44,6 +45,10 @@ export type VoiceEcardSpec = {
   font?: VoiceEcardFont
   /** The mixed voice-over-music file. */
   audio?: string
+  /** The bed under the voice (0.75.0): a track from the music library (music.ts) or a custom
+   *  track's https address. `audio:` stays the finished mix; the mixers (the recorder and
+   *  `artifacts-mix`) resolve this to make it, and the card credits a catalog track's artist. */
+  music?: MusicRef
   /** The words, timed, when the file carries them inline. A `timings:` URL is fetched at render. */
   words?: VoiceEcardTiming[]
   /** The small "Made with Supersuit" line under the closed envelope. Default on. */
@@ -61,7 +66,7 @@ export const LINER_FOR: Record<VoiceEcardOccasion, string> = {
 }
 
 /** The front matter keys only a card takes. */
-export const VOICE_ECARD_KEYS = ['from', 'occasion', 'envelope', 'inner', 'background', 'cinemagraph', 'font', 'audio'] as const
+export const VOICE_ECARD_KEYS = ['from', 'occasion', 'envelope', 'inner', 'background', 'cinemagraph', 'font', 'audio', 'music'] as const
 
 /** Lines a card cannot carry, refused in words rather than dropped. */
 export const NOT_ON_A_VOICE_ECARD = ['voice', 'narration', 'narrationHash', 'file'] as const
@@ -140,6 +145,11 @@ export function parseVoiceEcard(d: Record<string, unknown>, body: string): { ok:
   if (d.mark !== undefined && d.mark !== null) {
     if (d.mark !== true && d.mark !== false && d.mark !== 'none') return { ok: false, error: 'mark must be true or false on a voice eCard' }
     spec.mark = d.mark === true
+  }
+  if (d.music !== undefined && d.music !== null) {
+    const m = parseMusicRef(d.music)
+    if (!m.ok) return { ok: false, error: m.error }
+    if (m.music) spec.music = m.music
   }
   let timingsUrl: string | undefined
   if (d.timings !== undefined && d.timings !== null) {

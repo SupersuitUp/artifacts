@@ -2,6 +2,7 @@
 // the Gilded Stationer's navy and gold or the page's own brand, the face, the letter and its words.
 // Server-side (it reads the papers, which only reach the page a voice eCard uses). Pure apart from
 // that, so the route and the tests read one answer.
+import { musicCredit, musicTrack } from './music.js'
 import { blockId } from './anchor.js'
 import { narrationTextFromMarkdown } from './narration.js'
 import { LINER_FOR, timingsFromJson, type VoiceEcardSpec, type VoiceEcardTiming } from './voice-ecard.js'
@@ -72,4 +73,12 @@ export const letterBlockId = (to: string, from: string) => blockId('card', 0, `$
 export function dateLine(iso: string): string {
   const d = new Date(iso)
   return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' })
+}
+
+/** The credit line a card draws under its letter (0.75.0): a catalog track with a known artist,
+ *  "Music: <song> by <artist>". A custom track, a track with no artist on file, or none: nothing. */
+export function voiceEcardMusicCredit(spec: VoiceEcardSpec): string | undefined {
+  if (!spec.music || !('track' in spec.music)) return undefined
+  const t = musicTrack(spec.music.track)
+  return (t && musicCredit(t)) ?? undefined
 }

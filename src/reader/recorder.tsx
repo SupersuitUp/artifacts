@@ -10,6 +10,7 @@ import { useCallback, useMemo, useRef, useState } from 'react'
 import { VoiceRecorder, AudioPlay, type VoiceMemo } from './voice-recorder.js'
 import { entriesOf, firstWaiting, type RecordBatch, type RecordEntry } from '../artifacts/record-store.js'
 import { mixTake, type MixedTake } from './record-mix.js'
+import { mixSettings, type MixSettings } from '../artifacts/mix.js'
 
 export type RecorderProps = {
   batch: RecordBatch
@@ -18,7 +19,10 @@ export type RecorderProps = {
   /** The page's accent. */
   accent?: string
   /** The mix, injectable for tests. */
-  mix?: (voice: Blob, music?: string) => Promise<MixedTake>
+  mix?: (voice: Blob, music: string | undefined, settings: MixSettings) => Promise<MixedTake>
+  /** The bed as the page resolved it (0.75.0): a library track's address and where in the song to
+   *  start. Without it, a batch's https `music` plays from its start. */
+  bed?: { url: string; startAt: number }
 }
 
 const bytesOf = (b: Blob) => (typeof b.arrayBuffer === 'function' ? b.arrayBuffer() : new Response(b).arrayBuffer())
@@ -53,7 +57,7 @@ const durationOf = (b: Blob) => new Promise<number | undefined>((done) => {
 
 type Stage = 'ready' | 'recording' | 'review' | 'saving' | 'saved'
 
-export function Recorder({ batch, start, accent = '#e7cb75', mix = mixTake }: RecorderProps) {
+export function Recorder({ batch, start, accent = '#e7cb75', mix = mixTake, bed }: RecorderProps) {
   const [entries, setEntries] = useState<RecordEntry[]>(() => entriesOf(batch))
   const [at, setAt] = useState(() => start ?? firstWaiting(batch))
   const [stage, setStage] = useState<Stage>('ready')
@@ -82,7 +86,8 @@ export function Recorder({ batch, start, accent = '#e7cb75', mix = mixTake }: Re
       // The raw take first: once it is stored, closing the page loses nothing.
       let entry = await uploadTake(base, 'raw', memo.blob, memo.mime, seconds !== undefined ? { seconds } : {})
       try {
-        const m = await mix(memo.blob, batch.music)
+        const bedUrl = bed?.url ?? (batch.music && /^https:/.test(batch.music) ? batch.music : undefined)
+        const m = await mix(memo.blob, bedUrl, mixSettings({ musicStart: bed?.startAt ?? 0 }))
         entry = { ...entry, ...(await uploadTake(base, 'mixed', m.wav, 'audio/wav', { voiceDelay: m.voiceDelay, ...(seconds === undefined ? { seconds: Math.round(m.seconds * 100) / 100 } : {}) })) }
       } catch {
         // The raw take is kept; the operator's computer can mix it from the raw file.

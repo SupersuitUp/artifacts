@@ -15,7 +15,7 @@ import { createMemoryStateStore } from '../artifacts/state-store.js'
 import { freedomDefault } from '../brand/pack.js'
 import type { ArtifactRecord, ArtifactStore, SaveInput } from '../artifacts/store.js'
 import { ENVELOPE_PAPER } from '../artifacts/voice-ecard-assets.js'
-import { voiceEcardLook, GILDED, recordingName, letterText } from '../artifacts/voice-ecard-page.js'
+import { voiceEcardLook, GILDED, recordingName, letterText, voiceEcardMusicCredit } from '../artifacts/voice-ecard-page.js'
 import { memoryRecipientsStore, summarizeViews } from '../artifacts/recipients-store.js'
 import { ridSig } from '../artifacts/recipients.js'
 import { mergeCommentsState } from '../artifacts/comments.js'
@@ -63,6 +63,13 @@ describe('the page a voice eCard is', () => {
   it('mark: none on the page, or mark: false on the voice eCard, drops the Supersuit line', async () => {
     expect(await page(card({ mark: 'none' }))).not.toContain('Made with Supersuit')
     expect(await page(card({ voiceEcard: { ...card().voiceEcard!, mark: false } }))).not.toContain('Made with Supersuit')
+  })
+  it('music: from the catalog is credited by artist; a custom track or none credits nothing', () => {
+    const spec = card().voiceEcard!
+    expect(voiceEcardMusicCredit({ ...spec, music: { track: 'silent-night' } })).toBe('Music: Silent Night by HillTopTrio')
+    expect(voiceEcardMusicCredit({ ...spec, music: { url: 'https://cdn.example.com/ours.mp3' } })).toBeUndefined()
+    expect(voiceEcardMusicCredit({ ...spec, music: { track: 'reflective-piano' } })).toBeUndefined()
+    expect(voiceEcardMusicCredit(spec)).toBeUndefined()
   })
   it('names the recording the way play tracking does, and reads the body as paragraphs', () => {
     expect(recordingName('https://cdn.example.com/a/card%20mix.m4a?v=2')).toBe('card-mix.m4a')

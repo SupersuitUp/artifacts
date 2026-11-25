@@ -42,10 +42,10 @@ beforeEach(() => {
 })
 afterEach(async () => { await act(async () => root?.unmount()); root = null; vi.useRealTimers(); vi.unstubAllGlobals() })
 
-async function mount(mix = vi.fn(async () => ({ wav: new Blob(['mix'], { type: 'audio/wav' }), voiceDelay: 4, seconds: 3 }))) {
+async function mount(mix = vi.fn(async () => ({ wav: new Blob(['mix'], { type: 'audio/wav' }), voiceDelay: 4, seconds: 3 })), bed?: { url: string; startAt: number }) {
   document.body.innerHTML = '<div id="m"></div>'
   root = createRoot(document.getElementById('m')!)
-  await act(async () => { root!.render(<Recorder batch={batch} mix={mix} />) })
+  await act(async () => { root!.render(<Recorder batch={batch} mix={mix} bed={bed} />) })
   return mix
 }
 const q = (s: string) => document.querySelector<HTMLElement>(s)
@@ -71,11 +71,18 @@ describe('the recorder', () => {
       ['/api/record/abcdefgh23/dana/take', { kind: 'mixed', type: 'audio/wav', digest: 'deadbeef' }],
       ['/api/record/abcdefgh23/dana/take', { kind: 'mixed', type: 'audio/wav', digest: 'deadbeef', done: true, voiceDelay: 4, seconds: 3 }],
     ])
-    expect(mix).toHaveBeenCalledWith(expect.any(Blob), 'https://cdn.example.com/bed.mp3')
+    expect(mix).toHaveBeenCalledWith(expect.any(Blob), 'https://cdn.example.com/bed.mp3', expect.objectContaining({ musicStart: 0 }))
     expect(q('[data-recorder-saved]')!.textContent).toBe('Saved for Dana')
     await act(async () => { await vi.advanceTimersByTimeAsync(900) })
     expect(q('[data-recorder-person]')!.getAttribute('data-recorder-person')).toBe('lee')
     expect(q('[data-recorder-count]')!.textContent).toBe('2 of 3 recorded')
+  })
+  it('a catalog bed the page resolved plays from its own address, from the part of the song the catalog names', async () => {
+    const mix = await mount(undefined, { url: 'https://media.example.com/music/hilltoptrio_silent-night.wav', startAt: 88 })
+    await press('[data-fake-mic]')
+    await press('[data-recorder-save]')
+    await act(async () => { await vi.advanceTimersByTimeAsync(10) })
+    expect(mix).toHaveBeenCalledWith(expect.any(Blob), 'https://media.example.com/music/hilltoptrio_silent-night.wav', expect.objectContaining({ musicStart: 88, voiceDelay: 4 }))
   })
   it('an upload that fails keeps the take in hand to save again, and moves nowhere', async () => {
     await mount()
