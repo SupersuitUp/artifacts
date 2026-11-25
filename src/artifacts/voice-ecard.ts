@@ -10,6 +10,7 @@
 // the same rules from this one file.
 import { normalizeWord } from './narration.js'
 import { begunCount, litWordIndex } from '../reader/karaoke.js'
+import { letterLineBreaksIn } from './letter-breaks.js'
 
 /** What a card is for. Picks the envelope and its liner when the file names neither. */
 export const VOICE_ECARD_OCCASIONS = ['thanksgiving', 'christmas', 'newyear', 'birthday', 'other'] as const
@@ -177,6 +178,26 @@ export function letterParagraphs(words: VoiceEcardTiming[]): { word: string; ind
   if (!out[out.length - 1].length) out.pop()
   return out
 }
+
+/** The letter's paragraphs as lines: the greeting and the sign-off on lines of their own, by the
+ *  letter rule in letter-breaks.ts (letterLineBreaksIn). Every word keeps its index, so the
+ *  read-along's timing is untouched; only where a line ends changes. */
+export function letterLines(words: VoiceEcardTiming[]): { word: string; index: number }[][][] {
+  return withLines(letterParagraphs(words))
+}
+
+/** Any letter's paragraphs (from timings or from the body) as lines, by the same rule. */
+export function withLines(paras: { word: string; index: number }[][]): { word: string; index: number }[][][] {
+  return paras.map((p, i) => {
+    const cuts = letterLineBreaksIn(p.map((x) => x.word), i === 0, i === paras.length - 1)
+    const lines: { word: string; index: number }[][] = [[]]
+    p.forEach((x, k) => { lines[lines.length - 1].push(x); if (cuts.includes(k) && k < p.length - 1) lines.push([]) })
+    return lines
+  })
+}
+
+/** The letter as text with its lines, for the envelope's peek. */
+export const letterPreview = (words: VoiceEcardTiming[]) => letterLines(words).map((p) => p.map((l) => l.map((x) => x.word).join(' ')).join('\n')).join('\n')
 
 /** A letter with no timings, from the body: one paragraph per blank-line block, words split on
  *  whitespace, so the same component draws it. */

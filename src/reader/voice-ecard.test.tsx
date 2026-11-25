@@ -208,6 +208,16 @@ describe('the letter on the open card', () => {
     expect([...letter.querySelectorAll('p')].map((p) => p.textContent!.trim())).toEqual(['Dear Robin,', 'Thank you.'])
     expect(q('#voice-ecard-root [data-block="b-card-0123abcd"]')).not.toBeNull()
   })
+  it('the sign-off breaks after its comma, on the card and in the envelope\'s peek, every word still timed', async () => {
+    const words: VoiceEcardTiming[] = [...WORDS.slice(0, 3), { w: 'you.', s: 5.95, e: 6.4, br: 1 }, { w: 'With', s: 7, e: 7.2 }, { w: 'love,', s: 7.25, e: 7.6 }, { w: 'Sam.', s: 7.7, e: 8 }]
+    render({ words })
+    expect(q('.ve-preview')!.textContent).toBe('Dear Robin,\nThank you.\nWith love,\nSam.')
+    click(q('.ve-letter'))
+    await openAll()
+    const last = [...document.querySelectorAll('[data-voice-ecard-letter] p')].at(-1)!
+    expect(last.innerHTML).toMatch(/love, <\/span><br data-letter-break="true"><span[^>]*data-word="6"/)
+    expect([...document.querySelectorAll('.ve-word')].map((w) => w.getAttribute('data-word'))).toEqual(['0', '1', '2', '3', '4', '5', '6'])
+  })
   it('lights the word at the recording\'s time, said words in full ink, the rest faded', async () => {
     await opened()
     const a = q<HTMLAudioElement>('audio')!

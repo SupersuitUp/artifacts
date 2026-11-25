@@ -19,7 +19,7 @@
 // listened; the letter shrinks to fit but never below readable, and scrolls past that.
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import {
-  CLOSE_MS, FADE_MS, WRAP_FRONT, cardBox, closeSpot, letterFromText, letterParagraphs, nextPhase, reachedLastWord, readAlong,
+  CLOSE_MS, FADE_MS, WRAP_FRONT, cardBox, closeSpot, letterFromText, letterParagraphs, letterPreview, withLines, nextPhase, reachedLastWord, readAlong,
   spreadGeom, tiltHint, viewportSize, wordState, REF_PAGE, REF_LETTER_FONT, type Box, type VoiceEcardPhase, type VoiceEcardTiming,
 } from '../artifacts/voice-ecard.js'
 import { LISTENED, NOTE_AT } from './page-bridge.js'
@@ -218,7 +218,8 @@ export function VoiceEcard(p: VoiceEcardProps) {
     '--ve-env': p.envelope, '--ve-liner': p.liner, '--ve-paper': p.paper, '--ve-foil': p.foil, '--ve-navy': p.navy,
     '--ve-face': p.face, '--ve-face-style': p.italic ? 'italic' : 'normal', '--ve-title': p.title,
   } as CSSProperties
-  const peek = p.words?.length ? p.words.map((w) => w.w).join(' ') : p.letter
+  // The peek shows the letter's own lines: the greeting and the sign-off on lines of their own.
+  const peek = p.words?.length ? letterPreview(p.words) : withLines(letterFromText(p.letter)).map((q) => q.map((l) => l.map((x) => x.word).join(' ')).join('\n')).join('\n')
   const helper = touch ? 'Tap me' : 'Hover over me'
 
   return (
@@ -304,7 +305,7 @@ function Letter(p: VoiceEcardProps) {
   const [now, setNow] = useState(0)
   const heard = useRef(false)
   const words = p.words ?? []
-  const paras = useMemo(() => (words.length ? letterParagraphs(words) : letterFromText(p.letter)), [words, p.letter])
+  const paras = useMemo(() => withLines(words.length ? letterParagraphs(words) : letterFromText(p.letter)), [words, p.letter])
   const at = readAlong(words, now, playing)
 
   // The frame clock, not timeupdate (four times a second is too coarse to land on a word).
@@ -392,14 +393,14 @@ function Letter(p: VoiceEcardProps) {
       <blockquote className={`ve-script${playing && words.length ? ' ve-following' : ''}`} data-voice-ecard-letter style={{ fontSize: REF_LETTER_FONT }}>
         {paras.map((para, i) => (
           <p key={i} className="ve-para">
-            {para.map(({ word, index }) => {
+            {para.map((line, l) => [l > 0 ? <br key={`br-${l}`} data-letter-break /> : null, ...line.map(({ word, index }) => {
               const s = words.length ? wordState(index, at, playing) : null
               return (
                 <span key={index} ref={index === at.lit ? litRef : undefined} className={`ve-word${s ? ` ve-${s}` : ''}`} data-word={index}>
                   {word}{' '}
                 </span>
               )
-            })}
+            })])}
           </p>
         ))}
       </blockquote>

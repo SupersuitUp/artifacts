@@ -6,7 +6,7 @@ import { parseArtifactSource } from './front-matter.js'
 import {
   VOICE_ECARD_OCCASIONS, ENVELOPE_COLORS, DEFAULT_ENVELOPE, RISE_MS, OPEN_MS, ZOOM_MS, CLOSE_MS, OPENING_MS, nextPhase,
   spreadGeom, viewportSize, cardBox, closeSpot, tiltHint, onePage, WRAP_FRONT, wrapFrontCrop, openCardBox, letterFontPx, REF_PAGE, REF_LETTER_FONT,
-  letterParagraphs, readAlong, wordState, reachedLastWord, timingsFromJson, letterMismatch, type VoiceEcardPhase, type VoiceEcardTiming,
+  letterParagraphs, letterLines, letterPreview, readAlong, wordState, reachedLastWord, timingsFromJson, letterMismatch, type VoiceEcardPhase, type VoiceEcardTiming,
 } from './voice-ecard.js'
 import { ENVELOPE_PAPER, LINER_PAPER, LETTER_PAPER } from './voice-ecard-assets.js'
 import { LINER_FOR } from './voice-ecard.js'
@@ -252,5 +252,44 @@ describe('the papers ship inside the package', () => {
     for (const c of ENVELOPE_COLORS) expect(ENVELOPE_PAPER[c], c).toMatch(/^data:image\/webp;base64,/)
     for (const o of VOICE_ECARD_OCCASIONS) expect(LINER_PAPER[LINER_FOR[o]], o).toMatch(/^data:image\/webp;base64,/)
     expect(LETTER_PAPER).toMatch(/^data:image\/webp;base64,/)
+  })
+})
+
+describe('a letter\'s greeting and sign-off keep their lines (Gary, 2026-11-24: "the sign off needs new line from name")', () => {
+  const timed = (text: string): VoiceEcardTiming[] => {
+    const paras = text.split('\n')
+    const out: VoiceEcardTiming[] = []
+    let t = 1
+    paras.forEach((p, i) => p.split(' ').forEach((w, k, all) => { out.push({ w, s: t, e: t + 0.3, ...(k === all.length - 1 && i < paras.length - 1 ? { br: 1 } : {}) }); t += 0.4 }))
+    return out
+  }
+  const lines = (text: string) => letterLines(timed(text)).map((p) => p.map((l) => l.map((x) => x.word).join(' ')))
+  for (const [close, a, b] of [
+    ['With love, Sam.', 'With love,', 'Sam.'],
+    ['Love, Gary', 'Love,', 'Gary'],
+    ['Gratefully, Wilson and Gary.', 'Gratefully,', 'Wilson and Gary.'],
+    ['Happy Thanksgiving, Gary', 'Happy Thanksgiving,', 'Gary'],
+  ]) {
+    it(`"${close}" signs off on two lines`, () => {
+      expect(lines(`Dear Robin,\nThank you for this year.\n${close}`).at(-1)).toEqual([a, b])
+    })
+  }
+  it('a long last paragraph with a comma in it does not break', () => {
+    expect(lines('Dear Robin,\nI am grateful for you, today and always.').at(-1)).toEqual(['I am grateful for you, today and always.'])
+    expect(lines('Dear Robin,\nThank you for every morning, every night, and every meal we shared, Sam.').at(-1)).toEqual(['Thank you for every morning, every night, and every meal we shared, Sam.'])
+  })
+  it('a greeting that already ends its paragraph stays one line; one run into the letter gets its own line', () => {
+    expect(lines('Dear Robin,\nThank you.\nLove, Sam')[0]).toEqual(['Dear Robin,'])
+    expect(lines('Dear Robin, thank you for this year.\nLove, Sam')[0]).toEqual(['Dear Robin,', 'thank you for this year.'])
+    expect(lines('Thank you, Robin, for this year.\nLove, Sam')[0]).toEqual(['Thank you, Robin, for this year.'])
+  })
+  it('every word keeps its place and its timing: the break is visual only', () => {
+    const words = timed('Dear Robin, thank you.\nWith love, Sam.')
+    const flat = letterLines(words).flat(2)
+    expect(flat.map((x) => x.index)).toEqual(words.map((_, i) => i))
+    expect(flat.map((x) => x.word)).toEqual(words.map((w) => w.w))
+  })
+  it('the envelope\'s peek shows the same lines', () => {
+    expect(letterPreview(timed('Dear Robin,\nThank you.\nWith love, Sam.'))).toBe('Dear Robin,\nThank you.\nWith love,\nSam.')
   })
 })
