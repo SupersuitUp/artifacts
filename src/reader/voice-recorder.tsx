@@ -100,11 +100,17 @@ export type VoiceRecordingOptions = {
   onStop: (memo: VoiceMemo) => void
   onError?: (message: string) => void
   maxMs?: number
+  /** Live words from the browser's speech recognition while recording. Default on. Off where no
+   *  words are wanted: on iPhone Safari the recogniser and MediaRecorder contend for the one
+   *  microphone, and the recording can come out silent (Gary, 2026-11-25, a voice eCard reply). */
+  transcribe?: boolean
+  /** The microphone stream, the moment recording starts: for a level meter on the same stream. */
+  onStream?: (stream: MediaStream) => void
 }
 
 /** The recording itself, for any surface that draws its own control (the voice eCard's reply): the
  *  same MediaRecorder, types, live transcript and cap as the mic button below. */
-export function useVoiceRecording({ onStart, onLive, onStop, onError, maxMs = MAX_MEMO_MS }: VoiceRecordingOptions) {
+export function useVoiceRecording({ onStart, onLive, onStop, onError, maxMs = MAX_MEMO_MS, transcribe = true, onStream }: VoiceRecordingOptions) {
   const [supported, setSupported] = useState(false)
   const [live, setLive] = useState(false)
   const [note, setNote] = useState(false)
@@ -157,7 +163,7 @@ export function useVoiceRecording({ onStart, onLive, onStop, onError, maxMs = MA
       onStop({ blob: new Blob(chunks, { type: baseMime(type) }), mime: baseMime(type) })
     }
     let recog: Recognition | null = null
-    const Ctor = recognitionCtor()
+    const Ctor = transcribe ? recognitionCtor() : null
     if (Ctor) {
       try {
         recog = new Ctor()
@@ -185,6 +191,7 @@ export function useVoiceRecording({ onStart, onLive, onStop, onError, maxMs = MA
     setElapsed(0)
     setRecording(true)
     onStart?.()
+    try { onStream?.(stream) } catch { /* a meter that fails never stops the recording */ }
     recorder.start(1000)
   }
   return { supported, live, note, recording, elapsed, start, stop }

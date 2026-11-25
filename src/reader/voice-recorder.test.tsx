@@ -6,7 +6,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { CommentCard, type SavedMemo } from './comment-card.js'
 import { CommentLayer } from './comment-layer.js'
-import { LIVE_LINE, pickRecordingType, type VoiceHost } from './voice-recorder.js'
+import { LIVE_LINE, pickRecordingType, useVoiceRecording, type VoiceHost } from './voice-recorder.js'
 import type { DeviceAudio } from './device-audio.js'
 import { deviceNotes } from './device-notes.js'
 import { MAX_MEMO_MS } from '../artifacts/audio.js'
@@ -387,5 +387,35 @@ describe('memos in the comment layer', () => {
     expect(posted).toEqual([expect.objectContaining({ audio: 'personal/dir/Memo1234567890abcd.webm' })])
     expect(deviceNotes('abc23456')).toEqual([])
     expect(m.size).toBe(0)
+  })
+})
+
+// Gary, 2026-11-25, iPhone Safari: "I'm unable to hear the recording that I recorded". The hook
+// started webkitSpeechRecognition beside MediaRecorder, and on iOS the two contend for the one
+// microphone. A surface that needs no live words (the voice eCard's reply) asks for none.
+describe('useVoiceRecording({ transcribe: false })', () => {
+  function Probe(props: { transcribe?: boolean; onStream?: (s: MediaStream) => void }) {
+    const r = useVoiceRecording({ onStop: () => {}, ...props })
+    return <button type="button" data-probe onClick={() => void r.start()}>{r.recording ? 'on' : 'off'}</button>
+  }
+  it('never constructs a speech recogniser, on Chrome or on an iPhone, and hands over the stream it records', async () => {
+    for (const kind of ['chrome', 'iphone'] as const) {
+      stubStorage(); browser(kind)
+      const onStream = vi.fn()
+      await mount(<Probe transcribe={false} onStream={onStream} />)
+      await act(async () => { document.querySelector<HTMLButtonElement>('[data-probe]')!.click() })
+      await flush()
+      expect(recognitions, kind).toHaveLength(0)
+      expect(recorders, kind).toHaveLength(1)
+      expect(onStream, kind).toHaveBeenCalledTimes(1)
+      await act(async () => root?.unmount()); root = null
+    }
+  })
+  it('every other surface keeps its live words (the default is unchanged)', async () => {
+    stubStorage(); browser('iphone')
+    await mount(<Probe />)
+    await act(async () => { document.querySelector<HTMLButtonElement>('[data-probe]')!.click() })
+    await flush()
+    expect(recognitions).toHaveLength(1)
   })
 })

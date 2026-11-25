@@ -9,13 +9,23 @@ import type { VoiceEcardSpec, VoiceEcardTiming } from '../../src/artifacts/voice
 
 declare const __BLESSOUT__: string
 // ?fakemic=1: headless Chrome cannot grant a microphone, so the reply records the demo voice file.
-if (new URLSearchParams(location.search).has('fakemic')) {
+// ?fakemic=silent: a microphone that hears nothing, to see the "we didn't catch any sound" check.
+const fakemic = new URLSearchParams(location.search).get('fakemic')
+if (fakemic) {
   navigator.mediaDevices.getUserMedia = async () => {
     const ctx = new AudioContext()
+    const dest = ctx.createMediaStreamDestination()
+    if (fakemic === 'silent') {
+      const quiet = ctx.createGain()
+      quiet.gain.value = 0
+      const osc = ctx.createOscillator()
+      osc.connect(quiet).connect(dest)
+      osc.start()
+      return dest.stream
+    }
     const buf = await ctx.decodeAudioData(await (await fetch('/card.m4a')).arrayBuffer())
     const src = ctx.createBufferSource()
     src.buffer = buf
-    const dest = ctx.createMediaStreamDestination()
     src.connect(dest)
     src.start()
     return dest.stream
