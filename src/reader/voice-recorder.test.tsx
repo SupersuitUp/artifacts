@@ -390,7 +390,7 @@ describe('memos in the comment layer', () => {
   })
 })
 
-// Gary, 2026-11-25, iPhone Safari: "I'm unable to hear the recording that I recorded". The hook
+// the operator, 2026-11-25, iPhone Safari: "I'm unable to hear the recording that I recorded". The hook
 // started webkitSpeechRecognition beside MediaRecorder, and on iOS the two contend for the one
 // microphone. A surface that needs no live words (the voice eCard's reply) asks for none.
 describe('useVoiceRecording({ transcribe: false })', () => {

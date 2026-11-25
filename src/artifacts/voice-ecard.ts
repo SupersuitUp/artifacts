@@ -251,7 +251,7 @@ export type SpreadGeometry = {
   vw: number; vh: number
 }
 
-/** THE OPEN CARD HAS ONE SHAPE (Gary, 2026-11-24, an iPhone held sideways: "the card should shrink
+/** THE OPEN CARD HAS ONE SHAPE (the operator, 2026-11-24, an iPhone held sideways: "the card should shrink
  *  proportionally to what a card would, like card proportions. So the text could be very small,
  *  which is okay"). Each page is laid out at this reference size, 3:4, and the whole card, art,
  *  letter, type, buttons and frame, is scaled as one unit to fit the screen. The letter never

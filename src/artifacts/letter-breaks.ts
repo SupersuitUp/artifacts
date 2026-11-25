@@ -69,7 +69,7 @@ export function remarkLetterBreaks() {
   }
 }
 
-// THE SAME RULE FOR A LETTER BUILT FROM WORDS (a voice eCard's timings, 0.74.0; Gary, 2026-11-24:
+// THE SAME RULE FOR A LETTER BUILT FROM WORDS (a voice eCard's timings, 0.74.0; the operator, 2026-11-24:
 // "the sign off needs new line from name"). There are no typed line breaks to keep there: the
 // timings say where paragraphs end and nothing more, so "With love, Sam." arrived as one line. Here
 // the greeting and the sign-off are found by shape and broken after their comma, as a line break
@@ -78,7 +78,7 @@ export function remarkLetterBreaks() {
 //   first comma comes within four words with more of the letter after it ("Dear Robin, thank you").
 //   A SIGN-OFF: the letter's last paragraph is short (SHORT characters or fewer), and the words
 //   after its last comma are a name: one to five words, each capitalised or "and" / "&"
-//   ("With love, Sam.", "Gratefully, Wilson and Gary.", "Happy Thanksgiving, Gary").
+//   ("With love, Sam.", "Gratefully, Dana and Sam.", "Happy Thanksgiving, Robin").
 const GREETING = /^(dear|hi|hello|hey|to|my)$/i
 const NAME_WORD = /^([A-ZÀ-ɏ][^\s]*|and|&)$/
 

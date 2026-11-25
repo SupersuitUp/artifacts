@@ -135,7 +135,7 @@ describe('the choreography: BlessOut\'s phases and timings', () => {
 
 describe('geometry', () => {
   const win = (w: number, h: number, vv?: { width: number; height: number; scale: number }) => ({ innerWidth: w, innerHeight: h, document: { documentElement: { clientWidth: w, clientHeight: h } }, visualViewport: vv ?? null })
-  // Gary, 2026-11-24, on an iPhone held sideways: "the card should shrink proportionally to what a
+  // the operator, 2026-11-24, on an iPhone held sideways: "the card should shrink proportionally to what a
   // card would, like card proportions. So the text could be very small, which is okay." The open
   // card is one reference-size card (3:4 pages, a 3:2 spread) scaled as a unit to fit the screen.
   const sizes: [number, number][] = [[844, 390], [390, 844], [932, 430], [1280, 800], [2000, 921]]
@@ -255,7 +255,7 @@ describe('the papers ship inside the package', () => {
   })
 })
 
-describe('a letter\'s greeting and sign-off keep their lines (Gary, 2026-11-24: "the sign off needs new line from name")', () => {
+describe('a letter\'s greeting and sign-off keep their lines (the operator, 2026-11-24: "the sign off needs new line from name")', () => {
   const timed = (text: string): VoiceEcardTiming[] => {
     const paras = text.split('\n')
     const out: VoiceEcardTiming[] = []
@@ -266,9 +266,9 @@ describe('a letter\'s greeting and sign-off keep their lines (Gary, 2026-11-24: 
   const lines = (text: string) => letterLines(timed(text)).map((p) => p.map((l) => l.map((x) => x.word).join(' ')))
   for (const [close, a, b] of [
     ['With love, Sam.', 'With love,', 'Sam.'],
-    ['Love, Gary', 'Love,', 'Gary'],
-    ['Gratefully, Wilson and Gary.', 'Gratefully,', 'Wilson and Gary.'],
-    ['Happy Thanksgiving, Gary', 'Happy Thanksgiving,', 'Gary'],
+    ['Love, Dana', 'Love,', 'Dana'],
+    ['Gratefully, Dana and Sam.', 'Gratefully,', 'Dana and Sam.'],
+    ['Happy Thanksgiving, Robin', 'Happy Thanksgiving,', 'Robin'],
   ]) {
     it(`"${close}" signs off on two lines`, () => {
       expect(lines(`Dear Robin,\nThank you for this year.\n${close}`).at(-1)).toEqual([a, b])

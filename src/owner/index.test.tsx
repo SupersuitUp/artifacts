@@ -121,7 +121,8 @@ describe('ArtifactsTile on a desktop: the columns as they were', () => {
     expect([...d.querySelectorAll('a[data-show-more]')].filter(onDesktop)).toHaveLength(0)
     const outcomes = await renderMany({ view: 'outcomes' })
     expect(classes(outcomes.querySelector('[data-columns]')!)).toContain('lg:grid-cols-[13rem_minmax(0,1fr)]')
-    expect([...outcomes.querySelectorAll('[data-outcome]')].filter(onDesktop)).toHaveLength(5)
+    // One column per rung of OUTCOMES: six since `listened` (0.74.0).
+    expect([...outcomes.querySelectorAll('[data-outcome]')].filter(onDesktop)).toHaveLength(6)
   })
 })
 

@@ -1,12 +1,12 @@
 'use client'
-// "Reply with your voice" on a voice eCard: the one way to answer it (Gary, 2026-11-25: "Remove
+// "Reply with your voice" on a voice eCard: the one way to answer it (the operator, 2026-11-25: "Remove
 // comment feature methinks ya?"). No comment layer, no selection to comment, no pins, no threads:
 // it opens straight into a recorder drawn in the card's own language, and Send uploads the memo
 // exactly as a comment's recording (hostVoice, scope `comment`) and appends it to the page's
 // comments slot, anchored to the letter at the second the voice was at. That slot is the record the
 // owner's reader summary reads, so the reply shows there and `goal: respond` counts it.
 //
-// THE CONTROL NEVER MOVES (Gary, 2026-11-25, iPhone: "It's hard to see the UI elements for playing
+// THE CONTROL NEVER MOVES (the operator, 2026-11-25, iPhone: "It's hard to see the UI elements for playing
 // your recording, and the record button becomes off-center when you click the record button").
 // One round button in one fixed slot is the mic while idle and the stop while recording; the line
 // under it is reserved and holds the label, then the time, in navy. A recorded take gets a real
@@ -15,6 +15,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { hostVoice, useVoiceRecording, type VoiceHost, type VoiceMemo } from './voice-recorder.js'
 import { COMMENTS_SLOT, MAX_COMMENT_NAME_CHARS } from '../artifacts/comments.js'
+import { NO_ZOOM_FONT } from './no-zoom.js'
 
 /** The reply's colours on the card's parchment, checked against WCAG AA in the tests. */
 export const REPLY_TOKENS = {
@@ -66,7 +67,7 @@ function StopGlyph() { return <span aria-hidden className="ve-rr-stop" /> }
 function PlayGlyph() { return <svg viewBox="0 0 16 16" width="22" height="22" aria-hidden><path d="M4.5 2.5v11l9-5.5z" fill="currentColor" /></svg> }
 function PauseGlyph() { return <svg viewBox="0 0 16 16" width="22" height="22" aria-hidden><rect x="3.5" y="2.5" width="3" height="11" rx="1" fill="currentColor" /><rect x="9.5" y="2.5" width="3" height="11" rx="1" fill="currentColor" /></svg> }
 
-// ---- Hearing it, and seeing it (Gary, 2026-11-25, iPhone Safari: "I'm unable to hear the
+// ---- Hearing it, and seeing it (the operator, 2026-11-25, iPhone Safari: "I'm unable to hear the
 // recording that I recorded, and there was no waveforms that made me feel confident that my voice
 // was being recorded"). A live meter on the microphone's own stream while recording; the take
 // decoded after it stops, drawn as its waveform, checked for sound, and played through Web Audio
@@ -325,7 +326,7 @@ export function VoiceReply({ artifactId, blockId, ownerName, version, at, requir
           <TakePlayer src={url} type={memo.mime} check={check} fallbackMs={took} />
           {silent ? <p className="ve-rr-silent" role="alert" data-reply-silent>{SILENT_LINE}</p> : null}
           {requireName ? (
-            <input name="by" className="ve-rr-name" placeholder="Your first name" maxLength={MAX_COMMENT_NAME_CHARS} value={name} onChange={(e) => setName(e.target.value)} />
+            <input name="by" className="ve-rr-name" style={NO_ZOOM_FONT} placeholder="Your first name" maxLength={MAX_COMMENT_NAME_CHARS} value={name} onChange={(e) => setName(e.target.value)} />
           ) : null}
           <div className="ve-rr-actions">
             <button type="button" className="ve-rr-send" onClick={() => void send()} disabled={stage === 'sending' || !check || silent} data-voice-reply-send>
@@ -361,7 +362,7 @@ export function VoiceReply({ artifactId, blockId, ownerName, version, at, requir
   )
 }
 
-/** The sheet the reply lives in (Gary, 2026-11-25: "the controls should sit above the letter ...
+/** The sheet the reply lives in (the operator, 2026-11-25: "the controls should sit above the letter ...
  *  more like a pop-up"): over the open card, in real screen pixels (never inside the scaled card),
  *  sliding up from the bottom on a phone and a centred panel on a large screen. */
 export const REPLY_SHEET_CSS = String.raw`

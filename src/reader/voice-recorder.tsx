@@ -102,7 +102,7 @@ export type VoiceRecordingOptions = {
   maxMs?: number
   /** Live words from the browser's speech recognition while recording. Default on. Off where no
    *  words are wanted: on iPhone Safari the recogniser and MediaRecorder contend for the one
-   *  microphone, and the recording can come out silent (Gary, 2026-11-25, a voice eCard reply). */
+   *  microphone, and the recording can come out silent (the operator, 2026-11-25, a voice eCard reply). */
   transcribe?: boolean
   /** The microphone stream, the moment recording starts: for a level meter on the same stream. */
   onStream?: (stream: MediaStream) => void

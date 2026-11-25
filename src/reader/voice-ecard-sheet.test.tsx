@@ -1,4 +1,4 @@
-// The reply sheet (Gary, 2026-11-25: "I think that the controls should sit above the letter or
+// The reply sheet (the operator, 2026-11-25: "I think that the controls should sit above the letter or
 // whatever. So it's more like a pop-up or something."). "Reply with your voice" opens a sheet over
 // the card, in real screen pixels; the letter never shrinks, reflows or moves for it.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'

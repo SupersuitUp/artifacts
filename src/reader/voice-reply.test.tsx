@@ -1,4 +1,4 @@
-// "Reply with your voice" on a voice eCard. Gary, 2026-11-25, on his iPhone: "It's hard to see the
+// "Reply with your voice" on a voice eCard. the operator, 2026-11-25, on an iPhone: "It's hard to see the
 // UI elements for playing your recording, and the record button becomes off-center when you click
 // the record button." The reply's control sits in a fixed slot that never moves between idle,
 // recording and recorded; the time and labels are navy and readable; playback is a real control.
@@ -178,7 +178,7 @@ describe('readable on the parchment (WCAG AA)', () => {
   })
 })
 
-// Gary, 2026-11-25, iPhone Safari: "I'm unable to hear the recording that I recorded, and there
+// the operator, 2026-11-25, iPhone Safari: "I'm unable to hear the recording that I recorded, and there
 // was no waveforms that made me feel confident that my voice was being recorded."
 describe('confidence that the voice was caught', () => {
   it('the reply asks for no live words, so nothing on an iPhone competes for the microphone', async () => {

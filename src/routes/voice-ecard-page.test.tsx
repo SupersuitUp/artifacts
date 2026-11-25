@@ -105,7 +105,7 @@ describe('publishing a voice eCard', () => {
   })
 })
 
-// Gary, 2026-11-25: "Remove comment feature methinks ya?" A voice eCard has no comment layer at all;
+// the operator, 2026-11-25: "Remove comment feature methinks ya?" A voice eCard has no comment layer at all;
 // "Reply with your voice" is the one way to answer, and its reply is the same comments-slot record.
 describe('no comments on a voice eCard, one way to answer', () => {
   const RS = 'r'.repeat(40)
