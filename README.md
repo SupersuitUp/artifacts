@@ -1592,10 +1592,15 @@ voice eCard takes no `voice:` or `narration:` (its voice is `audio:`), and any v
 another kind of page is refused. A republish that leaves `template:` out stays a voice eCard; one
 that says `template: document` is refused (409).
 
-**Replies.** A voice eCard takes shared comments from anyone unless the file says `comments:`
-otherwise, so the open card shows "Reply with your voice". It pauses the recording and opens the
-page's own comment card, pinned to the letter at that second, with its recorder: a reader on their
-own link answers by voice with no account, exactly as on a document.
+**Replies.** A voice eCard has no comment layer: no selection to comment, no pins, no threads.
+It takes replies from anyone unless the file says `comments: off`, and "Reply with your voice" is
+the one way to answer. It pauses the letter and opens a sheet over the card, in real screen pixels
+so every control stays 44 px or more: one record button that never moves (a live level meter under
+it), then the take's waveform with play and pause, "Send to <owner>" and "Record again". A silent
+or unreadable take says so and cannot be sent. Send uploads the recording as a comment's and appends
+it to the page's comments slot, pinned to the letter at that second, so the owner's reader summary
+shows it and `goal: respond` counts it; a reader on their own link answers with no account. The
+reply asks the browser for no live transcript, which on iPhone Safari competes for the microphone.
 
 **Tracking is the hub's.** Per-reader and tracked links, the view and its active seconds, plays
 (the recording carries `data-artifact-media`) and comments work as on a document. A play that
