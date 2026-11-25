@@ -18,6 +18,7 @@ import type { Definition } from './definitions.js'
 import type { FileBody } from './file-page.js'
 import type { CommentsMode, CommentsVisible } from './comments.js'
 import type { AskData } from './asks.js'
+import type { VoiceEcardSpec } from './voice-ecard.js'
 import { applySettingsPatch, settleOnPublish, type DeclaredSettings, type SettingsPatch } from './settings.js'
 
 export type ArtifactRecord = {
@@ -57,6 +58,9 @@ export type ArtifactRecord = {
   goal?: ArtifactGoal
   /** `mark: none`: the page leaves out the pack's mark; see ArtifactMeta.mark. */
   mark?: 'none'
+  /** `template: voice-ecard`: the envelope, the art, the voice and the timed letter (voice-ecard.ts). Content: a
+   *  republish replaces it whole. */
+  voiceEcard?: VoiceEcardSpec
   /** The page's language and its translations by page id; see ArtifactMeta.lang/translations. */
   lang?: string
   translations?: Record<string, string>
@@ -114,7 +118,7 @@ export type ArtifactListItem = { id: string; title: string; summary: string; tem
 
 /** The kind a stored page is: anything not saved as a broadcast is a document, so pages saved
  *  before kinds existed list where they always would have. */
-export const kindOf = (a: { template?: string }): ArtifactKind => (a.template === 'broadcast' || a.template === 'file' ? a.template : 'document')
+export const kindOf = (a: { template?: string }): ArtifactKind => (a.template === 'broadcast' || a.template === 'file' || a.template === 'voice-ecard' ? a.template : 'document')
 
 /** The owner's list of one kind, newest first: the same rule every store applies. */
 export function listOfKind(pages: Iterable<Partial<ArtifactRecord> & { id: string }>, kind: ArtifactKind): ArtifactListItem[] {
@@ -300,6 +304,7 @@ async function saveArtifact(col: Col, input: SaveInput): Promise<SaveResult> {
     ...(input.meta.history ? { history: input.meta.history } : {}),
     ...(input.meta.definitions?.length ? { definitions: input.meta.definitions } : {}),
     ...(input.meta.file ? { file: input.meta.file } : {}),
+    ...(input.meta.voiceEcard ? { voiceEcard: input.meta.voiceEcard } : {}),
   }
   if (input.id) {
     const existing = await getArtifact(col, input.id)
@@ -363,6 +368,9 @@ async function saveArtifact(col: Col, input: SaveInput): Promise<SaveResult> {
       translations: input.meta.translations ?? FieldValue.delete(),
       ...(input.meta.definitions?.length ? {} : { definitions: FieldValue.delete() }),
       ...(input.meta.file ? {} : { file: FieldValue.delete() }),
+      // A voice eCard is content: the whole spec replaces the stored one (an update would merge a nested
+      // map, keeping words or art the file no longer has), and a page that is no voice eCard has none.
+      voiceEcard: input.meta.voiceEcard ?? FieldValue.delete(),
     }
     // `voice: none` is the page declaring it has no audio. An update merges, so the recording it
     // had would otherwise survive every republish; clear it on purpose, and the player goes with it.

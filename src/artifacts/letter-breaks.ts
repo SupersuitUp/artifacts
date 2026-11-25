@@ -68,3 +68,33 @@ export function remarkLetterBreaks() {
     visit(tree)
   }
 }
+
+// THE SAME RULE FOR A LETTER BUILT FROM WORDS (a voice eCard's timings, 0.74.0; Gary, 2026-11-24:
+// "the sign off needs new line from name"). There are no typed line breaks to keep there: the
+// timings say where paragraphs end and nothing more, so "With love, Sam." arrived as one line. Here
+// the greeting and the sign-off are found by shape and broken after their comma, as a line break
+// only: every word stays the same word in the same place.
+//   A GREETING: the letter's first paragraph opens with Dear, Hi, Hello, Hey, To or My, and its
+//   first comma comes within four words with more of the letter after it ("Dear Robin, thank you").
+//   A SIGN-OFF: the letter's last paragraph is short (SHORT characters or fewer), and the words
+//   after its last comma are a name: one to five words, each capitalised or "and" / "&"
+//   ("With love, Sam.", "Gratefully, Wilson and Gary.", "Happy Thanksgiving, Gary").
+const GREETING = /^(dear|hi|hello|hey|to|my)$/i
+const NAME_WORD = /^([A-ZÀ-ɏ][^\s]*|and|&)$/
+
+/** Where one paragraph of a words-built letter breaks its line: the indexes (within the paragraph)
+ *  of the words a line ends after. `first` and `last` say whether it is the letter's first or last. */
+export function letterLineBreaksIn(words: readonly string[], first: boolean, last: boolean): number[] {
+  const out: number[] = []
+  if (first && words.length > 1 && GREETING.test(words[0])) {
+    const c = words.findIndex((w) => /,$/.test(w))
+    if (c !== -1 && c <= 3 && c < words.length - 1) out.push(c)
+  }
+  if (last && words.length > 1 && words.join(' ').length <= SHORT) {
+    let c = -1
+    for (let i = words.length - 2; i >= 0; i--) if (/,$/.test(words[i])) { c = i; break }
+    const name = c === -1 ? [] : words.slice(c + 1)
+    if (name.length >= 1 && name.length <= 5 && name.every((w) => NAME_WORD.test(w)) && !out.includes(c)) out.push(c)
+  }
+  return out.sort((a, b) => a - b)
+}

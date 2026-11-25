@@ -1,6 +1,6 @@
 // The hub's shell routes, built once. Storage lives in the hub's own Firestore under tenants/hub/.
 // Every app/ route file is a thin call into what this returns.
-import { createArtifactAssets, createArtifactRoutes, createArtifactStore, createPersonalStore, createReadersStore, createRecipientsStore, createStateStore } from '@supersuit/artifacts'
+import { createArtifactAssets, createArtifactRoutes, createArtifactStore, createPersonalStore, createReadersStore, createRecipientsStore, createRecordStore, createStateStore } from '@supersuit/artifacts'
 import { getAdminBucket, getAdminDb, getAdminPrivateBucket } from '@/lib/firebase-admin'
 import { admins, ownerEmail, publishKey } from '@/lib/hub-env'
 import { hubTenant } from '@/tenant'
@@ -29,6 +29,8 @@ export function hubRoutes() {
     // Per-reader links (`links: per-reader`): who each link was made for, signed with one secret.
     recipients: createRecipientsStore(getAdminDb(), base),
     recipientSecret: () => process.env.ARTIFACT_RECIPIENT_SECRET?.trim() || undefined,
+    // The recorder's batches (/record/<batch>): the owner records voice eCards, one person at a time.
+    record: createRecordStore(getAdminDb(), base),
     // Readers' answers on pages that declare `state:`. firestore.indexes.json carries the composite
     // its comments feed needs (artifactState: slot, at).
     state: createStateStore(getAdminDb(), base),

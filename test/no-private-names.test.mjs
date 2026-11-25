@@ -14,7 +14,9 @@ const BLOCKED = new Set([
   '40405cea63a5d1da', '62865e1183f651c6', '6ffa280d27a9441e',
 ])
 const TEXT = new Set(['.ts', '.tsx', '.mjs', '.js', '.md', '.json', '.yaml', '.yml', '.css', '.html', '.txt'])
-const SKIP = (f) => f === 'package-lock.json' || f.startsWith('vendor/') || f.includes('/vendor/')
+// The voice eCard's papers are base64 image data, not words, and scanning half a megabyte of it
+// only slows the test.
+const SKIP = (f) => f === 'package-lock.json' || f.startsWith('vendor/') || f.includes('/vendor/') || f === 'src/artifacts/voice-ecard-assets.ts'
 const root = resolve(__dirname, '..')
 const hash = (w) => createHash('sha256').update(w).digest('hex').slice(0, 16)
 

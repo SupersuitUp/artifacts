@@ -11,6 +11,7 @@ import { parseGoal, checkGoalAgainstBody, type ArtifactGoal } from './goal.js'
 import { parseLang, parseTranslations } from './language.js'
 import { parseFileBody, type FileBody } from './file-page.js'
 import { parseAsks, askcardIds, mergeAsksState, type AskData } from './asks.js'
+import { VOICE_ECARD_KEYS, parseVoiceEcard, type VoiceEcardSpec } from './voice-ecard.js'
 
 export type ArtifactMeta = {
   title: string
@@ -95,8 +96,11 @@ export type ArtifactMeta = {
    *  `toc:`: a republish without the line goes back to read. */
   goal?: ArtifactGoal
   /** `mark: none` (supersuit-dev#2151): this page leaves out the pack's mark that every page of a
-   *  branded hub shows above the kicker. Content, like `toc:`: a republish without it shows it. */
+   *  branded hub shows above the kicker. Content, like `toc:`: a republish without it shows it.
+   *  On a voice eCard, `mark: true | false` is the voice eCard's own line instead (VoiceEcardSpec.mark). */
   mark?: 'none'
+  /** `template: voice-ecard` (0.74.0): the envelope, the art, the voice and the timed letter (voice-ecard.ts). */
+  voiceEcard?: VoiceEcardSpec
   /** `lang: es` (supersuit-dev#2156): the language the page is written in, a BCP 47 tag. Marks the
    *  page's words for screen readers and translation, and sets og:locale. Content, like `toc:`. */
   lang?: string
@@ -119,8 +123,8 @@ export const PAGE_HISTORY: readonly PageHistory[] = ['admins', 'everyone']
 /** What a page is. A broadcast is its own kind, not a document with extra flags: it renders as a
  *  message card, opens only through per-reader links, keeps its media private, has comments off
  *  and no narration by default, and expires 90 days after publish unless kept. */
-export type ArtifactKind = 'document' | 'broadcast' | 'file'
-export const ARTIFACT_KINDS: readonly ArtifactKind[] = ['document', 'broadcast', 'file']
+export type ArtifactKind = 'document' | 'broadcast' | 'file' | 'voice-ecard'
+export const ARTIFACT_KINDS: readonly ArtifactKind[] = ['document', 'broadcast', 'file', 'voice-ecard']
 
 /** Any media in a body: an image, a video or an audio clip, written as markdown image syntax. */
 const MEDIA_IN_BODY = /!\[[^\]]*\]\(\s*<?([^)\s>]+)/g
@@ -136,7 +140,7 @@ export const PACK_NAME = /^[a-z0-9][a-z0-9-]{0,39}$/
 /** The longest `to:` a page may carry: a name or two, never a sentence. */
 export const MAX_TO_CHARS = 60
 
-const KNOWN = new Set(['title', 'summary', 'subtitle', 'to', 'template', 'audience', 'cover', 'id', 'voice', 'narration', 'timings', 'narrationHash', 'password', 'access', 'state', 'theme', 'pack', 'toc', 'definitions', 'change', 'comments', 'comments_visible', 'links', 'media', 'comment_name', 'history', 'forward', 'goal', 'mark', 'lang', 'translations', 'file', 'asks'])
+const KNOWN = new Set(['title', 'summary', 'subtitle', 'to', 'template', 'audience', 'cover', 'id', 'voice', 'narration', 'timings', 'narrationHash', 'password', 'access', 'state', 'theme', 'pack', 'toc', 'definitions', 'change', 'comments', 'comments_visible', 'links', 'media', 'comment_name', 'history', 'forward', 'goal', 'mark', 'lang', 'translations', 'file', 'asks', ...VOICE_ECARD_KEYS])
 
 export function parseArtifactSource(
   text: string,
@@ -154,7 +158,7 @@ export function parseArtifactSource(
     if (typeof v !== 'string' || !v.trim()) return { ok: false, error: `front matter is missing ${k}` }
   }
   const template = d.template ?? opts.defaultKind ?? 'document'
-  if (!ARTIFACT_KINDS.includes(template as ArtifactKind)) return { ok: false, error: 'template must be document, broadcast or file' }
+  if (!ARTIFACT_KINDS.includes(template as ArtifactKind)) return { ok: false, error: 'template must be document, broadcast, file or voice-ecard' }
   const meta: ArtifactMeta = {
     title: String(d.title).trim(),
     summary: String(d.summary).trim(),
@@ -179,9 +183,24 @@ export function parseArtifactSource(
     meta.links = 'per-reader'
     meta.privateMedia = true
   } else if (d.file !== undefined && d.file !== null) return { ok: false, error: 'file: belongs to template: file' }
+  // A voice eCard is an envelope, a voice and a timed letter: its own lines, refused anywhere else.
+  let voiceEcardTimings: string | undefined
+  if (meta.template === 'voice-ecard') {
+    const c = parseVoiceEcard(d, content)
+    if (!c.ok) return { ok: false, error: c.error }
+    meta.voiceEcard = c.voiceEcard
+    voiceEcardTimings = c.timingsUrl
+  } else {
+    for (const k of VOICE_ECARD_KEYS) if (d[k] !== undefined && d[k] !== null) return { ok: false, error: `${k}: belongs to template: voice-ecard` }
+  }
   for (const k of ['subtitle', 'audience', 'cover', 'id', 'voice', 'narration', 'timings', 'narrationHash', 'password'] as const) {
     const v = d[k]
     if (typeof v === 'string' && v) meta[k] = v
+  }
+  // A voice eCard's inline timings live in meta.voiceEcard; only an address is kept where narration keeps one.
+  if (meta.template === 'voice-ecard') {
+    if (voiceEcardTimings) meta.timings = voiceEcardTimings
+    else delete meta.timings
   }
   if (d.to !== undefined && d.to !== null) {
     const to = typeof d.to === 'string' ? d.to.trim() : ''
@@ -218,7 +237,7 @@ export function parseArtifactSource(
     if (!FORWARD_MODES.includes(d.forward as ForwardMode)) return { ok: false, error: 'forward must be off, signed-in or open' }
     meta.forward = d.forward as ForwardMode
   }
-  if (d.mark !== undefined && d.mark !== null) {
+  if (d.mark !== undefined && d.mark !== null && meta.template !== 'voice-ecard') {
     if (d.mark !== 'none') return { ok: false, error: 'mark must be none (it hides the brand mark on this page)' }
     meta.mark = 'none'
   }
@@ -241,6 +260,7 @@ export function parseArtifactSource(
     const why = checkGoalAgainstBody(meta.goal, content)
     if (why) return { ok: false, error: why }
   }
+  if (meta.goal === 'listen' && !meta.voiceEcard?.audio) return { ok: false, error: 'goal: listen needs a voice eCard with audio: (a play that reaches the last word is the listen)' }
   if (d.theme !== undefined) {
     if (!THEME_MODES.includes(d.theme as ThemeMode)) return { ok: false, error: `theme must be one of: ${THEME_MODES.join(', ')}` }
     meta.theme = d.theme as ThemeMode
@@ -267,9 +287,12 @@ export function parseArtifactSource(
     if (!s.ok) return { ok: false, error: s.error }
     meta.state = s.state
   }
-  if (d.comments !== undefined && d.comments !== null) {
+  // A reply on a voice eCard is a shared comment, so a voice eCard takes them from anyone unless the file says
+  // otherwise. (Never written back into `d`: gray-matter caches what it parsed.)
+  const commentsLine = d.comments ?? (meta.template === 'voice-ecard' ? 'anyone' : undefined)
+  if (commentsLine !== undefined && commentsLine !== null) {
     // A bare `off` is a string in YAML 1.2, but `false` is a boolean and means the same thing.
-    const c = d.comments === false ? 'off' : d.comments
+    const c = commentsLine === false ? 'off' : commentsLine
     if (!COMMENTS_MODES.includes(c as CommentsMode)) return { ok: false, error: `comments must be one of: ${COMMENTS_MODES.join(', ')}` }
     meta.comments = c as CommentsMode
   }

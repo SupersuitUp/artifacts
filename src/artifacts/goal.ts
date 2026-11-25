@@ -4,9 +4,10 @@
 
 /** `read` (the default): the reader spent OUTCOME_READ_SECONDS on the page. `respond`: the reader
  *  left a comment. `ack`: the reader pressed the page's ack CTA (a link titled "cta:ack").
- *  `{ click }`: the reader pressed the CTA with that id. */
-export type ArtifactGoal = 'read' | 'respond' | 'ack' | { click: string }
-export const GOAL_KINDS = ['read', 'respond', 'ack'] as const
+ *  `{ click }`: the reader pressed the CTA with that id. `listen` (0.74.0, a voice eCard with audio): a
+ *  play of the voice eCard's recording reached its last word. */
+export type ArtifactGoal = 'read' | 'respond' | 'ack' | 'listen' | { click: string }
+export const GOAL_KINDS = ['read', 'respond', 'ack', 'listen'] as const
 export const DEFAULT_GOAL: ArtifactGoal = 'read'
 
 /** A CTA id: lowercase letters, digits, dashes, underscores, up to 64. */
@@ -18,9 +19,12 @@ export const CTA_TITLE = /^cta:\s*(.*)$/
 /** Clicks kept per session; a page that sends more is not a reader pressing a button. */
 export const MAX_CLICKS_PER_SESSION = 50
 
-export type Outcome = 'not-opened' | 'opened' | 'read' | 'returned' | 'acted'
+/** `listened` (0.74.0): a play of the page's recording reached its last word. Above `returned`,
+ *  because hearing the whole thing is more than coming back to it, and below `acted`, because
+ *  acting on it is still the most. */
+export type Outcome = 'not-opened' | 'opened' | 'read' | 'returned' | 'listened' | 'acted'
 /** The rungs, lowest first. A send's outcome is the highest one it reached. */
-export const OUTCOMES: readonly Outcome[] = ['not-opened', 'opened', 'read', 'returned', 'acted']
+export const OUTCOMES: readonly Outcome[] = ['not-opened', 'opened', 'read', 'returned', 'listened', 'acted']
 /** Active seconds that make an open a read. Thirty seconds is a skim of a short page, which is
  *  as much as a phone reader gives a sent link; a host with long pages passes its own. */
 export const OUTCOME_READ_SECONDS = 30
@@ -36,7 +40,7 @@ export function outcomeThresholds(over: Partial<OutcomeThresholds> = {}): Outcom
   return { readSeconds: ok(over.readSeconds) ? over.readSeconds : OUTCOME_READ_SECONDS, returnGapMs: ok(over.returnGapMs) ? over.returnGapMs : OUTCOME_RETURN_GAP_MS }
 }
 
-const GOAL_ERROR = 'goal must be read, respond, ack, or { click: <cta id> }'
+const GOAL_ERROR = 'goal must be read, respond, ack, listen, or { click: <cta id> }'
 
 /** The front matter's `goal:` value, checked. Does not look at the body; parseArtifactSource does. */
 export function parseGoal(v: unknown): { ok: true; goal: ArtifactGoal } | { ok: false; error: string } {
@@ -49,7 +53,7 @@ export function parseGoal(v: unknown): { ok: true; goal: ArtifactGoal } | { ok: 
   return { ok: false, error: GOAL_ERROR }
 }
 
-/** The CTA id `goal` counts, or null for read and respond. */
+/** The CTA id `goal` counts, or null for read, respond and listen. */
 export function goalCta(goal: ArtifactGoal): string | null {
   return goal === 'ack' ? ACK_CTA : typeof goal === 'object' ? goal.click : null
 }

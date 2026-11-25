@@ -93,16 +93,24 @@ export function hostVoice(artifactId: string): VoiceHost {
 
 const clock = (ms: number) => { const s = Math.floor(ms / 1000); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}` }
 
-/** The mic button. Renders nothing where the browser cannot record. */
-export function VoiceRecorder({ onStart, onLive, onStop, onError, accent = 'currentColor', maxMs = MAX_MEMO_MS }: {
+export type VoiceRecordingOptions = {
   onStart?: () => void
   /** The live transcript so far, whole, each time it changes. */
   onLive?: (text: string) => void
   onStop: (memo: VoiceMemo) => void
   onError?: (message: string) => void
-  accent?: string
   maxMs?: number
-}) {
+  /** Live words from the browser's speech recognition while recording. Default on. Off where no
+   *  words are wanted: on iPhone Safari the recogniser and MediaRecorder contend for the one
+   *  microphone, and the recording can come out silent (Gary, 2026-11-25, a voice eCard reply). */
+  transcribe?: boolean
+  /** The microphone stream, the moment recording starts: for a level meter on the same stream. */
+  onStream?: (stream: MediaStream) => void
+}
+
+/** The recording itself, for any surface that draws its own control (the voice eCard's reply): the
+ *  same MediaRecorder, types, live transcript and cap as the mic button below. */
+export function useVoiceRecording({ onStart, onLive, onStop, onError, maxMs = MAX_MEMO_MS, transcribe = true, onStream }: VoiceRecordingOptions) {
   const [supported, setSupported] = useState(false)
   const [live, setLive] = useState(false)
   const [note, setNote] = useState(false)
@@ -155,7 +163,7 @@ export function VoiceRecorder({ onStart, onLive, onStop, onError, accent = 'curr
       onStop({ blob: new Blob(chunks, { type: baseMime(type) }), mime: baseMime(type) })
     }
     let recog: Recognition | null = null
-    const Ctor = recognitionCtor()
+    const Ctor = transcribe ? recognitionCtor() : null
     if (Ctor) {
       try {
         recog = new Ctor()
@@ -183,9 +191,15 @@ export function VoiceRecorder({ onStart, onLive, onStop, onError, accent = 'curr
     setElapsed(0)
     setRecording(true)
     onStart?.()
+    try { onStream?.(stream) } catch { /* a meter that fails never stops the recording */ }
     recorder.start(1000)
   }
+  return { supported, live, note, recording, elapsed, start, stop }
+}
 
+/** The mic button. Renders nothing where the browser cannot record. */
+export function VoiceRecorder({ accent = 'currentColor', ...opts }: VoiceRecordingOptions & { accent?: string }) {
+  const { supported, live, note, recording, elapsed, start, stop } = useVoiceRecording(opts)
   if (!supported) return null
   // A small microphone, never a word (the operator, 2026-11-09: "a little microphone button is superior to
   // a button that says record"). The glyph is the Helm recorder's own (helm2 golden/recorder), so

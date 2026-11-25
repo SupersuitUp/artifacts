@@ -351,7 +351,7 @@ summary: Three bets, what each costs, and what we stop doing to afford them.
 | `comment_name` | `required`: on a per-reader page, a comment through a group link needs a typed first name, and each browser on a group link is its own reader (see Per-reader links). Needs `links: per-reader` |
 | `forward` | `off`, `signed-in` or `open`: whether a reader of a per-reader page may make a link to pass it on (see Forward links). Absent is `off`. Needs `links: per-reader`. Sticky like `links` |
 | `history` | `everyone` or `admins`: who sees this page's version number and past versions, overriding the host's `history` for this one page (see Version history). Absent, the host decides. Refused as `everyone` on a per-reader page |
-| `goal` | What a send of the page is for: `read` (the default), `respond`, `ack`, or `click: <cta id>` (see Send outcomes). A republish without the line goes back to `read` |
+| `goal` | What a send of the page is for: `read` (the default), `respond`, `ack`, `listen` (a voice eCard with `audio:`), or `click: <cta id>` (see Send outcomes). A republish without the line goes back to `read` |
 | `mark` | `none`: leave the brand mark off this page. A pack with a `Mark` shows it small (32 px tall) above the kicker of every page, linking to the host's front page; the cover and the unfurl stay the page's own. A republish without the line shows it again |
 | `lang` | The language the page is written in, a BCP 47 tag (`en`, `es`, `es-MX`). Marks the page's words for screen readers and the browser's translate offer, and sets `og:locale`. Absent, nothing changes |
 | `translations` | The same document in other languages on this host, as a map of tag to page id: `{"es": "abcd2345"}` (the publisher resolves each twin's file to its id). With `lang`, the page draws a small switch at the top naming each language in itself ("English · Español") and the unfurl carries `hreflang` alternates. Each page names its own twins; a republish without the line removes the switch |
@@ -1440,6 +1440,7 @@ Pick one: [Book a call](https://cal.example.com/robin "cta:book-call").
 | `respond` | the reader left a comment (a page needs `comments:` on for this to happen) |
 | `ack` | the reader pressed the page's ack CTA, a link titled `cta:ack`, e.g. `[Got it](#got-it "cta:ack")` |
 | `{ click: <cta id> }` | the reader pressed the CTA with that id |
+| `listen` (a voice eCard with `audio:`) | a play of the recording reached its last word |
 
 **A CTA is a link whose title is `cta:<id>`** (lowercase letters, digits, dashes, underscores, up to
 64). The title is never shown: the link renders with `data-artifact-cta="<id>"`, and an in-page CTA
@@ -1467,8 +1468,9 @@ not their response):
 | `opens` | `[{ at, activeSeconds, device }]`, one per session, oldest first |
 | `clicks` | `[{ cta, at }]`, every CTA the reader pressed, oldest first |
 | `goal` | The page's goal (`read` when it has none) |
-| `outcome` | The highest rung reached: `not-opened`, `opened`, `read` (at least `readSeconds` active), `returned` (a second session at least `returnGapMs` after the first, on any device, the known one included), `acted` (the goal's action: a comment for `respond`, the `ack` CTA for `ack`, that CTA for a click goal; never for `read`) |
-| `succeeded` | Whether the send reached the goal: for `read`, reading; for every other goal, acting |
+| `outcome` | The highest rung reached: `not-opened`, `opened`, `read` (at least `readSeconds` active), `returned` (a second session at least `returnGapMs` after the first, on any device, the known one included), `listened` (a play of the page's recording reached its last word; the page posts `{ event: "listened", beat, media }` to `POST /seen`), `acted` (the goal's action: a comment for `respond`, the `ack` CTA for `ack`, that CTA for a click goal; never for `read`) |
+| `listened` | Whether a play of the page's recording reached its last word |
+| `succeeded` | Whether the send reached the goal: for `read`, reading; for `listen`, a listen to the end; for every other goal, acting |
 | `daysSinceSent` | Whole days from `sentAt` to now, or null with no recorded send, for drawing age |
 
 `sentAt` was already on the line. The response also carries the page's `goal` and the `thresholds`
@@ -1536,6 +1538,125 @@ export const config = { matcher: ['/:id([a-z0-9]{8})'] }
 ```
 
 Any per-reader page served to a known unfurl fetcher (or a request with no user agent) carries its text only: no media, no signed URL, no reader's note, no cookie. `readHeader` on `createArtifactRoutes` reads the agent (default through `next/headers`). `DELETE /api/artifacts/<id>` removes the page's files from both buckets (`deletePage`), then its readers, their notes and views and every comment, before the record, and keeps the record (502) if the files could not go, so it can be run again.
+
+## Voice eCards (`template: voice-ecard`)
+
+A voice eCard is a greeting card that arrives in an envelope. The envelope floats over a scene; a
+hover (a mouse) or a tap (a finger) opens its flap and lifts the letter; a click or a second tap
+takes the card out. The folded card rises (800 ms), swings open as its spine slides to the middle
+of the screen (950 ms) and zooms to the spread (700 ms). The inside-left page carries the art; the
+inside-right page carries the letter, which follows the sender's voice word by word: the word being
+said is lit, the words already said are full ink, the rest are faded. Esc or the gold medallion on
+the card's corner closes it (450 ms). A phone held upright sees one page and is told to tilt for the
+whole spread. The choreography, the geometry and the stylesheet are ported from BlessOut's card
+opening, number for number.
+
+```markdown
+---
+title: Happy Thanksgiving
+summary: A card for you
+template: voice-ecard
+to: Robin
+from: Sam
+occasion: thanksgiving
+cover: https://cdn.example.com/wrap.webp
+inner: https://cdn.example.com/inner.webp
+background: https://cdn.example.com/scene.png
+audio: https://cdn.example.com/card.m4a
+timings: https://cdn.example.com/card.timings.json
+links: per-reader
+goal: listen
+---
+Dear Robin,
+
+Thank you for this year.
+```
+
+| Line | What it does |
+|---|---|
+| `to:` | Who it is for. Required. |
+| `from:` | Who sent it, one line. Required. |
+| `occasion:` | `thanksgiving`, `christmas`, `newyear`, `birthday` or `other` (the default). Picks the envelope and its liner when the file names no envelope. |
+| `envelope:` | A paper: `red`, `green`, `gold`, `purple`, `black`, `blue`, `navy`, `pink`, `slate`; or `brand`, which draws the envelope in the page's own colours with its accent as the foil. Default by occasion: gold for Thanksgiving, red for Christmas, pink for a birthday, navy otherwise. |
+| `cover:` | The wrap: a landscape image whose RIGHT half is the front cover, drawn on the 3:4 front. Without one the front is the envelope paper with To and From. |
+| `inner:` | The inside-left page's art. |
+| `background:` | The scene behind the envelope. Without one, a night-blue ground. |
+| `cinemagraph:` | A Flixel cinemagraph id, played behind the envelope instead of the still scene. |
+| `font:` | The letter's face: `serif` (the default), `script`, `display` (the pack's display face; the default on `envelope: brand`) or `sans` (the pack's body face). |
+| `audio:` | The mixed voice-over-music file. Draws "Listen to the letter". |
+| `timings:` | The words, timed in the mixed file: a list of `{w, s, e, br?}` (`br: 1` ends a paragraph), as BlessOut's mixer writes it, or the https address of a JSON file holding one (a bare list or `{ words: [...] }`). Needs `audio:`. When the list is inline and the body has words, the two must say the same words, or the publish is refused naming the first word where they part. |
+| `mark:` | `false` drops the small "Made with Supersuit" line under the closed envelope and on the letter. Default `true`. `mark: none` on the page does the same. |
+
+Every address is https or a path on the host; a local file is uploaded by the publisher first. A
+voice eCard takes no `voice:` or `narration:` (its voice is `audio:`), and any voice eCard line on
+another kind of page is refused. A republish that leaves `template:` out stays a voice eCard; one
+that says `template: document` is refused (409).
+
+**Replies.** A voice eCard takes shared comments from anyone unless the file says `comments:`
+otherwise, so the open card shows "Reply with your voice". It pauses the recording and opens the
+page's own comment card, pinned to the letter at that second, with its recorder: a reader on their
+own link answers by voice with no account, exactly as on a document.
+
+**Tracking is the hub's.** Per-reader and tracked links, the view and its active seconds, plays
+(the recording carries `data-artifact-media`) and comments work as on a document. A play that
+reaches the last word sends `listened`, so the send lands on the `listened` rung and `goal: listen`
+succeeds (see Send outcomes).
+
+**Additions over BlessOut.** Reduced motion fades the card in and out with no flight; the envelope
+opens from the keyboard (Enter); a pack with a `Mark` seals the envelope's flap with it, in wax of
+the foil colour; the letter sits in the Gilded Stationer's gold-foil frame, shrinks to fit its page
+but never below 72%, and scrolls past that, keeping the lit word in view.
+
+**Nothing to mount.** The envelope papers, liners and the letter's paper ship inside the package as
+WebP data (`scripts/build-voice-ecard-assets.mjs`), and the stylesheet is rendered by the scene, so a
+host serves a voice eCard with the routes it already has. The scene is `VoiceEcard` in `./reader`;
+the rules (`parseVoiceEcard`, `spreadGeom`, `readAlong` ...) are in `./artifacts`. A demo runs from
+`demo/voice-ecard` (see its `vite.config.ts`).
+
+## The recorder (`/record/<batch>`)
+
+The owner records a voice eCard for each person in a batch, one at a time, from a phone or a
+desktop. The page shows the person's photo, name and the note that prompts what to say. One tap on
+the microphone records (the comment card's own recorder: webm on Chrome, mp4 on iPhone Safari); one
+tap on "Save and next" stores the take and moves to the next person; "Redo" records again. Saving
+uploads the raw take to the batch's private storage, mixes it over the batch's music bed in the
+browser and uploads the mix, before the page moves on, so closing the page loses nothing. The page
+opens at the first person with no take.
+
+Only the hub's owner and admins open it; anyone else gets the sign-in door, or a line saying whose
+it is. Every API call takes the publish key or the owner signed in from this hub's own pages, the
+same check as the owner panel's endpoints.
+
+| Request | Body | Answer |
+|---|---|---|
+| `POST /api/record` | `{ title?, music?: <https bed>, people: [{ slug, name, note, photo? }] }` (up to 200) | `201 { batch, url }`, `url` is `/record/<batch>` |
+| `GET /api/record/<batch>` | | `{ batch, next }`, `next` the index the recorder resumes at |
+| `GET /api/record/<batch>/<slug>` | | `{ entry }` |
+| `PATCH /api/record/<batch>/<slug>` | `{ timings: [{ w, s, e, br? }] }` or `{ built: { pageId } }` | `{ entry }` (409 before there is a take) |
+| `POST /api/record/<batch>/<slug>/take` | `{ kind: "raw" \| "mixed", type, digest }` (first 8 hex of the SHA-256) | `201 { uploadUrl, headers }`: PUT the file there |
+| the same | `{ ..., done: true, seconds?, voiceDelay? }` | `{ entry }` |
+| `PUT /api/record/<batch>/<slug>/take?kind=&type=` | the bytes (a host that cannot sign uploads; up to 12 MB) | `{ entry }` |
+| `GET /api/record/<batch>/<slug>/take?kind=raw\|mixed` | | 302 to a signed read URL (an hour) |
+
+An entry is `{ slug, name, note, photo?, status: waiting | recorded | built, raw?, mixed?, mime?,
+seconds?, voiceDelay?, recordedAt?, timings?, pageId?, builtAt? }`; `raw` and `mixed` are
+`private:<stored name>` in the private folder `record-<batch>`. A new take drops the timings and the
+build made from the old one.
+
+**The mix** is BlessOut's mixer recipe (`mix.ts`, rendered with `OfflineAudioContext`): the bed alone
+for 4 s at 0.2, the voice from 4 s at speech level, the bed ducked 6:1 above 0.03 with a 20 ms
+attack and a 2500 ms release, a 6 s fade after the voice, a limiter at 0.89 (about -1 dBTP), a mono
+32 kHz WAV. With no bed, the voice alone, from 0. The bed's host must allow this hub's origin (CORS).
+
+**Word timings come from the operator's computer.** The host's transcriber (`transcribe`) answers
+text only, never word times. The Supersuit skill reads the raw take (`GET .../take?kind=raw`),
+times its words, adds the entry's `voiceDelay`, and writes them with `PATCH { timings }` in the
+mix's timeline; then it publishes the voice eCard and marks the entry `built`.
+
+**Wiring.** Pass `record: createRecordStore(db, base)` to `createArtifactRoutes`. The handlers are
+`RecordPage` (app/record/[batch]/page.tsx), `RECORD`, `RECORD_BATCH`, `RECORD_ENTRY` and
+`RECORD_TAKE`; the hub template carries all five route files. A demo runs at
+`demo/voice-ecard/record.html`.
 
 ## Product analytics (`analytics`)
 

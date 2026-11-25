@@ -108,6 +108,15 @@ export function createRecipientsRoutes(given: RecipientsRoutesCtx) {
       await ctx.recipients.recordView({ artifactId: id, rid, session, device, at, addSeconds: seconds, ...(media ? { play: media } : {}) })
       return json({})
     }
+    // A play of a voice eCard's recording that reached its last word (0.74.0): the same beat as a
+    // play, and a recording named the way a play names it.
+    if (event === 'listened') {
+      if (str(b?.beat) !== beatKey(secret, id, rid, session)) return json({ error: 'forbidden' }, 403)
+      const media = typeof b?.media === 'string' && MEDIA.test(b.media) ? b.media : null
+      if (!media) return json({ error: 'media must name the recording' }, 400)
+      await ctx.recipients.recordView({ artifactId: id, rid, session, device, at, addSeconds: 0, listened: media })
+      return json({})
+    }
     // A CTA the reader pressed (issue #12): the same beat as any other signal after the view, and
     // only an id the page itself carries, so a click is never recorded for a button nobody drew.
     if (event === 'click') {
@@ -119,7 +128,7 @@ export function createRecipientsRoutes(given: RecipientsRoutesCtx) {
       await ctx.recipients.recordView({ artifactId: id, rid, session, device, at, addSeconds: 0, click: cta })
       return json({})
     }
-    return json({ error: 'event must be view, beat, play or click' }, 400)
+    return json({ error: 'event must be view, beat, play, listened or click' }, 400)
   }
   const unauth = () => json({ error: 'publish key required' }, 401)
   /** The publish key, or (when the host says who its owner is) the owner signed in. */

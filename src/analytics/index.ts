@@ -22,7 +22,7 @@ import { resolutionOf } from '../artifacts/comments.js'
 export interface AnalyticsConfig { site: string; pagePrefix: string; quietDays: number }
 
 /** What each of the module's outcomes is called on the screen. */
-export const OUTCOME_LABEL: Record<Outcome, string> = { 'not-opened': 'Not opened', opened: 'Opened', read: 'Read', returned: 'Came back', acted: 'Acted' }
+export const OUTCOME_LABEL: Record<Outcome, string> = { 'not-opened': 'Not opened', opened: 'Opened', read: 'Read', returned: 'Came back', listened: 'Listened', acted: 'Acted' }
 
 const DAY = 86_400_000
 /** The feed shows this many days. */
