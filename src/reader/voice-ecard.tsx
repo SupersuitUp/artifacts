@@ -22,7 +22,7 @@ import {
   spreadGeom, tiltHint, viewportSize, wordState, REF_PAGE, REF_LETTER_FONT, type Box, type VoiceEcardPhase, type VoiceEcardTiming,
 } from '../artifacts/voice-ecard.js'
 import { LISTENED } from './page-bridge.js'
-import { VoiceReply } from './voice-reply.js'
+import { VoiceReply, VOICE_REPLY_CSS } from './voice-reply.js'
 import { VOICE_ECARD_CSS } from './voice-ecard-css.js'
 
 export type VoiceEcardProps = {
@@ -230,7 +230,7 @@ export function VoiceEcard(p: VoiceEcardProps) {
 
   return (
     <div className="ve-root" data-voice-ecard data-phase={phase} style={vars}>
-      <style dangerouslySetInnerHTML={{ __html: VOICE_ECARD_CSS }} />
+      <style dangerouslySetInnerHTML={{ __html: VOICE_ECARD_CSS + VOICE_REPLY_CSS }} />
       <div className="ve-bg" aria-hidden>
         {p.cinemagraph ? (
           <div className="ve-cinemagraph"><div className="ve-cinemagraph-inner">
@@ -344,14 +344,17 @@ function Letter(p: VoiceEcardProps) {
 
   // The letter fits its page: the largest zoom that fits, found by halving (zoom reflows text, so
   // one ratio overshoots), never below MIN_LETTER_ZOOM; past that the page scrolls. The page is the
-  // reference size, so this depends on the letter alone, never on the screen.
+  // reference size, so this depends on the letter alone, never on the screen. Only the LETTER
+  // shrinks: the names, the buttons and the reply stay their size, so a control never drops under
+  // a finger's size because the letter is long (Gary, 2026-11-25: hard-to-see reply controls).
   useEffect(() => {
     const el = pageRef.current
     const host = el?.parentElement
-    if (!el || !host) return
-    const style = el.style as CSSStyleDeclaration & { zoom: string }
+    const script = el?.querySelector<HTMLElement>('[data-voice-ecard-letter]')
+    if (!el || !host || !script) return
+    const style = script.style as CSSStyleDeclaration & { zoom: string }
     const fit = () => {
-      const fits = (z: number) => { style.zoom = String(z); return el.scrollHeight * z <= host.clientHeight + 1 }
+      const fits = (z: number) => { style.zoom = String(z); return el.scrollHeight <= host.clientHeight + 1 }
       if (fits(1)) return
       let lo = MIN_LETTER_ZOOM, hi = 1
       if (!fits(lo)) return
@@ -400,7 +403,7 @@ function Letter(p: VoiceEcardProps) {
       ) : null}
       {p.reply && replying ? (
         <VoiceReply artifactId={p.artifactId} blockId={p.blockId} ownerName={p.ownerName} version={p.version} requireName={p.requireName}
-          at={() => audio.current?.currentTime ?? 0} accent={p.foil} />
+          at={() => audio.current?.currentTime ?? 0} />
       ) : null}
       <blockquote className={`ve-script${playing && words.length ? ' ve-following' : ''}`} data-voice-ecard-letter style={{ fontSize: REF_LETTER_FONT }}>
         {paras.map((para, i) => (

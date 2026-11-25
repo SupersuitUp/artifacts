@@ -1,13 +1,43 @@
 'use client'
 // "Reply with your voice" on a voice eCard: the one way to answer it (Gary, 2026-11-25: "Remove
 // comment feature methinks ya?"). No comment layer, no selection to comment, no pins, no threads:
-// it opens straight into the recorder (the comment card's own VoiceRecorder), and Send uploads the
-// memo exactly as a comment's recording (hostVoice, scope `comment`) and appends it to the page's
+// it opens straight into a recorder drawn in the card's own language, and Send uploads the memo
+// exactly as a comment's recording (hostVoice, scope `comment`) and appends it to the page's
 // comments slot, anchored to the letter at the second the voice was at. That slot is the record the
 // owner's reader summary reads, so the reply shows there and `goal: respond` counts it.
-import { useMemo, useState } from 'react'
-import { AudioPlay, VoiceRecorder, hostVoice, type VoiceHost, type VoiceMemo } from './voice-recorder.js'
+//
+// THE CONTROL NEVER MOVES (Gary, 2026-11-25, iPhone: "It's hard to see the UI elements for playing
+// your recording, and the record button becomes off-center when you click the record button").
+// One round button in one fixed slot is the mic while idle and the stop while recording; the line
+// under it is reserved and holds the label, then the time, in navy. A recorded take gets a real
+// player: a solid navy play button, a progress bar, the time; then Send and Record again, full width.
+// The recording is the mic button's own (useVoiceRecording), only the drawing is the card's.
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { hostVoice, useVoiceRecording, type VoiceHost, type VoiceMemo } from './voice-recorder.js'
 import { COMMENTS_SLOT, MAX_COMMENT_NAME_CHARS } from '../artifacts/comments.js'
+
+/** The reply's colours on the card's parchment, checked against WCAG AA in the tests. */
+export const REPLY_TOKENS = {
+  ink: '#09164d', // the Gilded Stationer's navy: text, the record and play buttons
+  muted: '#3a4473', // secondary text
+  parchment: '#efe7d6', // the darkest of the letter paper's tones
+  gold: '#e7cb75', // the Send button's fill
+  goldEdge: '#7d5f17', // the Send button's edge, so the control reads against the paper
+  track: '#6b7093', // the progress bar's track
+} as const
+
+/** WCAG relative-luminance contrast between two #rrggbb colours. */
+export function contrastRatio(a: string, b: string): number {
+  const lum = (hex: string) => {
+    const [r, g, bl] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4))
+    return 0.2126 * r + 0.7152 * g + 0.0722 * bl
+  }
+  const [x, y] = [lum(a), lum(b)].sort((m, n) => n - m)
+  return (x + 0.05) / (y + 0.05)
+}
+
+/** m:ss. */
+export const replyClock = (ms: number) => { const s = Math.floor(Math.max(0, ms) / 1000); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}` }
 
 export type VoiceReplyProps = {
   artifactId: string
@@ -19,20 +49,70 @@ export type VoiceReplyProps = {
   at: () => number
   /** A group link on a `comment_name: required` page: the reply carries a first name. */
   requireName?: boolean
-  accent?: string
   /** The page's voice routes; tests pass a stub. */
   voice?: VoiceHost
 }
 
-const canRecord = () => typeof window !== 'undefined' && typeof MediaRecorder !== 'undefined' && !!navigator.mediaDevices?.getUserMedia
+type Stage = 'ready' | 'recording' | 'review' | 'sending' | 'sent'
 
-export function VoiceReply({ artifactId, blockId, ownerName, version, at, requireName = false, accent = 'currentColor', voice }: VoiceReplyProps) {
+function MicGlyph() { return <svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3" /></svg> }
+function StopGlyph() { return <span aria-hidden className="ve-rr-stop" /> }
+function PlayGlyph() { return <svg viewBox="0 0 16 16" width="22" height="22" aria-hidden><path d="M4.5 2.5v11l9-5.5z" fill="currentColor" /></svg> }
+function PauseGlyph() { return <svg viewBox="0 0 16 16" width="22" height="22" aria-hidden><rect x="3.5" y="2.5" width="3" height="11" rx="1" fill="currentColor" /><rect x="9.5" y="2.5" width="3" height="11" rx="1" fill="currentColor" /></svg> }
+
+/** The recorded take: play and pause, the progress, the time. Chrome's webm reports no length, so
+ *  the length the recording took stands in until the file says. */
+function TakePlayer({ src, fallbackMs }: { src: string; fallbackMs: number }) {
+  const a = useRef<HTMLAudioElement>(null)
+  const [playing, setPlaying] = useState(false)
+  const [t, setT] = useState(0)
+  const [dur, setDur] = useState(fallbackMs / 1000)
+  useEffect(() => {
+    if (!playing) return
+    let raf = 0
+    const tick = () => { setT(a.current?.currentTime ?? 0); raf = requestAnimationFrame(tick) }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [playing])
+  const toggle = () => {
+    const el = a.current
+    if (!el) return
+    if (el.paused) void el.play()?.catch?.(() => setPlaying(false))
+    else el.pause()
+  }
+  const total = Math.max(dur, t, 0.001)
+  return (
+    <div className="ve-rr-player">
+      <button type="button" className="ve-rr-play" onClick={toggle} aria-label={playing ? 'Pause your reply' : 'Play your reply'} data-reply-play>
+        {playing ? <PauseGlyph /> : <PlayGlyph />}
+      </button>
+      <div className="ve-rr-track" role="progressbar" aria-label="How much of your reply has played" aria-valuemin={0} aria-valuemax={Math.round(total)} aria-valuenow={Math.round(t)}>
+        <div className="ve-rr-fill" style={{ width: `${Math.min(100, (t / total) * 100)}%` }} />
+      </div>
+      <span className="ve-rr-time" data-reply-time>{`${replyClock(t * 1000)} / ${replyClock(total * 1000)}`}</span>
+      <audio ref={a} src={src} preload="metadata"
+        onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => { setPlaying(false); setT(0) }}
+        onLoadedMetadata={(e) => { const d = e.currentTarget.duration; if (Number.isFinite(d) && d > 0) setDur(d) }} />
+    </div>
+  )
+}
+
+export function VoiceReply({ artifactId, blockId, ownerName, version, at, requireName = false, voice }: VoiceReplyProps) {
   const host = useMemo(() => voice ?? hostVoice(artifactId), [voice, artifactId])
   const [memo, setMemo] = useState<VoiceMemo | null>(null)
-  const [stage, setStage] = useState<'ready' | 'recording' | 'review' | 'sending' | 'sent'>('ready')
+  const [took, setTook] = useState(0)
+  const [stage, setStage] = useState<Stage>('ready')
   const [error, setError] = useState<string | null>(null)
   const [name, setName] = useState('')
   const url = useMemo(() => (memo ? URL.createObjectURL(memo.blob) : null), [memo])
+  const elapsedRef = useRef(0)
+  const rec = useVoiceRecording({
+    onStart: () => { setStage('recording'); setError(null) },
+    onStop: (m) => { setTook(elapsedRef.current); setMemo(m); setStage('review') },
+    onError: (msg) => { setError(msg); setStage('ready') },
+    maxMs: 3 * 60 * 1000,
+  })
+  elapsedRef.current = rec.elapsed
 
   const send = async () => {
     if (!memo) return
@@ -58,32 +138,74 @@ export function VoiceReply({ artifactId, blockId, ownerName, version, at, requir
     setStage('sent')
   }
 
-  if (stage === 'sent') return <p className="ve-reply-sent" role="status" data-voice-reply-sent>{`Sent. ${ownerName} will hear it.`}</p>
+  if (stage === 'sent') {
+    return (
+      <div className="ve-reply-panel" data-voice-reply-panel data-stage="sent">
+        <p className="ve-rr-sent" role="status" data-voice-reply-sent>{`Sent to ${ownerName}`}</p>
+        <p className="ve-rr-note">Your voice is on its way.</p>
+      </div>
+    )
+  }
+  const reviewing = stage === 'review' || stage === 'sending'
   return (
     <div className="ve-reply-panel" data-voice-reply-panel data-stage={stage}>
-      {stage === 'review' || stage === 'sending' ? (
+      {reviewing && url ? (
         <>
-          {url ? <AudioPlay src={url} accent={accent} /> : null}
+          <TakePlayer src={url} fallbackMs={took} />
           {requireName ? (
-            <input name="by" className="ve-reply-name" placeholder="Your first name" maxLength={MAX_COMMENT_NAME_CHARS} value={name} onChange={(e) => setName(e.target.value)} />
+            <input name="by" className="ve-rr-name" placeholder="Your first name" maxLength={MAX_COMMENT_NAME_CHARS} value={name} onChange={(e) => setName(e.target.value)} />
           ) : null}
-          <div className="ve-reply-actions">
-            <button type="button" className="ve-btn ve-reply" onClick={() => void send()} disabled={stage === 'sending'} data-voice-reply-send>
+          <div className="ve-rr-actions">
+            <button type="button" className="ve-rr-send" onClick={() => void send()} disabled={stage === 'sending'} data-voice-reply-send>
               {stage === 'sending' ? 'Sending…' : `Send to ${ownerName}`}
             </button>
-            <button type="button" className="ve-btn ve-again" onClick={() => { setMemo(null); setStage('ready'); setError(null) }} disabled={stage === 'sending'} data-voice-reply-again>Record again</button>
+            <button type="button" className="ve-rr-again" onClick={() => { setMemo(null); setStage('ready'); setError(null) }} disabled={stage === 'sending'} data-voice-reply-again>Record again</button>
           </div>
         </>
       ) : (
-        <div className="ve-reply-mic" data-voice-reply-mic>
-          <VoiceRecorder accent={accent}
-            onStart={() => { setStage('recording'); setError(null) }}
-            onStop={(m) => { setMemo(m); setStage('review') }}
-            onError={(msg) => { setError(msg); setStage('ready') }} />
-          <span className="ve-reply-hint">{stage === 'recording' ? 'Recording. Tap to stop.' : canRecord() ? 'Tap to record' : 'This browser cannot record here.'}</span>
+        <div className="ve-rr-slot" data-reply-slot>
+          <span className={`ve-rr-ring${rec.recording ? ' is-on' : ''}`} aria-hidden data-reply-ring />
+          <button type="button" className={`ve-rr-record${rec.recording ? ' is-recording' : ''}`} data-reply-record
+            aria-label={rec.recording ? 'Stop recording' : 'Record your reply'} aria-pressed={rec.recording}
+            onClick={() => (rec.recording ? rec.stop() : void rec.start())}>
+            {rec.recording ? <StopGlyph /> : <MicGlyph />}
+          </button>
+          <span className="ve-rr-under" data-reply-under aria-live="polite">
+            {rec.recording ? replyClock(rec.elapsed) : rec.supported ? 'Tap to record your reply' : 'This browser cannot record here.'}
+          </span>
         </div>
       )}
-      {error ? <p className="ve-reply-error" role="alert">{error}</p> : null}
+      {error ? <p className="ve-rr-error" role="alert">{error}</p> : null}
     </div>
   )
 }
+
+/** The reply's stylesheet, drawn beside the voice eCard's. Sizes are on the card's reference page,
+ *  which a portrait phone draws at about 0.76, so a 60 px button is 46 px under the finger. A phone
+ *  held sideways draws the whole card smaller, which Gary accepted for the card's proportions. */
+export const VOICE_REPLY_CSS = String.raw`
+.ve-reply-panel { display: flex; flex-direction: column; align-items: stretch; gap: 12px; margin: 0 0 1.1rem; padding: 16px 16px 14px; border-radius: 14px; border: 1px solid color-mix(in srgb, var(--ve-foil) 70%, transparent); background: rgba(255, 252, 244, 0.55); font: 400 15px/1.3 system-ui, -apple-system, sans-serif; color: ${REPLY_TOKENS.ink}; }
+.ve-rr-slot { position: relative; display: grid; grid-template-rows: 84px 26px; justify-items: center; align-items: center; row-gap: 8px; }
+.ve-rr-ring { grid-row: 1; grid-column: 1; width: 84px; height: 84px; border-radius: 50%; pointer-events: none; }
+.ve-rr-ring.is-on { animation: ve-rr-pulse 1.4s ease-out infinite; }
+@keyframes ve-rr-pulse { 0% { box-shadow: 0 0 0 0 rgba(9, 22, 77, 0.35); } 100% { box-shadow: 0 0 0 16px rgba(9, 22, 77, 0); } }
+.ve-rr-record { grid-row: 1; grid-column: 1; width: 84px; height: 84px; padding: 0; border-radius: 50%; border: 2px solid var(--ve-foil); background: ${REPLY_TOKENS.ink}; color: #fff7df; display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 6px 16px rgba(9, 22, 77, 0.28); -webkit-tap-highlight-color: transparent; }
+.ve-rr-stop { display: block; width: 26px; height: 26px; border-radius: 5px; background: currentColor; }
+.ve-rr-under { grid-row: 2; grid-column: 1; height: 26px; line-height: 26px; font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; color: ${REPLY_TOKENS.ink}; white-space: nowrap; }
+.ve-rr-player { display: grid; grid-template-columns: 64px 1fr auto; align-items: center; gap: 12px; }
+.ve-rr-play { width: 64px; height: 64px; padding: 0; border-radius: 50%; border: none; background: ${REPLY_TOKENS.ink}; color: #fff7df; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.ve-rr-track { position: relative; height: 8px; border-radius: 999px; background: color-mix(in srgb, ${REPLY_TOKENS.track} 35%, transparent); box-shadow: inset 0 0 0 1px ${REPLY_TOKENS.track}; overflow: hidden; }
+.ve-rr-fill { position: absolute; inset: 0 auto 0 0; background: ${REPLY_TOKENS.ink}; border-radius: 999px; }
+.ve-rr-time { font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; color: ${REPLY_TOKENS.ink}; white-space: nowrap; }
+.ve-rr-actions { display: grid; grid-template-columns: 1fr; gap: 10px; }
+.ve-rr-send, .ve-rr-again { width: 100%; min-height: 60px; border-radius: 999px; font: 700 18px/1 system-ui, -apple-system, sans-serif; cursor: pointer; }
+.ve-rr-send { background: linear-gradient(160deg, color-mix(in srgb, var(--ve-foil) 55%, white) 0%, var(--ve-foil) 45%, color-mix(in srgb, var(--ve-foil) 82%, black) 100%); color: ${REPLY_TOKENS.ink}; border: 1.5px solid ${REPLY_TOKENS.goldEdge}; box-shadow: 0 6px 16px rgba(0, 0, 0, 0.18); }
+.ve-rr-again { background: transparent; color: ${REPLY_TOKENS.ink}; border: 1.5px solid ${REPLY_TOKENS.ink}; }
+.ve-rr-send:disabled, .ve-rr-again:disabled { opacity: 0.7; }
+.ve-rr-name { width: 100%; box-sizing: border-box; min-height: 44px; padding: 10px 12px; border-radius: 10px; border: 1.5px solid ${REPLY_TOKENS.track}; background: #fffdf6; color: ${REPLY_TOKENS.ink}; font: 16px system-ui, sans-serif; }
+.ve-rr-sent { margin: 0; text-align: center; font: 700 18px/1.3 system-ui, -apple-system, sans-serif; color: ${REPLY_TOKENS.ink}; }
+.ve-rr-note { margin: 0; text-align: center; font-size: 14px; color: ${REPLY_TOKENS.muted}; }
+.ve-rr-error { margin: 0; text-align: center; font-size: 14px; color: #8f1d12; }
+.ve-rr-record:focus-visible, .ve-rr-play:focus-visible, .ve-rr-send:focus-visible, .ve-rr-again:focus-visible { outline: 2px solid ${REPLY_TOKENS.ink}; outline-offset: 3px; }
+@media (prefers-reduced-motion: reduce) { .ve-rr-ring.is-on { animation: none; box-shadow: 0 0 0 6px rgba(9, 22, 77, 0.2); } }
+`

@@ -8,6 +8,19 @@ import { themeCss } from '../../src/brand/theme.js'
 import type { VoiceEcardSpec, VoiceEcardTiming } from '../../src/artifacts/voice-ecard.js'
 
 declare const __BLESSOUT__: string
+// ?fakemic=1: headless Chrome cannot grant a microphone, so the reply records the demo voice file.
+if (new URLSearchParams(location.search).has('fakemic')) {
+  navigator.mediaDevices.getUserMedia = async () => {
+    const ctx = new AudioContext()
+    const buf = await ctx.decodeAudioData(await (await fetch('/card.m4a')).arrayBuffer())
+    const src = ctx.createBufferSource()
+    src.buffer = buf
+    const dest = ctx.createMediaStreamDestination()
+    src.connect(dest)
+    src.start()
+    return dest.stream
+  }
+}
 const q = new URLSearchParams(location.search)
 const brand = q.has('brand')
 const bg = q.get('bg') ?? 'loving-thanksgiving'
@@ -16,6 +29,12 @@ const bg = q.get('bg') ?? 'loving-thanksgiving'
 const realFetch = window.fetch.bind(window)
 window.fetch = (async (u: RequestInfo | URL, init?: RequestInit) => {
   const url = String(u)
+  if (url.startsWith('demo://put')) return new Response(null, { status: 200 })
+  // A reply's recording: the signed upload, then its confirmation, as the hub answers them.
+  if (/\/api\/artifacts\/[^/]+\/uploads\//.test(url)) {
+    const body = typeof init?.body === 'string' ? JSON.parse(init.body) : {}
+    return new Response(JSON.stringify(body.done ? { path: 'comments/demoreplyabcdefgh12.webm' } : { uploadUrl: 'demo://put', headers: {} }), { status: 201, headers: { 'content-type': 'application/json' } })
+  }
   if (url.startsWith('/api/')) return new Response(JSON.stringify({ entries: [], notes: [] }), { status: 200, headers: { 'content-type': 'application/json' } })
   return realFetch(u, init)
 }) as typeof fetch
