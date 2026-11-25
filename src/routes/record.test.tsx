@@ -124,6 +124,9 @@ describe('owner only', () => {
     expect(mine).toContain('1 of 2 recorded')
     const out = await page(null)
     expect(out).toContain('Sign in as this hub&#x27;s owner to record.')
+    // Issue #17: the door's button says what the owner is about to do.
+    expect(out).toMatch(/>Sign in to record<\/a>/)
+    expect(out).not.toContain('Sign in to read')
     expect(out).not.toContain('data-recorder-person')
     expect(out).not.toContain('The year.')
     const theirs = await page(stranger)

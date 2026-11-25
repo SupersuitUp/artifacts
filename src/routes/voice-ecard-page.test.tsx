@@ -55,6 +55,16 @@ describe('the page a voice eCard is', () => {
     expect(gilded.envelope).toContain(ENVELOPE_PAPER.navy.slice(0, 60))
     expect(gilded.italic).toBe(false)
   })
+  it('a pack whose reading face is sans (#18): serif draws a serif, display the pack\'s display face, never the body sans', () => {
+    const type = { display: 'var(--font-maison-inscription), "DM Serif Display", serif', body: 'var(--font-maison-reading), "DM Sans", sans-serif' }
+    const spec = card().voiceEcard!
+    const serif = voiceEcardLook(spec, type).face
+    expect(serif).toMatch(/serif$/)
+    expect(serif).not.toContain('DM Sans')
+    expect(voiceEcardLook({ ...spec, font: 'serif' }, type).face).toBe(serif)
+    expect(voiceEcardLook({ ...spec, font: 'display' }, type).face).toBe(type.display)
+    expect(voiceEcardLook({ ...spec, font: 'sans' }, type).face).toBe(type.body)
+  })
   it('a pack with a mark seals the envelope with it', async () => {
     const Mark = ({ className }: { className?: string }) => <svg data-pack-mark className={className} />
     const html = await page(card(), { brand: { ...freedomDefault, Mark } })

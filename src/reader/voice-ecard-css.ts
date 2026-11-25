@@ -158,6 +158,10 @@ export const VOICE_ECARD_CSS = String.raw`
 .ve-reply:hover { transform: translateY(-2px); filter: brightness(1.05); box-shadow: 0 6px 16px rgba(0, 0, 0, 0.22), 0 0 22px color-mix(in srgb, var(--ve-foil) 55%, transparent); }
 .ve-script { margin: 0; padding: 0.4rem 0.1rem; font-family: var(--ve-face); font-style: var(--ve-face-style); font-weight: 400; font-size: 24px; line-height: 1.34; color: var(--ve-navy); text-align: left; }
 .ve-para { margin: 0 0 0.85em; }
+/* The card's face is DECLARED on every element that holds its words, with a selector a pack's own
+   "[data-pack] p { font-family: <reading face> }" cannot beat (0,2,0+ against 0,1,1): inherited,
+   the letter took the pack's sans on CW Maison whatever font: said (issue #18, 0.74.1). */
+[data-voice-ecard] .ve-script, [data-voice-ecard] .ve-script .ve-para, [data-voice-ecard] .ve-letter .ve-preview, [data-voice-ecard] .ve-cover-fallback p, [data-voice-ecard] .ve-names b { font-family: var(--ve-face); font-style: var(--ve-face-style); }
 .ve-para:last-child { margin-bottom: 0; }
 .ve-word { transition: color 140ms ease-out, opacity 140ms ease-out; border-radius: 2px; }
 .ve-following .ve-coming { opacity: 0.38; }
