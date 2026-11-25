@@ -1003,23 +1003,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
           audio={spec.audio} media={spec.audio ? recordingName(spec.audio) : undefined}
           seal={Mark ? <Mark className="ve-seal-mark" /> : undefined}
           mark={spec.mark && a.mark !== 'none'} reply={canShare} blockId={letterBlockId(a.to ?? '', spec.from)} dateLine={dateLine(a.createdAt)}
-        />
-        <CommentLayer
-          artifactId={a.id}
-          rootId={rootId}
-          floatingButton={false}
-          ownerName={owner}
-          comments={mode}
-          canShare={canShare}
-          signedIn={reader !== null}
-          isOwner={isAdmin(reader)}
-          version={a.version ?? (a.versions?.length ?? 0) + 1}
-          accent={brand.accent}
-          ground={brand.ground}
-          signIn={signInOrigin ? signInUrl(signInOrigin, pageUrl(a.id)) : null}
-          closesAt={perReader && !perReader.owner ? perReader.closesAt : null}
-          requireName={a.commentName === 'required' && perReader?.group === true}
-          knownName={a.commentName === 'required' && perReader && !perReader.group && !perReader.owner ? perReader.label : null}
+          artifactId={a.id} version={a.version ?? (a.versions?.length ?? 0) + 1} ownerName={owner} requireName={a.commentName === 'required' && perReader?.group === true}
         />
         {perReader && !perReader.owner ? <QuietView id={a.id} rid={perReader.rid} sig={perReader.sig} token={perReader.token} /> : null}
         {await Analytics(a, { reader, perReader, untracked })}

@@ -13,16 +13,16 @@
 // package's own karaoke rules (readAlong → litWordIndex, begunCount), never a second copy.
 //
 // ADDED here: reduced motion fades instead of flying; the envelope opens from a keyboard; the
-// sender's brand mark as a wax seal; a "Reply with your voice" control that opens the page's own
-// comment card (NOTE_AT, so the recorder, the upload and the per-reader rules are the comment
-// layer's); a play that reaches the last word tells the quiet view (LISTENED) so the send counts as
+// sender's brand mark as a wax seal; "Reply with your voice", the one way to answer, which opens
+// straight into the recorder (voice-reply.tsx) with no comment layer on the page at all; a play that reaches the last word tells the quiet view (LISTENED) so the send counts as
 // listened; the letter shrinks to fit but never below readable, and scrolls past that.
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import {
   CLOSE_MS, FADE_MS, WRAP_FRONT, cardBox, closeSpot, letterFromText, letterParagraphs, letterPreview, withLines, nextPhase, reachedLastWord, readAlong,
   spreadGeom, tiltHint, viewportSize, wordState, REF_PAGE, REF_LETTER_FONT, type Box, type VoiceEcardPhase, type VoiceEcardTiming,
 } from '../artifacts/voice-ecard.js'
-import { LISTENED, NOTE_AT } from './page-bridge.js'
+import { LISTENED } from './page-bridge.js'
+import { VoiceReply } from './voice-reply.js'
 import { VOICE_ECARD_CSS } from './voice-ecard-css.js'
 
 export type VoiceEcardProps = {
@@ -56,8 +56,14 @@ export type VoiceEcardProps = {
   seal?: ReactNode
   /** Whether to draw "Made with Supersuit". */
   mark: boolean
-  /** Whether the open card offers "Reply with your voice" (the page takes shared comments). */
+  /** Whether the open card offers "Reply with your voice" (the page takes replies from this reader). */
   reply: boolean
+  /** Where a reply goes, and what it says to the reader. */
+  artifactId: string
+  version: number
+  ownerName: string
+  /** A group link on a `comment_name: required` page: a reply carries a first name. */
+  requireName?: boolean
   /** The block id the reply pins to: `b-<kind>-<8 hex>`. */
   blockId: string
   /** The date line under the letter. */
@@ -303,6 +309,7 @@ function Letter(p: VoiceEcardProps) {
   const litRef = useRef<HTMLSpanElement | null>(null)
   const [playing, setPlaying] = useState(false)
   const [now, setNow] = useState(0)
+  const [replying, setReplying] = useState(false)
   const heard = useRef(false)
   const words = p.words ?? []
   const paras = useMemo(() => withLines(words.length ? letterParagraphs(words) : letterFromText(p.letter)), [words, p.letter])
@@ -355,8 +362,10 @@ function Letter(p: VoiceEcardProps) {
     document.fonts?.ready?.then(fit).catch(() => {})
     const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(fit)
     ro?.observe(host)
+    // The reply panel adds to the page: fit again when it opens, and as it changes (record, review, sent).
+    ro?.observe(el.querySelector('[data-voice-reply-panel]') ?? el)
     return () => ro?.disconnect()
-  }, [paras])
+  }, [paras, replying])
 
   const toggle = () => {
     const a = audio.current
@@ -369,26 +378,29 @@ function Letter(p: VoiceEcardProps) {
   const reply = () => {
     // The voice stops first, so the reader's microphone never records the sender's recording.
     if (playing) { audio.current?.pause(); setPlaying(false) }
-    // The page's own comment card opens at this second of the recording, recorder and all.
-    window.dispatchEvent(new CustomEvent(NOTE_AT, { detail: { block: p.blockId, at: Math.floor(audio.current?.currentTime ?? 0) } }))
+    setReplying(true)
   }
 
   return (
-    <div ref={pageRef} className="ve-page" data-block={p.blockId} data-boxable>
+    <div ref={pageRef} className="ve-page" data-block={p.blockId}>
       <div className="ve-frame" aria-hidden data-nospeak><i /><i /><i /><i /></div>
       <div className="ve-names" data-nospeak>
         <p><span>To:</span> <b>{p.to}</b></p>
         <p><span>From:</span> <b>{p.from}</b></p>
       </div>
       {p.audio || p.reply ? (
-        <div className="ve-controls" data-nospeak data-comment-ui>
+        <div className="ve-controls" data-nospeak>
           {p.audio ? (
             <button type="button" className="ve-btn ve-listen" onClick={toggle} aria-pressed={playing}>
               {playing ? <><StopIcon /> Stop listening</> : <><PlayIcon /> Listen to the letter</>}
             </button>
           ) : null}
-          {p.reply ? <button type="button" className="ve-btn ve-reply" onClick={reply} data-voice-reply><MicIcon /> Reply with your voice</button> : null}
+          {p.reply && !replying ? <button type="button" className="ve-btn ve-reply" onClick={reply} data-voice-reply><MicIcon /> Reply with your voice</button> : null}
         </div>
+      ) : null}
+      {p.reply && replying ? (
+        <VoiceReply artifactId={p.artifactId} blockId={p.blockId} ownerName={p.ownerName} version={p.version} requireName={p.requireName}
+          at={() => audio.current?.currentTime ?? 0} accent={p.foil} />
       ) : null}
       <blockquote className={`ve-script${playing && words.length ? ' ve-following' : ''}`} data-voice-ecard-letter style={{ fontSize: REF_LETTER_FONT }}>
         {paras.map((para, i) => (

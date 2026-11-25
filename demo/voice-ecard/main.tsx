@@ -2,7 +2,6 @@
 // stubbed state API so a reply opens the real comment card with its recorder.
 import { createRoot } from 'react-dom/client'
 import { VoiceEcard } from '../../src/reader/voice-ecard.js'
-import { CommentLayer } from '../../src/reader/comment-layer.js'
 import { voiceEcardLook, letterBlockId, recordingName, dateLine } from '../../src/artifacts/voice-ecard-page.js'
 import { freedomDefault } from '../../src/brand/pack.js'
 import { themeCss } from '../../src/brand/theme.js'
@@ -39,9 +38,9 @@ async function main() {
         cover={q.has('nocover') ? undefined : `${__BLESSOUT__}/backgrounds/thanksgiving-dinner.png`}
         inner={`${__BLESSOUT__}/backgrounds/fall-leaves.png`} background={`${__BLESSOUT__}/backgrounds/${bg}.png`}
         audio="/card.m4a" media={recordingName('/card.m4a')} seal={brand ? <Mark /> : undefined} mark reply
-        blockId={letterBlockId('Robin', 'Sam')} dateLine={dateLine('2026-11-26T12:00:00Z')} />
-      <CommentLayer artifactId="demo2345" rootId="voice-ecard-root" floatingButton={false} ownerName="Sam" comments="anyone" canShare signedIn={false} isOwner={false}
-        version={1} accent={freedomDefault.accent} ground={freedomDefault.ground} signIn={null} closesAt={null} requireName={false} knownName={null} />
+        blockId={letterBlockId('Robin', 'Sam')} dateLine={dateLine('2026-11-26T12:00:00Z')}
+        artifactId="demo2345" version={1} ownerName="Sam" />
+
     </>,
   )
 }

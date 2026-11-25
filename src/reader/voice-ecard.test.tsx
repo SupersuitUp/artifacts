@@ -6,7 +6,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { VoiceEcard, type VoiceEcardProps } from './voice-ecard.js'
-import { LISTENED, NOTE_AT } from './page-bridge.js'
+import { LISTENED } from './page-bridge.js'
 import { REF_PAGE, REF_LETTER_FONT, closeSpot, letterFontPx, spreadGeom, type VoiceEcardTiming } from '../artifacts/voice-ecard.js'
 
 const WORDS: VoiceEcardTiming[] = [
@@ -17,7 +17,7 @@ const props: VoiceEcardProps = {
   rootId: 'voice-ecard-root', to: 'Robin', from: 'Sam', letter: 'Dear Robin,\n\nThank you.', words: WORDS,
   envelope: 'url("data:image/webp;base64,AA")', liner: 'none', paper: 'none', cover: 'https://cdn.example.com/wrap.webp',
   audio: 'https://cdn.example.com/card.m4a', media: 'card.m4a', foil: '#e7cb75', navy: '#09164d', face: 'Georgia', italic: true,
-  title: 'Georgia', mark: true, reply: true, blockId: 'b-card-0123abcd',
+  title: 'Georgia', mark: true, reply: true, blockId: 'b-card-0123abcd', artifactId: 'card2345', version: 1, ownerName: 'Sam',
 }
 
 let roots: Root[] = []
@@ -244,22 +244,19 @@ describe('the letter on the open card', () => {
     t = 6.0; await advance(40)
     expect(heard).toEqual([{ media: 'card.m4a' }])
   })
-  it('"Reply with your voice" opens the page\'s comment card at this second of the recording', async () => {
+  it('"Reply with your voice" stops the voice and opens the recorder right on the page: no comment card', async () => {
     await opened()
-    const asked: unknown[] = []
-    window.addEventListener(NOTE_AT, (e) => asked.push((e as CustomEvent).detail))
     const a = q<HTMLAudioElement>('audio')!
-    let t = 0
-    Object.defineProperty(a, 'currentTime', { configurable: true, get: () => t, set: (v) => { t = v } })
     const paused = vi.fn()
     Object.defineProperty(a, 'pause', { configurable: true, value: paused })
     click(q('.ve-listen'))
-    t = 7.4; await advance(20)
     click(q('[data-voice-reply]'))
-    expect(asked).toEqual([{ block: 'b-card-0123abcd', at: 7 }])
-    // The voice stops, so the reader's microphone never records it.
     expect(paused).toHaveBeenCalled()
-    expect(q('.ve-listen')!.textContent).toContain('Listen to the letter')
+    expect(q('[data-voice-reply-panel]')).not.toBeNull()
+    expect(q('[data-voice-reply]')).toBeNull()
+    expect(q('textarea')).toBeNull()
+    expect(document.querySelector('[data-comment-layer], [data-comment-pin], [data-comment-button]')).toBeNull()
+    expect(q('[data-voice-ecard-page]')!.textContent).not.toMatch(/comment/i)
   })
   it('no reply control when the page takes no comments; no Supersuit line with mark: false', async () => {
     await opened({ reply: false, mark: false })

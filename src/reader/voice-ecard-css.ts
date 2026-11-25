@@ -165,6 +165,21 @@ export const VOICE_ECARD_CSS = String.raw`
 .ve-following .ve-saying { opacity: 1; color: var(--ve-navy); background: linear-gradient(transparent 58%, color-mix(in srgb, var(--ve-foil) 72%, transparent) 58%); }
 .ve-foot { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-top: 1.2rem; font: italic 400 0.8rem/1.3 system-ui, -apple-system, sans-serif; color: var(--ve-navy); }
 .ve-foot a { color: inherit; opacity: 0.7; text-decoration: none; font-style: normal; letter-spacing: 0.18em; text-transform: uppercase; font-size: 0.62rem; }
+/* "Reply with your voice": the recorder, straight on the page (voice-reply.tsx). */
+.ve-reply-panel { display: flex; flex-direction: column; align-items: center; gap: 10px; margin: 0 0 1.1rem; padding: 14px 12px; border-radius: 14px; border: 1px solid color-mix(in srgb, var(--ve-foil) 55%, transparent); background: color-mix(in srgb, var(--ve-foil) 10%, transparent); font: 400 14px/1.3 system-ui, -apple-system, sans-serif; color: var(--ve-navy); }
+.ve-reply-mic { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.ve-reply-mic [data-voice-recorder] { margin: 0 !important; }
+.ve-reply-mic [data-voice-mic] { width: 64px !important; height: 64px !important; margin: 0 !important; border-radius: 50% !important; border: 2px solid var(--ve-foil) !important; background: #fffaf0; color: var(--ve-navy) !important; }
+.ve-reply-mic [data-voice-mic][aria-pressed="true"] { background: var(--ve-foil) !important; }
+.ve-reply-mic [data-voice-mic] svg { width: 28px; height: 28px; }
+.ve-reply-mic [data-voice-live-note] { display: none; }
+.ve-reply-hint { font-size: 13px; opacity: 0.75; }
+.ve-reply-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; width: 100%; }
+.ve-again { background: transparent; color: var(--ve-navy); border: 1px solid color-mix(in srgb, var(--ve-foil) 70%, transparent); }
+.ve-reply-name { width: 100%; box-sizing: border-box; padding: 10px 12px; border-radius: 10px; border: 1px solid color-mix(in srgb, var(--ve-foil) 60%, transparent); background: #fffdf6; color: var(--ve-navy); font: 16px system-ui, sans-serif; }
+.ve-reply-sent { margin: 0 0 1.1rem; text-align: center; font: 600 15px/1.3 system-ui, -apple-system, sans-serif; color: var(--ve-navy); }
+.ve-reply-error { margin: 0; font-size: 13px; color: #a3261a; }
+
 /* The page is laid out at one reference size and scaled as a unit (REF_PAGE in voice-ecard.ts), so
    nothing here answers to the screen's width: no media query sizes the letter. */
 .ve-page-host .ve-btn { flex: 1 1 auto; }

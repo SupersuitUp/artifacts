@@ -16,6 +16,9 @@ import { freedomDefault } from '../brand/pack.js'
 import type { ArtifactRecord, ArtifactStore, SaveInput } from '../artifacts/store.js'
 import { ENVELOPE_PAPER } from '../artifacts/voice-ecard-assets.js'
 import { voiceEcardLook, GILDED, recordingName, letterText } from '../artifacts/voice-ecard-page.js'
+import { memoryRecipientsStore, summarizeViews } from '../artifacts/recipients-store.js'
+import { ridSig } from '../artifacts/recipients.js'
+import { mergeCommentsState } from '../artifacts/comments.js'
 
 const site = 'https://artifacts.example.com'
 const WORDS = [{ w: 'Dear', s: 4, e: 4.3 }, { w: 'Robin,', s: 4.35, e: 4.9, br: 1 }, { w: 'Thank', s: 5.6, e: 5.9 }, { w: 'you.', s: 5.95, e: 6.4 }]
@@ -38,7 +41,7 @@ describe('the page a voice eCard is', () => {
     expect(html).toContain(`--ve-foil:${GILDED.foil}`)
     expect(html).toMatch(/To: (<!-- -->)?Robin/)
     expect(html).toMatch(/From: (<!-- -->)?Sam/)
-    expect(html).toContain('Dear Robin, Thank you.')
+    expect(html).toContain('Dear Robin,\nThank you.')
     expect(html).toContain('Made with Supersuit')
     expect(html).toContain('Hover over me')
     expect(html).not.toContain('artifact-narration-root')
@@ -99,5 +102,43 @@ describe('publishing a voice eCard', () => {
     const doc = await r.POST(publish('---\ntitle: T\nsummary: S\ntemplate: document\n---\nNow a doc.\n', id))
     expect(doc.status).toBe(409)
     expect((await doc.json()).error).toContain('voice eCard')
+  })
+})
+
+// Gary, 2026-11-25: "Remove comment feature methinks ya?" A voice eCard has no comment layer at all;
+// "Reply with your voice" is the one way to answer, and its reply is the same comments-slot record.
+describe('no comments on a voice eCard, one way to answer', () => {
+  const RS = 'r'.repeat(40)
+  const withComments = (rec: Partial<ArtifactRecord>) => {
+    const m = mergeCommentsState(undefined, 'anyone', 'owner')
+    if (!m.ok) throw new Error(m.error)
+    return { ...rec, comments: 'anyone' as const, state: m.state }
+  }
+  it('the page draws no comment layer, no selection-to-comment, no pins, no comment list', async () => {
+    const html = await page(withComments(card()))
+    expect(html).not.toContain('data-comment-layer')
+    expect(html).not.toContain('data-comment-button')
+    expect(html).not.toContain('data-comment-pin')
+    expect(html).not.toMatch(/data-boxable/)
+  })
+  it('a document page still has its comment layer', async () => {
+    const doc = withComments({ id: 'dcmt2345', template: 'document', title: 'Plan', summary: 'S', markdown: 'Words.' })
+    expect(await page(doc)).toContain('data-comment-layer="anyone"')
+  })
+  it('the reply, as Reply with your voice sends it, is stored as that reader\'s comment and counts as a response', async () => {
+    const recipients = memoryRecipientsStore()
+    const rec = withComments(card({ id: 'card2345', links: 'per-reader' }))
+    const [ana] = await recipients.add('card2345', [{ label: 'Ana' }])
+    const state = createMemoryStateStore()
+    const r = createArtifactRoutes(testConfig({ store: memoryArtifactStore([rec]), state, recipients, recipientSecret: () => RS }))
+    const value = { anchor: { kind: 'time', block: 'b-card-0123abcd', at: 7 }, body: '', version: 1, audio: 'comments/abcdefghijklmnop1234.webm' }
+    const res = await r.STATE_POST(new NextRequest(`${site}/api/artifacts/card2345/state`, { method: 'POST', body: JSON.stringify({ slot: 'comments', op: 'append', value }),
+      headers: { 'content-type': 'application/json', cookie: `artifact_r_card2345=${ana.rid}.${ridSig(RS, 'card2345', ana.rid)}` } }), { params: Promise.resolve({ id: 'card2345' }) })
+    expect(res.status).toBe(200)
+    const entries = (await state.entries('card2345')).filter((e) => e.slot === 'comments')
+    expect(entries.map((e) => [e.readerKey, (e.value as { audio?: string }).audio])).toEqual([[`r:${ana.rid}`, 'comments/abcdefghijklmnop1234.webm']])
+    const comments = entries.map((e) => ({ readerKey: e.readerKey, at: e.at, text: '' }))
+    const [line] = summarizeViews((await recipients.get('card2345'))!, await recipients.views('card2345'), comments, { goal: 'respond' })
+    expect(line).toMatchObject({ outcome: 'acted', succeeded: true })
   })
 })
