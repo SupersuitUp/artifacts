@@ -214,17 +214,32 @@ export const OPENING_MS = RISE_MS + OPEN_MS + ZOOM_MS
 
 export type ViewportSize = { vw: number; vh: number }
 export type SpreadGeometry = {
-  /** The folded card's size while it rises and opens. */
+  /** The folded card's size while it rises and opens (3:4). */
   fw: number; fh: number
   /** Top of the risen folded card. */
   riseTop: number
-  /** The open page (inside-right) and where it sits. */
+  /** The open page (inside-right) and where it sits: REF_PAGE times `scale`. */
   pw: number; ph: number
   /** The spine: the pages mirror around it. */
   spineX: number
   pTop: number
+  /** The one factor the whole open card is drawn at, from its reference size. */
+  scale: number
+  /** The air kept between the open card and the screen's edge. */
+  margin: number
   vw: number; vh: number
 }
+
+/** THE OPEN CARD HAS ONE SHAPE (Gary, 2026-11-24, an iPhone held sideways: "the card should shrink
+ *  proportionally to what a card would, like card proportions. So the text could be very small,
+ *  which is okay"). Each page is laid out at this reference size, 3:4, and the whole card, art,
+ *  letter, type, buttons and frame, is scaled as one unit to fit the screen. The letter never
+ *  reflows to the screen's shape. */
+export const REF_PAGE = { w: 480, h: 640 } as const
+/** The letter's type size on the reference page. */
+export const REF_LETTER_FONT = 24
+/** The letter's type size on screen. */
+export const letterFontPx = (g: Pick<SpreadGeometry, 'scale'>) => REF_LETTER_FONT * g.scale
 
 type ViewportWindow = {
   innerWidth: number; innerHeight: number
@@ -248,18 +263,29 @@ export function viewportSize(w: ViewportWindow): ViewportSize {
 export const onePage = ({ vw, vh }: ViewportSize) => vw < 768 && vh > vw
 
 /** The card's geometry: the folded card rises, slides so its spine lands mid-screen while the
- *  cover swings open, then the spread zooms to full size. */
+ *  cover swings open, then the spread zooms to its size. The open card is REF_PAGE (one page on a
+ *  portrait phone, two either side of the spine otherwise) at the largest scale that fits the
+ *  visible screen with a small margin, so nothing is ever cut off. The flight (fw, fh, riseTop)
+ *  keeps BlessOut's sizes, at 3:4, held inside the screen. */
 export function spreadGeom(v: ViewportSize): SpreadGeometry {
   const { vw, vh } = v
   const m = onePage(v)
-  const fh = m ? Math.min(vw * 0.44, 240) / 0.72 : Math.min(vh * 0.5, 460)
-  const fw = fh * 0.72
-  const riseTop = Math.max(20, vh * 0.12)
-  const pw = m ? vw - 16 : Math.min(520, vw * 0.46)
-  const ph = m ? vh * 0.92 : Math.min(vh * 0.86, 840)
-  const spineX = m ? 8 : vw / 2
+  const margin = Math.max(8, Math.min(24, Math.min(vw, vh) * 0.03))
+  const across = m ? REF_PAGE.w : 2 * REF_PAGE.w
+  const scale = Math.max(0.05, Math.min((vw - 2 * margin) / across, (vh - 2 * margin) / REF_PAGE.h))
+  const pw = REF_PAGE.w * scale
+  const ph = REF_PAGE.h * scale
+  const spineX = m ? (vw - pw) / 2 : vw / 2
   const pTop = (vh - ph) / 2
-  return { fw, fh, riseTop, pw, ph, spineX, pTop, vw, vh }
+  const fh = Math.min(m ? Math.min(vw * 0.44, 240) / 0.75 : Math.min(vh * 0.5, 460), vh - 2 * margin)
+  const fw = fh * 0.75
+  const riseTop = Math.min(Math.max(20, vh * 0.12), vh - margin - fh)
+  return { fw, fh, riseTop, pw, ph, spineX, pTop, scale, margin, vw, vh }
+}
+
+/** The whole open card on screen: the page on a portrait phone, else both pages round the spine. */
+export function openCardBox(g: SpreadGeometry, one: boolean): Box {
+  return one ? { top: g.pTop, left: g.spineX, width: g.pw, height: g.ph } : { top: g.pTop, left: g.spineX - g.pw, width: 2 * g.pw, height: g.ph }
 }
 
 export type Box = { top: number; left: number; width: number; height: number }

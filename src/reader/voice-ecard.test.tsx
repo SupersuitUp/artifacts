@@ -7,7 +7,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { VoiceEcard, type VoiceEcardProps } from './voice-ecard.js'
 import { LISTENED, NOTE_AT } from './page-bridge.js'
-import type { VoiceEcardTiming } from '../artifacts/voice-ecard.js'
+import { REF_PAGE, REF_LETTER_FONT, closeSpot, letterFontPx, spreadGeom, type VoiceEcardTiming } from '../artifacts/voice-ecard.js'
 
 const WORDS: VoiceEcardTiming[] = [
   { w: 'Dear', s: 4.0, e: 4.3 }, { w: 'Robin,', s: 4.35, e: 4.9, br: 1 },
@@ -109,8 +109,9 @@ describe('the opening, on BlessOut\'s clock', () => {
     click(q('.ve-letter'))
     await openAll()
     const btn = q<HTMLButtonElement>('button[aria-label="Close card"]')!
-    expect(btn.style.top).toBe('38px')
-    expect(btn.style.left).toBe('1136px')
+    const spot = closeSpot(spreadGeom({ vw: 1280, vh: 800 }))
+    expect(parseFloat(btn.style.top)).toBeCloseTo(spot.top)
+    expect(parseFloat(btn.style.left)).toBeCloseTo(spot.left)
     click(btn)
     await advance(450)
     expect(phase()).toBe('idle')
@@ -148,35 +149,49 @@ describe('desktop hover and phone tap', () => {
   })
 })
 
-describe('geometry', () => {
+describe('geometry: one card, scaled as a unit', () => {
   const host = () => q<HTMLElement>('[data-voice-ecard-page]')!
-  it('390x844: one page edge to edge, with the tilt hint', async () => {
+  /** The letter page as drawn: its reference box, scaled from its top-left corner. */
+  const drawn = () => {
+    const h = host()
+    const s = Number(/scale\(([\d.]+)\)/.exec(h.style.transform)?.[1])
+    return { left: parseFloat(h.style.left), top: parseFloat(h.style.top), width: parseFloat(h.style.width) * s, height: parseFloat(h.style.height) * s, s }
+  }
+  const sizes: [number, number][] = [[844, 390], [390, 844], [932, 430], [1280, 800], [2000, 921]]
+  for (const [w, h] of sizes) {
+    it(`${w}x${h}: the letter page is the reference page scaled to fit, its type a fixed size inside it`, async () => {
+      size(w, h)
+      render()
+      const press = w < 768 ? tap : click
+      press(q('.ve-letter')); if (w < 768) press(q('.ve-letter'))
+      await openAll()
+      const g = spreadGeom({ vw: w, vh: h })
+      const d = drawn()
+      expect(host().style.width).toBe(`${REF_PAGE.w}px`)
+      expect(host().style.height).toBe(`${REF_PAGE.h}px`)
+      expect(d.s).toBeCloseTo(g.scale, 6)
+      expect(d.left).toBeCloseTo(g.spineX)
+      expect(d.top + d.height).toBeLessThanOrEqual(h)
+      expect(d.left + d.width).toBeLessThanOrEqual(w)
+      expect(d.width / d.height).toBeCloseTo(3 / 4, 2)
+      // On screen the letter's type is the reference size times the scale, whatever the screen.
+      expect(q<HTMLElement>('[data-voice-ecard-letter]')!.style.fontSize).toBe(`${REF_LETTER_FONT}px`)
+      expect(REF_LETTER_FONT * d.s).toBeCloseTo(letterFontPx(g), 6)
+      expect(!!q('.ve-tilt')).toBe(w < 768 && h > w)
+    })
+  }
+  it('a rotation from 390x844 to 844x390 re-lays out to the whole spread and the hint goes', async () => {
     size(390, 844)
     render()
     tap(q('.ve-letter')); tap(q('.ve-letter'))
     await openAll()
-    expect(host().style.left).toBe('8px')
-    expect(host().style.width).toBe('374px')
-    expect(q('.ve-tilt')!.textContent).toContain('Tilt your phone to see the whole card')
-  })
-  it('a rotation to 844x390 re-lays out to the whole spread and the hint goes', async () => {
-    size(390, 844)
-    render()
-    tap(q('.ve-letter')); tap(q('.ve-letter'))
-    await openAll()
+    expect(q('.ve-tilt')).not.toBeNull()
     size(844, 390)
     act(() => { window.dispatchEvent(new Event('orientationchange')) })
     await advance(900)
-    expect(host().style.left).toBe('422px')
-    expect(parseFloat(host().style.width)).toBeCloseTo(844 * 0.46)
-    expect(q('.ve-tilt')).toBeNull()
-  })
-  it('1280x800: a 520 px page right of the spine', async () => {
-    render()
-    click(q('.ve-letter'))
-    await openAll()
-    expect(host().style.left).toBe('640px')
-    expect(host().style.width).toBe('520px')
+    const g = spreadGeom({ vw: 844, vh: 390 })
+    expect(drawn().left).toBe(422)
+    expect(drawn().s).toBeCloseTo(g.scale, 6)
     expect(q('.ve-tilt')).toBeNull()
   })
 })

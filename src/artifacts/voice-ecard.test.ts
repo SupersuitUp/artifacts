@@ -5,7 +5,7 @@ import { describe, it, expect } from 'vitest'
 import { parseArtifactSource } from './front-matter.js'
 import {
   VOICE_ECARD_OCCASIONS, ENVELOPE_COLORS, DEFAULT_ENVELOPE, RISE_MS, OPEN_MS, ZOOM_MS, CLOSE_MS, OPENING_MS, nextPhase,
-  spreadGeom, viewportSize, cardBox, closeSpot, tiltHint, onePage, WRAP_FRONT, wrapFrontCrop,
+  spreadGeom, viewportSize, cardBox, closeSpot, tiltHint, onePage, WRAP_FRONT, wrapFrontCrop, openCardBox, letterFontPx, REF_PAGE, REF_LETTER_FONT,
   letterParagraphs, readAlong, wordState, reachedLastWord, timingsFromJson, letterMismatch, type VoiceEcardPhase, type VoiceEcardTiming,
 } from './voice-ecard.js'
 import { ENVELOPE_PAPER, LINER_PAPER, LETTER_PAPER } from './voice-ecard-assets.js'
@@ -135,37 +135,53 @@ describe('the choreography: BlessOut\'s phases and timings', () => {
 
 describe('geometry', () => {
   const win = (w: number, h: number, vv?: { width: number; height: number; scale: number }) => ({ innerWidth: w, innerHeight: h, document: { documentElement: { clientWidth: w, clientHeight: h } }, visualViewport: vv ?? null })
-  it('390x844 portrait: one page, edge to edge, with the tilt hint', () => {
-    const v = viewportSize(win(390, 844))
-    const g = spreadGeom(v)
-    expect(onePage(v)).toBe(true)
-    expect(g.pw).toBe(374)
-    expect(g.ph).toBeCloseTo(776.48)
-    expect(g.spineX).toBe(8)
-    expect(g.pTop).toBeCloseTo(33.76)
-    expect(g.fh).toBeCloseTo(Math.min(390 * 0.44, 240) / 0.72)
-    expect(g.fw).toBeCloseTo(g.fh * 0.72)
-    expect(tiltHint('open', v)).toBe(true)
-    expect(tiltHint('zooming', v)).toBe(false)
-    expect(closeSpot(g).left).toBe(338)
-    expect(closeSpot(g).top).toBeCloseTo(15.76)
+  // Gary, 2026-11-24, on an iPhone held sideways: "the card should shrink proportionally to what a
+  // card would, like card proportions. So the text could be very small, which is okay." The open
+  // card is one reference-size card (3:4 pages, a 3:2 spread) scaled as a unit to fit the screen.
+  const sizes: [number, number][] = [[844, 390], [390, 844], [932, 430], [1280, 800], [2000, 921]]
+  for (const [w, h] of sizes) {
+    it(`${w}x${h}: the whole open card fits the screen at card proportions, scaled as one unit`, () => {
+      const v = viewportSize(win(w, h))
+      const g = spreadGeom(v)
+      const one = onePage(v)
+      const box = openCardBox(g, one)
+      expect(box.left).toBeGreaterThanOrEqual(0)
+      expect(box.top).toBeGreaterThanOrEqual(0)
+      expect(box.left + box.width).toBeLessThanOrEqual(w)
+      expect(box.top + box.height).toBeLessThanOrEqual(h)
+      // One page is 3:4; the spread is 3:2.
+      expect(Math.abs(box.width / box.height - (one ? 3 / 4 : 3 / 2)) / (one ? 3 / 4 : 3 / 2)).toBeLessThan(0.01)
+      expect(Math.abs(g.pw / g.ph - 3 / 4)).toBeLessThan(0.0075)
+      // Every size on the page is the reference size times one scale factor.
+      expect(g.pw).toBeCloseTo(REF_PAGE.w * g.scale, 6)
+      expect(g.ph).toBeCloseTo(REF_PAGE.h * g.scale, 6)
+      expect(letterFontPx(g)).toBeCloseTo(REF_LETTER_FONT * g.scale, 6)
+      // It fills the screen in its tight direction, with only the margin left over.
+      const tight = one ? Math.min((w - 2 * g.margin) / REF_PAGE.w, (h - 2 * g.margin) / REF_PAGE.h) : Math.min((w - 2 * g.margin) / (2 * REF_PAGE.w), (h - 2 * g.margin) / REF_PAGE.h)
+      expect(g.scale).toBeCloseTo(tight, 6)
+      // The folded card in flight fits too.
+      expect(g.riseTop + g.fh).toBeLessThanOrEqual(h)
+      expect(g.fw / g.fh).toBeCloseTo(3 / 4, 6)
+    })
+  }
+  it('a portrait phone sees one page with the tilt hint; landscape and desktop the whole spread', () => {
+    expect(onePage({ vw: 390, vh: 844 })).toBe(true)
+    expect(tiltHint('open', { vw: 390, vh: 844 })).toBe(true)
+    expect(tiltHint('zooming', { vw: 390, vh: 844 })).toBe(false)
+    for (const [vw, vh] of [[844, 390], [932, 430], [1280, 800], [2000, 921]]) expect(tiltHint('open', { vw, vh })).toBe(false)
+    const one = spreadGeom({ vw: 390, vh: 844 })
+    expect(one.spineX).toBeCloseTo((390 - one.pw) / 2)
+    const spread = spreadGeom({ vw: 844, vh: 390 })
+    expect(spread.spineX).toBe(422)
   })
-  it('844x390 landscape: the whole spread, mirrored round the middle', () => {
-    const v = viewportSize(win(844, 390))
-    const g = spreadGeom(v)
-    expect(onePage(v)).toBe(false)
-    expect(g.spineX).toBe(422)
-    expect(g.pw).toBeCloseTo(844 * 0.46)
-    expect(g.ph).toBeCloseTo(390 * 0.86)
-    expect(g.fh).toBeCloseTo(195)
-    expect(tiltHint('open', v)).toBe(false)
-  })
-  it('1280x800 desktop: two 520 px pages either side of the spine', () => {
-    const g = spreadGeom(viewportSize(win(1280, 800)))
-    expect(g).toMatchObject({ pw: 520, spineX: 640, riseTop: 96, fh: 400 })
-    expect(g.ph).toBeCloseTo(688)
-    expect(g.fw).toBeCloseTo(288)
-    expect(closeSpot(g)).toEqual({ top: 38, left: 1136 })
+  it('the close medallion sits on the open card\'s top-right corner, on screen', () => {
+    for (const [vw, vh] of sizes) {
+      const g = spreadGeom({ vw, vh })
+      const c = closeSpot(g)
+      expect(c.left + 42).toBeLessThanOrEqual(vw)
+      expect(c.top).toBeGreaterThanOrEqual(0)
+      expect(c.left).toBeCloseTo(Math.min(vw - 52, g.spineX + g.pw - 24))
+    }
   })
   it('the visual viewport wins over stale layout numbers, except while pinch-zoomed', () => {
     expect(viewportSize(win(390, 844, { width: 390, height: 727, scale: 1 }))).toEqual({ vw: 390, vh: 727 })
@@ -175,10 +191,11 @@ describe('geometry', () => {
     const g = spreadGeom({ vw: 1280, vh: 800 })
     const from = { top: 400, left: 600, width: 320, height: 80 }
     expect(cardBox('rising', from, false, g)).toEqual(from)
-    expect(cardBox('rising', from, true, g)).toEqual({ top: 96, left: (1280 - g.fw) / 2, width: g.fw, height: g.fh })
-    expect(cardBox('opening', from, true, g)).toEqual({ top: 96, left: 640, width: g.fw, height: g.fh })
-    for (const p of ['zooming', 'open', 'closing'] as const) expect(cardBox(p, from, true, g)).toEqual({ top: g.pTop, left: 640, width: 520, height: g.ph })
+    expect(cardBox('rising', from, true, g)).toEqual({ top: g.riseTop, left: (1280 - g.fw) / 2, width: g.fw, height: g.fh })
+    expect(cardBox('opening', from, true, g)).toEqual({ top: g.riseTop, left: 640, width: g.fw, height: g.fh })
+    for (const p of ['zooming', 'open', 'closing'] as const) expect(cardBox(p, from, true, g)).toEqual({ top: g.pTop, left: 640, width: g.pw, height: g.ph })
   })
+
 })
 
 describe('the wrap cover', () => {
@@ -190,7 +207,7 @@ describe('the wrap cover', () => {
   })
   it('the folded card is the front\'s 3:4 shape', () => {
     const g = spreadGeom({ vw: 1280, vh: 800 })
-    expect(g.fw / g.fh).toBeCloseTo(0.72)
+    expect(g.fw / g.fh).toBeCloseTo(0.75)
   })
 })
 

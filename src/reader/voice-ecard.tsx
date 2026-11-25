@@ -20,7 +20,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import {
   CLOSE_MS, FADE_MS, WRAP_FRONT, cardBox, closeSpot, letterFromText, letterParagraphs, nextPhase, reachedLastWord, readAlong,
-  spreadGeom, tiltHint, viewportSize, wordState, type Box, type VoiceEcardPhase, type VoiceEcardTiming,
+  spreadGeom, tiltHint, viewportSize, wordState, REF_PAGE, REF_LETTER_FONT, type Box, type VoiceEcardPhase, type VoiceEcardTiming,
 } from '../artifacts/voice-ecard.js'
 import { LISTENED, NOTE_AT } from './page-bridge.js'
 import { VOICE_ECARD_CSS } from './voice-ecard-css.js'
@@ -67,8 +67,9 @@ export type VoiceEcardProps = {
 const isTouch = () => typeof window !== 'undefined' && (window.matchMedia?.('(pointer: coarse)').matches || window.innerWidth < 768)
 const reduced = () => typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
 
-/** The smallest the letter is drawn before it scrolls instead: below this a phone reader squints. */
-export const MIN_LETTER_ZOOM = 0.72
+/** The smallest a long letter is shrunk, on the reference page, before it scrolls instead. It
+ *  depends only on the letter's length, never on the screen. */
+export const MIN_LETTER_ZOOM = 0.45
 
 function PlayIcon() { return <svg viewBox="0 0 14 14" aria-hidden><path d="M3 1.5v11l9.5-5.5z" fill="currentColor" /></svg> }
 function StopIcon() { return <svg viewBox="0 0 14 14" aria-hidden><rect x="2.5" y="2.5" width="9" height="9" rx="1" fill="currentColor" /></svg> }
@@ -208,7 +209,8 @@ export function VoiceEcard(p: VoiceEcardProps) {
   const geom = useMemo(() => (typeof window === 'undefined' ? null : spreadGeom(viewportSize(window))), [tick, phase]) // eslint-disable-line react-hooks/exhaustive-deps
   const flyer: CSSProperties | undefined = from && geom && phase !== 'idle' ? cardBox(phase, from, flown, geom) : undefined
   const foldOpen = phase === 'opening' || phase === 'zooming' || phase === 'open' || phase === 'closing'
-  const pageBox: CSSProperties | undefined = phase === 'open' && geom ? { top: geom.pTop, left: geom.spineX, width: geom.pw, height: geom.ph } : undefined
+  // The letter's page is laid out at its reference size and scaled as one unit with the card.
+  const pageBox: CSSProperties | undefined = phase === 'open' && geom ? { top: geom.pTop, left: geom.spineX, width: REF_PAGE.w, height: REF_PAGE.h, transform: `scale(${geom.scale})` } : undefined
   const closeBox: CSSProperties | undefined = phase === 'open' && geom ? closeSpot(geom) : undefined
   const tilt = phase === 'open' && typeof window !== 'undefined' && tiltHint(phase, viewportSize(window))
 
@@ -333,7 +335,8 @@ function Letter(p: VoiceEcardProps) {
   }, [at.lit, playing])
 
   // The letter fits its page: the largest zoom that fits, found by halving (zoom reflows text, so
-  // one ratio overshoots), never below MIN_LETTER_ZOOM; past that the page scrolls.
+  // one ratio overshoots), never below MIN_LETTER_ZOOM; past that the page scrolls. The page is the
+  // reference size, so this depends on the letter alone, never on the screen.
   useEffect(() => {
     const el = pageRef.current
     const host = el?.parentElement
@@ -386,7 +389,7 @@ function Letter(p: VoiceEcardProps) {
           {p.reply ? <button type="button" className="ve-btn ve-reply" onClick={reply} data-voice-reply><MicIcon /> Reply with your voice</button> : null}
         </div>
       ) : null}
-      <blockquote className={`ve-script${playing && words.length ? ' ve-following' : ''}`} data-voice-ecard-letter>
+      <blockquote className={`ve-script${playing && words.length ? ' ve-following' : ''}`} data-voice-ecard-letter style={{ fontSize: REF_LETTER_FONT }}>
         {paras.map((para, i) => (
           <p key={i} className="ve-para">
             {para.map(({ word, index }) => {

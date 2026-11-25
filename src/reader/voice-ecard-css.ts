@@ -124,7 +124,7 @@ export const VOICE_ECARD_CSS = String.raw`
 .ve-cover-fallback p { margin: 0.2rem 0; }
 
 /* The open card's letter, pinned over the inside-right page */
-.ve-page-host { position: fixed; z-index: 5; overflow-y: auto; overflow-x: hidden; pointer-events: auto; display: flex; flex-direction: column; animation: ve-fade-in 0.45s ease-out forwards; overscroll-behavior: contain; scrollbar-width: thin; }
+.ve-page-host { position: fixed; z-index: 5; transform-origin: 0 0; box-sizing: border-box; overflow-y: auto; overflow-x: hidden; pointer-events: auto; display: flex; flex-direction: column; animation: ve-fade-in 0.45s ease-out forwards; overscroll-behavior: contain; scrollbar-width: thin; }
 .ve-close { position: fixed; z-index: 6; width: 42px; height: 42px; border-radius: 50%; background: #fffaf0; border: 2px solid var(--ve-foil); color: var(--ve-navy); display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35), 0 0 12px rgba(255, 236, 179, 0.35); transition: transform 0.15s ease, box-shadow 0.15s ease; animation: ve-fade-in 0.45s ease-out forwards; }
 .ve-close:hover { transform: scale(1.1); box-shadow: 0 8px 22px rgba(0, 0, 0, 0.4), 0 0 16px rgba(255, 236, 179, 0.55); }
 .ve-close:focus-visible, .ve-btn:focus-visible { outline: 2px solid var(--ve-foil); outline-offset: 3px; }
@@ -156,7 +156,7 @@ export const VOICE_ECARD_CSS = String.raw`
 .ve-listen:hover { transform: scale(1.02); box-shadow: 0 0 10px var(--ve-foil); }
 .ve-reply { background: linear-gradient(160deg, color-mix(in srgb, var(--ve-foil) 55%, white) 0%, var(--ve-foil) 45%, color-mix(in srgb, var(--ve-foil) 82%, black) 100%); color: var(--ve-navy); border: 1px solid rgba(255, 243, 207, 0.65); box-shadow: 0 6px 16px rgba(0, 0, 0, 0.22); }
 .ve-reply:hover { transform: translateY(-2px); filter: brightness(1.05); box-shadow: 0 6px 16px rgba(0, 0, 0, 0.22), 0 0 22px color-mix(in srgb, var(--ve-foil) 55%, transparent); }
-.ve-script { margin: 0; padding: 0.4rem 0.1rem; font-family: var(--ve-face); font-style: var(--ve-face-style); font-weight: 400; font-size: var(--ve-size, 1.5rem); line-height: 1.32; color: var(--ve-navy); text-align: left; }
+.ve-script { margin: 0; padding: 0.4rem 0.1rem; font-family: var(--ve-face); font-style: var(--ve-face-style); font-weight: 400; font-size: 24px; line-height: 1.34; color: var(--ve-navy); text-align: left; }
 .ve-para { margin: 0 0 0.85em; }
 .ve-para:last-child { margin-bottom: 0; }
 .ve-word { transition: color 140ms ease-out, opacity 140ms ease-out; border-radius: 2px; }
@@ -165,12 +165,9 @@ export const VOICE_ECARD_CSS = String.raw`
 .ve-following .ve-saying { opacity: 1; color: var(--ve-navy); background: linear-gradient(transparent 58%, color-mix(in srgb, var(--ve-foil) 72%, transparent) 58%); }
 .ve-foot { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-top: 1.2rem; font: italic 400 0.8rem/1.3 system-ui, -apple-system, sans-serif; color: var(--ve-navy); }
 .ve-foot a { color: inherit; opacity: 0.7; text-decoration: none; font-style: normal; letter-spacing: 0.18em; text-transform: uppercase; font-size: 0.62rem; }
-@media (min-width: 768px) { .ve-script { font-size: var(--ve-size-desk, 1.75rem); line-height: 1.36; } }
-@media (max-width: 600px) {
-  .ve-page { padding: 2.2rem 1.9rem 2rem; }
-  .ve-names { flex-direction: column; align-items: flex-start; }
-  .ve-btn { flex: 1 1 auto; }
-}
+/* The page is laid out at one reference size and scaled as a unit (REF_PAGE in voice-ecard.ts), so
+   nothing here answers to the screen's width: no media query sizes the letter. */
+.ve-page-host .ve-btn { flex: 1 1 auto; }
 
 /* ADDED: reduced motion. One gentle cross-fade in, one out; nothing flies, floats or flips. */
 @media (prefers-reduced-motion: reduce) {
