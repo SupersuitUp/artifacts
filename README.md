@@ -1613,6 +1613,51 @@ host serves a voice eCard with the routes it already has. The scene is `VoiceEca
 the rules (`parseVoiceEcard`, `spreadGeom`, `readAlong` ...) are in `./artifacts`. A demo runs from
 `demo/voice-ecard` (see its `vite.config.ts`).
 
+## The recorder (`/record/<batch>`)
+
+The owner records a voice eCard for each person in a batch, one at a time, from a phone or a
+desktop. The page shows the person's photo, name and the note that prompts what to say. One tap on
+the microphone records (the comment card's own recorder: webm on Chrome, mp4 on iPhone Safari); one
+tap on "Save and next" stores the take and moves to the next person; "Redo" records again. Saving
+uploads the raw take to the batch's private storage, mixes it over the batch's music bed in the
+browser and uploads the mix, before the page moves on, so closing the page loses nothing. The page
+opens at the first person with no take.
+
+Only the hub's owner and admins open it; anyone else gets the sign-in door, or a line saying whose
+it is. Every API call takes the publish key or the owner signed in from this hub's own pages, the
+same check as the owner panel's endpoints.
+
+| Request | Body | Answer |
+|---|---|---|
+| `POST /api/record` | `{ title?, music?: <https bed>, people: [{ slug, name, note, photo? }] }` (up to 200) | `201 { batch, url }`, `url` is `/record/<batch>` |
+| `GET /api/record/<batch>` | | `{ batch, next }`, `next` the index the recorder resumes at |
+| `GET /api/record/<batch>/<slug>` | | `{ entry }` |
+| `PATCH /api/record/<batch>/<slug>` | `{ timings: [{ w, s, e, br? }] }` or `{ built: { pageId } }` | `{ entry }` (409 before there is a take) |
+| `POST /api/record/<batch>/<slug>/take` | `{ kind: "raw" \| "mixed", type, digest }` (first 8 hex of the SHA-256) | `201 { uploadUrl, headers }`: PUT the file there |
+| the same | `{ ..., done: true, seconds?, voiceDelay? }` | `{ entry }` |
+| `PUT /api/record/<batch>/<slug>/take?kind=&type=` | the bytes (a host that cannot sign uploads; up to 12 MB) | `{ entry }` |
+| `GET /api/record/<batch>/<slug>/take?kind=raw\|mixed` | | 302 to a signed read URL (an hour) |
+
+An entry is `{ slug, name, note, photo?, status: waiting | recorded | built, raw?, mixed?, mime?,
+seconds?, voiceDelay?, recordedAt?, timings?, pageId?, builtAt? }`; `raw` and `mixed` are
+`private:<stored name>` in the private folder `record-<batch>`. A new take drops the timings and the
+build made from the old one.
+
+**The mix** is BlessOut's mixer recipe (`mix.ts`, rendered with `OfflineAudioContext`): the bed alone
+for 4 s at 0.2, the voice from 4 s at speech level, the bed ducked 6:1 above 0.03 with a 20 ms
+attack and a 2500 ms release, a 6 s fade after the voice, a limiter at 0.89 (about -1 dBTP), a mono
+32 kHz WAV. With no bed, the voice alone, from 0. The bed's host must allow this hub's origin (CORS).
+
+**Word timings come from the operator's computer.** The host's transcriber (`transcribe`) answers
+text only, never word times. The Supersuit skill reads the raw take (`GET .../take?kind=raw`),
+times its words, adds the entry's `voiceDelay`, and writes them with `PATCH { timings }` in the
+mix's timeline; then it publishes the voice eCard and marks the entry `built`.
+
+**Wiring.** Pass `record: createRecordStore(db, base)` to `createArtifactRoutes`. The handlers are
+`RecordPage` (app/record/[batch]/page.tsx), `RECORD`, `RECORD_BATCH`, `RECORD_ENTRY` and
+`RECORD_TAKE`; the hub template carries all five route files. A demo runs at
+`demo/voice-ecard/record.html`.
+
 ## Product analytics (`analytics`)
 
 Pass `analytics: { posthogKey: 'phc_...', posthogHost?: 'https://us.i.posthog.com', tenant?: 'name' }`

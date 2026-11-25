@@ -49,6 +49,16 @@ describe('the store', () => {
     expect(e).toMatchObject({ status: 'recorded', raw: 'private:robin-raw.1a2b3c4d.webm', mixed: 'private:robin-mixed.5e6f7a8b.wav', seconds: 21.4, voiceDelay: 4 })
     expect(await s.setTake(b.id, 'nobody', { kind: 'raw', path: 'private:x.webm' })).toBeNull()
   })
+  it('a raw take with no length (Chrome webm) takes its length from the mix', async () => {
+    const s = memoryRecordStore()
+    const b = await s.create({ title: 'T', people: PEOPLE })
+    await s.setTake(b.id, 'robin', { kind: 'raw', path: 'private:a.webm' })
+    expect((await s.setTake(b.id, 'robin', { kind: 'mixed', path: 'private:m.wav', seconds: 9.7 }))!.seconds).toBe(9.7)
+    // A raw take's own length wins, and a new raw take drops the old length.
+    await s.setTake(b.id, 'sam', { kind: 'raw', path: 'private:s.webm', seconds: 5 })
+    expect((await s.setTake(b.id, 'sam', { kind: 'mixed', path: 'private:sm.wav', seconds: 9 }))!.seconds).toBe(5)
+    expect((await s.setTake(b.id, 'sam', { kind: 'raw', path: 'private:s2.webm' }))!.seconds).toBeUndefined()
+  })
   it('a redo replaces the take and drops the timings and the build made from the old one', async () => {
     const s = memoryRecordStore()
     const b = await s.create({ title: 'T', people: PEOPLE })

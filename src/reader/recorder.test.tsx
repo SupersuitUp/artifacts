@@ -69,7 +69,7 @@ describe('the recorder', () => {
       ['/api/record/abcdefgh23/dana/take', { kind: 'raw', type: 'audio/webm', digest: 'deadbeef' }],
       ['/api/record/abcdefgh23/dana/take', { kind: 'raw', type: 'audio/webm', digest: 'deadbeef', done: true }],
       ['/api/record/abcdefgh23/dana/take', { kind: 'mixed', type: 'audio/wav', digest: 'deadbeef' }],
-      ['/api/record/abcdefgh23/dana/take', { kind: 'mixed', type: 'audio/wav', digest: 'deadbeef', done: true, voiceDelay: 4 }],
+      ['/api/record/abcdefgh23/dana/take', { kind: 'mixed', type: 'audio/wav', digest: 'deadbeef', done: true, voiceDelay: 4, seconds: 3 }],
     ])
     expect(mix).toHaveBeenCalledWith(expect.any(Blob), 'https://cdn.example.com/bed.mp3')
     expect(q('[data-recorder-saved]')!.textContent).toBe('Saved for Dana')

@@ -13,5 +13,6 @@ export default defineConfig({
   plugins: [react()],
   resolve: { alias: [{ find: /^.*\/default-share\.js$/, replacement: resolve(__dirname, 'default-share-stub.ts') }] },
   define: { __BLESSOUT__: JSON.stringify(`/@fs${blessout}/public`) },
-  server: { fs: { allow: [resolve(__dirname, '../..'), blessout] } },
+  // Polling: on a busy Mac the file events arrive late or never, and the demo served stale code.
+  server: { fs: { allow: [resolve(__dirname, '../..'), blessout] }, watch: { usePolling: true, interval: 500 } },
 })

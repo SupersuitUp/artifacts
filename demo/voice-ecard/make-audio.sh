@@ -19,3 +19,6 @@ for (const i of [1, 9, 19, 27]) out[i].br = 1
 require("fs").writeFileSync("public/timings.json", JSON.stringify(out))
 ' "$TEXT" "$DUR"
 echo "voice $(printf %.1f "$DUR")s -> public/card.m4a, public/timings.json"
+# A soft chord for the recorder demo's music bed.
+ffmpeg -loglevel error -y -f lavfi -i "sine=f=220:d=20" -f lavfi -i "sine=f=277:d=20" -f lavfi -i "sine=f=330:d=20" -filter_complex "amix=inputs=3,volume=0.6" -c:a libmp3lame -b:a 96k public/bed.mp3
+echo "bed -> public/bed.mp3"

@@ -1,9 +1,9 @@
 // The recorder's batches (0.74.0). A batch is the people an owner records a voice eCard for in one
 // sitting: each one's name, photo and the note that prompts what to say, and, once recorded, the
 // take's stored paths (the raw recording and the mix), its word timings and the page built from it.
-// Host-side, like the recipients store. One document per batch:
+// The store is host-side, like the recipients store; the helpers are browser-safe (the recorder
+// page reads entriesOf and firstWaiting). One document per batch:
 //   <base>RecordBatches/<batchId>   RecordBatch, entries keyed by slug, `order` keeping the order given
-import { randomInt } from 'node:crypto'
 import type { Firestore } from 'firebase-admin/firestore'
 import { parseVoiceEcardTimings, type VoiceEcardTiming } from './voice-ecard.js'
 
@@ -46,7 +46,8 @@ export const RECORD_SLUG = /^[a-z0-9][a-z0-9-]{0,47}$/
 export const MAX_BATCH_PEOPLE = 200
 const MAX_NOTE = 4000
 const ALPHA = 'abcdefghjkmnpqrstuvwxyz23456789'
-export const newBatchId = () => Array.from({ length: 10 }, () => ALPHA[randomInt(ALPHA.length)]).join('')
+// Web Crypto, not node:crypto: the recorder page imports this module in the browser.
+export const newBatchId = () => Array.from(crypto.getRandomValues(new Uint8Array(10)), (b) => ALPHA[b % ALPHA.length]).join('')
 const https = (v: unknown) => { try { return typeof v === 'string' && new URL(v).protocol === 'https:' } catch { return false } }
 
 /** A batch as the API takes it, checked. */
@@ -101,13 +102,16 @@ function apply(e: RecordEntry, change: { take?: RecordTake; timings?: VoiceEcard
       next.status = 'recorded'
       next.recordedAt = new Date().toISOString()
       if (t.mime) next.mime = t.mime
-      if (t.seconds !== undefined) next.seconds = t.seconds
+      delete next.seconds
       // A new take: what was timed and built from the old one no longer matches it.
       delete next.timings; delete next.pageId; delete next.builtAt; delete next.mixed
     } else {
       next.mixed = t.path
     }
     if (t.voiceDelay !== undefined) next.voiceDelay = t.voiceDelay
+    // The take's length: from the raw file, or from the mix's decode where the browser could not
+    // read the raw file's length (Chrome's MediaRecorder webm reports none).
+    if (t.seconds !== undefined && (t.kind === 'raw' || next.seconds === undefined)) next.seconds = t.seconds
   }
   if (change.timings) {
     if (!e.raw) throw new Error('no take for this person yet')

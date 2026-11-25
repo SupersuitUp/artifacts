@@ -83,7 +83,7 @@ export function Recorder({ batch, start, accent = '#e7cb75', mix = mixTake }: Re
       let entry = await uploadTake(base, 'raw', memo.blob, memo.mime, seconds !== undefined ? { seconds } : {})
       try {
         const m = await mix(memo.blob, batch.music)
-        entry = { ...entry, ...(await uploadTake(base, 'mixed', m.wav, 'audio/wav', { voiceDelay: m.voiceDelay })) }
+        entry = { ...entry, ...(await uploadTake(base, 'mixed', m.wav, 'audio/wav', { voiceDelay: m.voiceDelay, ...(seconds === undefined ? { seconds: Math.round(m.seconds * 100) / 100 } : {}) })) }
       } catch {
         // The raw take is kept; the operator's computer can mix it from the raw file.
       }
