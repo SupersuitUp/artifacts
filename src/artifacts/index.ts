@@ -40,3 +40,8 @@ export {
   VOICE_ECARD_OCCASIONS, VOICE_ECARD_FONTS, VOICE_ECARD_KEYS, ENVELOPE_COLORS, DEFAULT_ENVELOPE, LINER_FOR, RISE_MS, OPEN_MS, ZOOM_MS, CLOSE_MS, OPENING_MS,
   type VoiceEcardSpec, type VoiceEcardTiming, type VoiceEcardOccasion, type VoiceEcardFont, type VoiceEcardPhase, type EnvelopeChoice, type EnvelopeColor, type SpreadGeometry,
 } from './voice-ecard.js'
+export {
+  createRecordStore, memoryRecordStore, parseBatchInput, firstWaiting, entriesOf, RECORD_BATCH_ID, RECORD_SLUG, MAX_BATCH_PEOPLE,
+  type RecordStore, type RecordBatch, type RecordEntry, type RecordPerson, type RecordBatchInput, type RecordTake, type RecordStatus,
+} from './record-store.js'
+export { MIX, VOICE_RMS, mixLength, bedLevel, bedCurve, blockLevels, duckGains, voiceGain, limit as limitPeaks, encodeWav } from './mix.js'

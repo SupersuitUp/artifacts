@@ -21,3 +21,5 @@ export { analyticsPlan, DEFAULT_POSTHOG_HOST, type AnalyticsConfig, type Analyti
 export { VoiceEcard, MIN_LETTER_ZOOM, type VoiceEcardProps } from './voice-ecard.js'
 export { VOICE_ECARD_CSS } from './voice-ecard-css.js'
 export { LISTENED, NOTE_AT } from './page-bridge.js'
+export { Recorder, RECORDER_CSS, uploadTake, type RecorderProps } from './recorder.js'
+export { mixTake, MIX_RATE, type MixedTake } from './record-mix.js'

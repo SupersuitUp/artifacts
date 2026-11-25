@@ -58,6 +58,9 @@ import { createRecipientsRoutes } from './recipients-routes.js'
 import type { OutcomeThresholds } from '../artifacts/goal.js'
 import { QuietView } from '../reader/quiet-view.js'
 import { VoiceEcard } from '../reader/voice-ecard.js'
+import { Recorder } from '../reader/recorder.js'
+import { createRecordRoutes } from './record-routes.js'
+import { RECORD_BATCH_ID, firstWaiting, type RecordStore } from '../artifacts/record-store.js'
 import { dateLine, letterBlockId, letterText, recordingName, voiceEcardLook, voiceEcardWords } from '../artifacts/voice-ecard-page.js'
 import { PageAnalytics } from '../reader/page-analytics.js'
 import { analyticsPlan, type AnalyticsConfig } from '../reader/analytics-plan.js'
@@ -178,6 +181,9 @@ export type ArtifactRoutesConfig = {
   /** Who each per-reader page was sent to (recipients-store.ts). Without it, or without
    *  `recipientSecret`, a `links: per-reader` page is shut to everyone. */
   recipients?: RecipientsStore
+  /** The recorder's batches (0.74.0, record-store.ts): `/record/<batch>` and `/api/record/...`.
+   *  Without it those routes answer 501 and the page 404. */
+  record?: RecordStore
   /** Signs per-reader links and render tokens. At least 32 characters. Read at request time. */
   recipientSecret?: () => string | undefined
   /** The thresholds `GET /views` measures each send's outcome by (issue #12), over the package's
@@ -311,6 +317,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     store, recipients: config.recipients, recipientSecret: config.recipientSecret, publishKey: config.publishKey,
     state: config.state, assets: config.assets, pageUrl, authed, readerSecret, isAdmin, signInOrigin, siteUrl, outcomes: config.outcomeThresholds,
   })
+  const recordRoutes = createRecordRoutes({ record: config.record, assets: config.assets, ownerAuth, siteUrl })
   const personalRoutes = createPersonalRoutes({ store, personal: config.personal, readers: config.readers, readerSecret, pageUrl, signInOrigin, siteUrl, audioUrl })
   const voiceRoutes = createVoiceRoutes({
     store, state: config.state, personal: config.personal, readers: config.readers, assets: config.assets, transcribe: config.transcribe,
@@ -544,6 +551,33 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
   async function Page({ params, searchParams }: PageProps) {
     const { id } = await params
     return serve(id, searchParams, null)
+  }
+
+  /** /record/<batch> (0.74.0): the recorder, for the owner and the admins only. Anyone else gets the
+   *  sign-in door, or, signed in as someone else, a line saying whose it is; never the batch. */
+  async function RecordPage({ params }: { params: Promise<{ batch: string }> }) {
+    const { batch } = await params
+    const readCookie = config.readCookie ?? defaultReadCookie
+    const me = readerSecret() ? verifyGrant(readerSecret(), await readCookie(GRANT_COOKIE).catch(() => undefined)) : null
+    if (!isAdmin(me)) {
+      return (
+        <BrandGround pack={pack}>
+          <div data-recorder-door className="mx-auto max-w-2xl px-6 pt-24 pb-8 text-center">
+            <h1 className="text-3xl" style={{ fontFamily: brand.type.display, color: brand.ink }}>The recorder</h1>
+          </div>
+          {me
+            ? <p data-nospeak className="mx-auto max-w-sm px-6 pb-24 text-center text-sm opacity-70">{`Only the owner of this hub records here. You are signed in as ${me.email}.`}</p>
+            : <SignInDoor brand={brand} href={signInOrigin ? signInUrl(signInOrigin, `${siteUrl}/record/${batch}`) : undefined} note="Sign in as this hub's owner to record." />}
+        </BrandGround>
+      )
+    }
+    const b = config.record && RECORD_BATCH_ID.test(batch) ? await config.record.get(batch) : null
+    if (!b) notFound()
+    return (
+      <BrandGround pack={pack}>
+        <Recorder batch={b} start={firstWaiting(b)} accent={brand.accent} />
+      </BrandGround>
+    )
   }
 
   /** /<id>/v/<n>: one past version, read-only, behind exactly the door the current page has. */
@@ -1786,5 +1820,5 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
     return new Response(html, { status: 410, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'x-robots-tag': 'noindex, nofollow' } })
   }
 
-  return guardRouteTable({ Page, HubHome, generateMetadata, VersionPage, generateVersionMetadata, VERSIONS, POST, GET, DELETE, LIST, ACTIVITY, shutPageResponse, PUT_ASSET, UPLOAD, SHARE_IMAGE, ENTER, LEAVE, TRACK, ACK, ASK, ACCESS, SETTINGS, READS, sweepReaders, TRANSCRIBE: voiceRoutes.TRANSCRIBE, ...stateRoutes, ...personalRoutes, ...recipientsRoutes, dynamic: 'force-dynamic' as const, maxDuration: 30 })
+  return guardRouteTable({ Page, HubHome, RecordPage, ...recordRoutes, generateMetadata, VersionPage, generateVersionMetadata, VERSIONS, POST, GET, DELETE, LIST, ACTIVITY, shutPageResponse, PUT_ASSET, UPLOAD, SHARE_IMAGE, ENTER, LEAVE, TRACK, ACK, ASK, ACCESS, SETTINGS, READS, sweepReaders, TRANSCRIBE: voiceRoutes.TRANSCRIBE, ...stateRoutes, ...personalRoutes, ...recipientsRoutes, dynamic: 'force-dynamic' as const, maxDuration: 30 })
 }
