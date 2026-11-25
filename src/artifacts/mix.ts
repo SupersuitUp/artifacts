@@ -11,15 +11,39 @@
 
 export const MIX = {
   musicVolume: 0.2,
+  /** Seconds into the bed it starts at (a catalog track's `startAt`, BlessOut's fadeInTime). */
+  musicStart: 0,
   voiceDelay: 4,
+  /** How long the bed fades in; null is the lead (voiceDelay), as BlessOut's mixer defaulted it. */
+  fadeIn: null as number | null,
   fadeOut: 6,
+  /** Duck the bed under the voice (BlessOut's --no-duck turns it off). */
+  duck: true,
   duckThreshold: 0.03,
   duckRatio: 6,
   attackMs: 20,
   releaseMs: 2500,
+  /** Bring the voice to speech loudness (BlessOut's --no-normalize turns it off). ffmpeg uses
+   *  loudnorm with these three; the browser, which has no loudnorm, an RMS target (VOICE_RMS). */
+  normalize: true,
+  loudnessLufs: -16,
+  truePeakDb: -1.5,
+  loudnessRange: 11,
   limit: 0.89,
-} as const
-export type MixSettings = typeof MIX
+}
+export type MixSettings = { -readonly [K in keyof typeof MIX]: (typeof MIX)[K] }
+
+/** The recipe with some settings changed, checked: every number finite and in range. */
+export function mixSettings(over: Partial<MixSettings> = {}): MixSettings {
+  const s: MixSettings = { ...MIX, ...over }
+  const nonNeg = ['musicVolume', 'musicStart', 'voiceDelay', 'fadeOut', 'duckThreshold', 'attackMs', 'releaseMs', 'limit'] as const
+  for (const k of nonNeg) if (!(Number.isFinite(s[k]) && s[k] >= 0)) throw new Error(`${k} must be a number 0 or more`)
+  if (s.fadeIn !== null && !(Number.isFinite(s.fadeIn) && s.fadeIn >= 0)) throw new Error('fadeIn must be a number 0 or more, or null for the lead')
+  if (!(Number.isFinite(s.duckRatio) && s.duckRatio >= 1)) throw new Error('duckRatio must be 1 or more')
+  return s
+}
+/** How long the bed fades in: its own setting, else the lead. */
+export const fadeInOf = (s: Pick<MixSettings, 'fadeIn' | 'voiceDelay'>) => s.fadeIn ?? s.voiceDelay
 
 /** loudnorm's -16 LUFS for speech sits near an RMS of -19 dBFS; a browser has no loudnorm, so the
  *  voice is scaled to this RMS (measured over the voiced blocks only) and never past its peak. */
@@ -31,10 +55,11 @@ export const BLOCK_S = 0.01
 export const mixLength = (voiceSeconds: number, s: Pick<MixSettings, 'voiceDelay' | 'fadeOut'> = MIX) => s.voiceDelay + voiceSeconds + s.fadeOut
 
 /** The bed's level at `t` before the duck: up from silence over the lead, held, down over fadeOut. */
-export function bedLevel(t: number, voiceSeconds: number, s: Pick<MixSettings, 'musicVolume' | 'voiceDelay' | 'fadeOut'> = MIX): number {
+export function bedLevel(t: number, voiceSeconds: number, s: Pick<MixSettings, 'musicVolume' | 'voiceDelay' | 'fadeOut'> & Partial<Pick<MixSettings, 'fadeIn'>> = MIX): number {
   const end = s.voiceDelay + voiceSeconds
   if (t < 0 || t >= end + s.fadeOut) return 0
-  const fadeIn = s.voiceDelay > 0 ? Math.min(1, t / s.voiceDelay) : 1
+  const lead = fadeInOf({ fadeIn: s.fadeIn ?? null, voiceDelay: s.voiceDelay })
+  const fadeIn = lead > 0 ? Math.min(1, t / lead) : 1
   const fadeOut = t <= end ? 1 : Math.max(0, 1 - (t - end) / s.fadeOut)
   return s.musicVolume * fadeIn * fadeOut
 }
@@ -71,7 +96,7 @@ export function duckGains(levels: Float32Array, s: Pick<MixSettings, 'duckThresh
 /** The bed's whole gain curve, one value per block over the mix: level times duck. The voice's
  *  levels are on the voice's own clock, so they are shifted by voiceDelay here. */
 export function bedCurve(voiceLevels: Float32Array, voiceSeconds: number, s: MixSettings = MIX, blockS = BLOCK_S): Float32Array {
-  const duck = duckGains(voiceLevels, s, blockS)
+  const duck = s.duck ? duckGains(voiceLevels, s, blockS) : new Float32Array(voiceLevels.length).fill(1)
   const n = Math.ceil(mixLength(voiceSeconds, s) / blockS)
   const lead = Math.round(s.voiceDelay / blockS)
   // After the voice ends the duck releases on its own clock: carry it on with silence as the key.

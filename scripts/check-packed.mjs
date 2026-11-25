@@ -51,6 +51,7 @@ if (!/^['"]use client['"]/.test(readFileSync(join(dest, 'lib/widgets/checklist.j
 if (!/^['"]use client['"]/.test(readFileSync(join(dest, 'lib/widgets/voice-note.js'), 'utf8'))) fail("compiled voice-note widget lost its 'use client' directive")
 // The transcript-fence bin is a file an author runs with npx: it must ship, as a node script.
 if (!readFileSync(join(dest, 'lib/cli/transcript-fence.js'), 'utf8').startsWith('#!/usr/bin/env node')) fail('the supersuit-transcript-fence bin lost its shebang')
+if (!readFileSync(join(dest, 'lib/cli/mix.js'), 'utf8').startsWith('#!/usr/bin/env node')) fail('the artifacts-mix bin lost its shebang')
 // The ./karaoke entry loads under plain Node with no React: it imports nothing but itself.
 const karaokeJs = readFileSync(join(dest, 'lib/karaoke.js'), 'utf8') + readFileSync(join(dest, 'lib/reader/karaoke.js'), 'utf8')
 const karaokeFrom = [...karaokeJs.matchAll(/from\s*['"]([^'"]+)['"]/g)].map((m) => m[1]).filter((f) => !f.startsWith('.'))

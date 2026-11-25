@@ -4,7 +4,7 @@ import { MIX, BLOCK_S, bedLevel, bedCurve, blockLevels, duckGains, encodeWav, li
 
 describe('the recipe is BlessOut\'s', () => {
   it('bed 0.2, lead 4 s, fade out 6 s, duck 0.03 at 6:1 with 20 ms attack and 2500 ms release, limit 0.89', () => {
-    expect(MIX).toEqual({ musicVolume: 0.2, voiceDelay: 4, fadeOut: 6, duckThreshold: 0.03, duckRatio: 6, attackMs: 20, releaseMs: 2500, limit: 0.89 })
+    expect(MIX).toMatchObject({ musicVolume: 0.2, voiceDelay: 4, fadeOut: 6, duckThreshold: 0.03, duckRatio: 6, attackMs: 20, releaseMs: 2500, limit: 0.89 })
     expect(20 * Math.log10(MIX.limit)).toBeCloseTo(-1.01, 2)
     expect(mixLength(30)).toBe(40)
   })
