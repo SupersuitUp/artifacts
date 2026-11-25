@@ -14,11 +14,11 @@ import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { basename, dirname, extname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { MIX, mixSettings, type MixSettings } from '../artifacts/mix.js'
+import { MIX, BLOCK_S, blockLevels, mixSettings, remapTimings, tightenSegments, type MixSettings, type TakeSegment } from '../artifacts/mix.js'
 import { ffmpegMixArgs, mixSidecar, shiftTimings } from '../artifacts/mix-ffmpeg.js'
 import { musicTrack } from '../artifacts/music.js'
 
-export const MIX_USAGE = 'usage: artifacts-mix --voice <file> --music <file|url|track-id> [--library <base url or dir>] [--out <file>] [--timings <words.json>] [--music-start s] [--voice-delay s] [--fade-in s] [--fade-out s] [--music-vol v] [--duck-release ms] [--duck-threshold v] [--duck-ratio r] [--no-duck] [--no-normalize] [--mp3] [--dry-run] [--json]'
+export const MIX_USAGE = 'usage: artifacts-mix --voice <file> --music <file|url|track-id> [--library <base url or dir>] [--out <file>] [--timings <words.json>] [--music-start s] [--voice-delay s] [--fade-in s] [--fade-out s] [--music-vol v] [--duck-release ms] [--duck-threshold v] [--duck-ratio r] [--no-duck] [--no-normalize] [--no-tighten] [--mp3] [--dry-run] [--json]'
 
 export type MixOptions = { voice: string; music: string; track?: string; out: string; timings?: string; settings: MixSettings; mp3: boolean; dryRun: boolean; json: boolean }
 
@@ -39,6 +39,7 @@ export function parseMixArgs(args: string[]): { ok: true; opts: MixOptions } | {
   }
   if (has('--no-duck')) over.duck = false
   if (has('--no-normalize')) over.normalize = false
+  if (has('--no-tighten')) over.tighten = false
   // A catalog track plays from the host's library, from the part of the song the catalog names.
   let music = musicArg
   let track: string | undefined
@@ -59,6 +60,8 @@ export function parseMixArgs(args: string[]): { ok: true; opts: MixOptions } | {
 
 export type MixDeps = {
   probe: (file: string) => number
+  /** The take's level per 10 ms block (mix.ts blockLevels), for tightening. */
+  levels: (file: string) => Float32Array
   run: (cmd: string, args: string[]) => { status: number | null; stderr: string }
   exists: (file: string) => boolean
   readFile: (file: string) => string
@@ -72,17 +75,31 @@ export async function runMix(o: MixOptions, d: MixDeps): Promise<{ code: number;
   for (const f of [o.voice, ...(/^https?:/.test(o.music) ? [] : [o.music]), ...(o.timings ? [o.timings] : [])]) {
     if (!d.exists(f)) { d.log(`no such file: ${f}`); return { code: 2 } }
   }
+  // The take, tightened (0.75.0): the same segments the browser recorder cuts.
+  let segments: TakeSegment[] | undefined
+  let rawSeconds: number | undefined
+  let voiceSeconds: number
+  if (o.settings.tighten) {
+    const t = tightenSegments(d.levels(o.voice), o.settings, BLOCK_S)
+    if ('silent' in t) { d.log(`no speech in ${o.voice}: nothing to mix`); return { code: 2 } }
+    segments = t.segments
+    rawSeconds = t.rawSeconds
+    voiceSeconds = t.seconds
+  } else voiceSeconds = d.probe(o.voice)
   // Timings are checked before anything is mixed: a shape it does not understand writes nothing.
+  // Timings made on the raw take are moved through the cut first, then into the mix's timeline.
   let shifted: Record<string, unknown>[] | undefined
   if (o.timings) {
     let raw: unknown
     try { raw = JSON.parse(d.readFile(o.timings)) } catch { d.log(`--timings: ${o.timings} is not JSON`); return { code: 2 } }
-    const s = shiftTimings(raw, o.settings.voiceDelay)
+    const s0 = shiftTimings(raw, 0)
+    if (!s0.ok) { d.log(`--timings: ${s0.error}`); return { code: 2 } }
+    const onTake = segments ? remapTimings(s0.words as { s: number; e: number }[], segments) : s0.words
+    const s = shiftTimings(onTake, o.settings.voiceDelay)
     if (!s.ok) { d.log(`--timings: ${s.error}`); return { code: 2 } }
     shifted = s.words
   }
-  const voiceSeconds = d.probe(o.voice)
-  const args = ffmpegMixArgs({ voice: o.voice, music: o.music, out: o.out, voiceSeconds, settings: o.settings, mp3: o.mp3 })
+  const args = ffmpegMixArgs({ voice: o.voice, music: o.music, out: o.out, voiceSeconds, settings: o.settings, mp3: o.mp3, ...(segments ? { segments } : {}) })
   if (o.dryRun) {
     d.log(`ffmpeg ${args.map((a) => (/[\s;[\]]/.test(a) ? `'${a}'` : a)).join(' ')}`)
     return { code: 0 }
@@ -90,7 +107,7 @@ export async function runMix(o: MixOptions, d: MixDeps): Promise<{ code: number;
   const r = d.run('ffmpeg', args)
   if (r.status !== 0) { d.log(r.stderr.slice(-2000)); return { code: 1 } }
   const sidecar = `${stem(o.out)}.mix.json`
-  d.writeFile(sidecar, JSON.stringify(mixSidecar(voiceSeconds, o.settings, { track: o.track }), null, 2) + '\n')
+  d.writeFile(sidecar, JSON.stringify(mixSidecar(voiceSeconds, o.settings, { track: o.track, ...(segments ? { segments, rawSeconds } : {}) }), null, 2) + '\n')
   const timings = shifted ? `${stem(o.out)}.timings.json` : undefined
   if (timings && shifted) d.writeFile(timings, JSON.stringify(shifted))
   const result = { out: o.out, sidecar, ...(timings ? { timings } : {}), voiceSeconds, settings: o.settings, ...(o.track ? { track: o.track } : {}) }
@@ -106,6 +123,17 @@ export const realDeps: MixDeps = {
     const n = parseFloat(String(r.stdout).trim())
     if (r.status !== 0 || !Number.isFinite(n)) throw new Error(`could not read the length of ${file} (is ffprobe installed?)`)
     return n
+  },
+  levels(file) {
+    // Mono at 16 kHz as 32-bit floats on stdout: enough to tell speech from room tone.
+    const rate = 16_000
+    const r = spawnSync('ffmpeg', ['-v', 'error', '-i', file, '-ac', '1', '-ar', String(rate), '-f', 'f32le', '-'], { maxBuffer: 1024 * 1024 * 1024 })
+    if (r.status !== 0) throw new Error(`could not read ${file} (is ffmpeg installed?)`)
+    const b = r.stdout as Buffer
+    // A pooled Buffer need not sit on a 4-byte boundary, so the floats are read, never viewed.
+    const x = new Float32Array(Math.floor(b.byteLength / 4))
+    for (let i = 0; i < x.length; i++) x[i] = b.readFloatLE(i * 4)
+    return blockLevels(x, rate)
   },
   run: (cmd, args) => { const r = spawnSync(cmd, args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }); return { status: r.status, stderr: String(r.stderr ?? r.error ?? '') } },
   exists: existsSync,

@@ -10,6 +10,7 @@ describe('the recipe holds every setting BlessOut\'s mixer had', () => {
       musicVolume: 0.2, musicStart: 0, voiceDelay: 4, fadeIn: null, fadeOut: 6,
       duck: true, duckThreshold: 0.03, duckRatio: 6, attackMs: 20, releaseMs: 2500,
       normalize: true, loudnessLufs: -16, truePeakDb: -1.5, loudnessRange: 11, limit: 0.89,
+      tighten: true, tightenLead: 0.25, tightenTail: 0.4, tightenPause: 0.9, tightenKeep: 0.6, tightenFadeMs: 10,
     })
     expect(mixSettings({ voiceDelay: 2 }).fadeIn).toBeNull()
     expect(() => mixSettings({ musicVolume: -1 })).toThrow('musicVolume')
@@ -41,6 +42,28 @@ describe('the ffmpeg graph', () => {
     const mp3 = ffmpegMixArgs({ voice: 'v.m4a', music: 'm.wav', out: 'o.mp3', voiceSeconds: 20, settings: MIX, mp3: true })
     expect(mp3).toEqual(expect.arrayContaining(['-c:a', 'libmp3lame', '-b:a', '192k']))
     expect(mp3).not.toContain('-ss')
+  })
+})
+
+describe('the take is tightened before the mix, on the same segments', () => {
+  const segs = [{ start: 1.75, end: 3 }, { start: 5, end: 6.4 }]
+  it('cuts each kept segment, fades each cut over tightenFadeMs, joins them, then the voice chain', () => {
+    const g = ffmpegMixGraph(2.65, MIX, segs)
+    expect(g.startsWith('[1:a]asplit=2[r0][r1];'
+      + '[r0]atrim=start=1.750:end=3.000,asetpts=PTS-STARTPTS,afade=t=in:st=0:d=0.010,afade=t=out:st=1.240:d=0.010[t0];'
+      + '[r1]atrim=start=5.000:end=6.400,asetpts=PTS-STARTPTS,afade=t=in:st=0:d=0.010,afade=t=out:st=1.390:d=0.010[t1];'
+      + '[t0][t1]concat=n=2:v=0:a=1[take];'
+      + '[take]highpass=f=80,loudnorm=I=-16:TP=-1.5:LRA=11,adelay=delays=4000:all=1,apad=whole_dur=12.650,asplit=2[voice][sc]')).toBe(true)
+  })
+  it('one segment needs no split or join', () => {
+    expect(ffmpegMixGraph(3.65, MIX, [{ start: 1.75, end: 5.4 }]).startsWith('[1:a]atrim=start=1.750:end=5.400,asetpts=PTS-STARTPTS,afade=t=in:st=0:d=0.010,afade=t=out:st=3.640:d=0.010[take];[take]highpass=f=80')).toBe(true)
+  })
+  it('off, or no segments, the voice goes in whole', () => {
+    expect(ffmpegMixGraph(20, mixSettings({ tighten: false }), segs).startsWith('[1:a]highpass=f=80')).toBe(true)
+    expect(ffmpegMixGraph(20, MIX).startsWith('[1:a]highpass=f=80')).toBe(true)
+  })
+  it('the sidecar records the segments and the raw length, so timings line up', () => {
+    expect(mixSidecar(2.65, MIX, { segments: segs, rawSeconds: 8 })).toMatchObject({ voiceDurationSeconds: 2.65, rawVoiceSeconds: 8, segments: segs })
   })
 })
 

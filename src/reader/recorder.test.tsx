@@ -10,7 +10,7 @@ vi.mock('./voice-recorder.js', () => ({
   ),
   AudioPlay: ({ src }: { src: string }) => <span data-play={src} />,
 }))
-import { Recorder } from './recorder.js'
+import { Recorder, type RecorderProps } from './recorder.js'
 import type { RecordBatch } from '../artifacts/record-store.js'
 
 const batch: RecordBatch = {
@@ -42,10 +42,10 @@ beforeEach(() => {
 })
 afterEach(async () => { await act(async () => root?.unmount()); root = null; vi.useRealTimers(); vi.unstubAllGlobals() })
 
-async function mount(mix = vi.fn(async () => ({ wav: new Blob(['mix'], { type: 'audio/wav' }), voiceDelay: 4, seconds: 3 })), bed?: { url: string; startAt: number }) {
+async function mount(mix = vi.fn(async () => ({ wav: new Blob(['mix'], { type: 'audio/wav' }), voiceDelay: 4, seconds: 3 })), bed?: { url: string; startAt: number }, tighten?: RecorderProps['tighten']) {
   document.body.innerHTML = '<div id="m"></div>'
   root = createRoot(document.getElementById('m')!)
-  await act(async () => { root!.render(<Recorder batch={batch} mix={mix} bed={bed} />) })
+  await act(async () => { root!.render(<Recorder batch={batch} mix={mix} bed={bed} tighten={tighten} />) })
   return mix
 }
 const q = (s: string) => document.querySelector<HTMLElement>(s)
@@ -83,6 +83,31 @@ describe('the recorder', () => {
     await press('[data-recorder-save]')
     await act(async () => { await vi.advanceTimersByTimeAsync(10) })
     expect(mix).toHaveBeenCalledWith(expect.any(Blob), 'https://media.example.com/music/hilltoptrio_silent-night.wav', expect.objectContaining({ musicStart: 88, voiceDelay: 4 }))
+  })
+  it('the take is tightened before review: what plays is what is sent, and the mix does not tighten it twice', async () => {
+    Object.assign(URL, { createObjectURL: (b: Blob) => `blob:${b.type}` })
+    const tighten = vi.fn(async () => ({ wav: new Blob(['tight'], { type: 'audio/x-tight' }), segments: [{ start: 1.75, end: 3.3 }], seconds: 1.55, rawSeconds: 6 }))
+    const mix = await mount(undefined, undefined, tighten)
+    await press('[data-fake-mic]')
+    await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+    expect(tighten).toHaveBeenCalledWith(expect.any(Blob), expect.objectContaining({ tighten: true }))
+    expect(q('[data-play]')!.getAttribute('data-play')).toBe('blob:audio/x-tight')
+    await press('[data-recorder-save]')
+    await act(async () => { await vi.advanceTimersByTimeAsync(10) })
+    const raw = calls.find((c) => c.method === 'POST' && (c.body as { kind?: string }).kind === 'raw')
+    expect(raw?.body).toMatchObject({ type: 'audio/x-tight' })
+    const [voice, , settings] = mix.mock.calls[0] as unknown as [Blob, string, { tighten: boolean }]
+    expect(voice.type).toBe('audio/x-tight')
+    expect(settings.tighten).toBe(false)
+  })
+  it('a take with no speech is not offered for saving: it says so and goes back to the microphone', async () => {
+    const tighten = vi.fn(async () => ({ silent: true as const }))
+    await mount(undefined, undefined, tighten)
+    await press('[data-fake-mic]')
+    await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+    expect(q('[data-recorder-save]')).toBeNull()
+    expect(q('[role="alert"]')!.textContent).toBe("We didn't catch any sound. Record again.")
+    expect(q('[data-recorder-mic]')).not.toBeNull()
   })
   it('an upload that fails keeps the take in hand to save again, and moves nowhere', async () => {
     await mount()

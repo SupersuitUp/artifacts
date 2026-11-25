@@ -1691,10 +1691,19 @@ file into that storage (rerunnable; it skips what is there).
 artifacts-mix --voice <file> --music <file|url|track-id> [--library <base url or dir>] [--out <file>]
   [--timings <words.json>] [--music-start s] [--voice-delay s] [--fade-in s] [--fade-out s]
   [--music-vol v] [--duck-release ms] [--duck-threshold v] [--duck-ratio r] [--no-duck]
-  [--no-normalize] [--mp3] [--dry-run] [--json]
+  [--no-normalize] [--no-tighten] [--mp3] [--dry-run] [--json]
 ```
 
-It writes the mix (m4a, or mp3 at 192k), `<out>.mix.json` (where the voice starts, every setting)
+**The take is tightened first** (on by default, `--no-tighten` or `tighten: false` turns it off), so dozens of
+voice notes need no editing: the silence before the first word and after the last is trimmed to
+0.25 s and 0.4 s, and any inner pause over 0.9 s is cut to 0.6 s, each cut inside the silence with a
+10 ms fade. Silence is read against the take's own speech level. One pure function
+(`tightenSegments(levels)`) answers the kept segments; ffmpeg and the browser cut the same ones. The
+recorder plays the tightened take for review and sends that, so its word timings are made on it; the
+CLI moves `--timings` made on the raw take through the cut (`remapTimings`). A take with no speech is
+refused.
+
+It writes the mix (m4a, or mp3 at 192k), `<out>.mix.json` (with the kept `segments` and the raw length when tightened) (where the voice starts, every setting)
 and, with `--timings`, `<out>.timings.json`: `{w, s, e}` words shifted by the voice delay. A track
 id plays from `--library` from its `startAt` unless `--music-start` says otherwise. It keeps
 BlessOut's two fixes (no 10x voice boost: loudness-normalized to -16 LUFS instead; `amix

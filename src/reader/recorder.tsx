@@ -9,7 +9,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { VoiceRecorder, AudioPlay, type VoiceMemo } from './voice-recorder.js'
 import { entriesOf, firstWaiting, type RecordBatch, type RecordEntry } from '../artifacts/record-store.js'
-import { mixTake, type MixedTake } from './record-mix.js'
+import { mixTake, tightenTake, type MixedTake, type TightTake } from './record-mix.js'
 import { mixSettings, type MixSettings } from '../artifacts/mix.js'
 
 export type RecorderProps = {
@@ -23,6 +23,8 @@ export type RecorderProps = {
   /** The bed as the page resolved it (0.75.0): a library track's address and where in the song to
    *  start. Without it, a batch's https `music` plays from its start. */
   bed?: { url: string; startAt: number }
+  /** Cuts the take's long silences before review (0.75.0), injectable for tests. */
+  tighten?: (voice: Blob, settings: MixSettings) => Promise<TightTake>
 }
 
 const bytesOf = (b: Blob) => (typeof b.arrayBuffer === 'function' ? b.arrayBuffer() : new Response(b).arrayBuffer())
@@ -57,19 +59,36 @@ const durationOf = (b: Blob) => new Promise<number | undefined>((done) => {
 
 type Stage = 'ready' | 'recording' | 'review' | 'saving' | 'saved'
 
-export function Recorder({ batch, start, accent = '#e7cb75', mix = mixTake, bed }: RecorderProps) {
+export function Recorder({ batch, start, accent = '#e7cb75', mix = mixTake, bed, tighten = tightenTake }: RecorderProps) {
   const [entries, setEntries] = useState<RecordEntry[]>(() => entriesOf(batch))
   const [at, setAt] = useState(() => start ?? firstWaiting(batch))
   const [stage, setStage] = useState<Stage>('ready')
   const [memo, setMemo] = useState<VoiceMemo | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const memoUrl = useMemo(() => (memo ? URL.createObjectURL(memo.blob) : null), [memo])
+  // The take as it will be sent: tightened when this browser can decode it, else as recorded.
+  const [take, setTake] = useState<{ blob: Blob; mime: string; tightened: boolean } | null>(null)
+  const memoUrl = useMemo(() => (take ? URL.createObjectURL(take.blob) : null), [take])
+  const settingsFor = (tightened: boolean) => mixSettings({ musicStart: bed?.startAt ?? 0, tighten: !tightened })
+  const review = async (m: VoiceMemo) => {
+    setMemo(m)
+    setTake(null)
+    let t: TightTake | null = null
+    try { t = await tighten(m.blob, settingsFor(false)) } catch { t = null }
+    if (t && 'silent' in t) {
+      setMemo(null)
+      setError("We didn't catch any sound. Record again.")
+      setStage('ready')
+      return
+    }
+    setTake(t ? { blob: t.wav, mime: t.wav.type, tightened: true } : { blob: m.blob, mime: m.mime, tightened: false })
+    setStage('review')
+  }
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const person = entries[at]
   const done = entries.filter((e) => e.raw).length
   const base = person ? `/api/record/${batch.id}/${person.slug}` : ''
 
-  const go = useCallback((i: number) => { setAt(i); setStage('ready'); setMemo(null); setError(null) }, [])
+  const go = useCallback((i: number) => { setAt(i); setStage('ready'); setMemo(null); setTake(null); setError(null) }, [])
   const nextAfter = (list: RecordEntry[], i: number) => {
     const later = list.findIndex((e, k) => k > i && !e.raw)
     if (later !== -1) return later
@@ -78,16 +97,17 @@ export function Recorder({ batch, start, accent = '#e7cb75', mix = mixTake, bed 
   }
 
   const save = async () => {
-    if (!memo || !person) return
+    if (!take || !person) return
     setStage('saving')
     setError(null)
     try {
-      const seconds = await durationOf(memo.blob)
+      const seconds = await durationOf(take.blob)
       // The raw take first: once it is stored, closing the page loses nothing.
-      let entry = await uploadTake(base, 'raw', memo.blob, memo.mime, seconds !== undefined ? { seconds } : {})
+      // The take as reviewed (tightened): the operator's computer times its words from this file.
+      let entry = await uploadTake(base, 'raw', take.blob, take.mime, seconds !== undefined ? { seconds } : {})
       try {
         const bedUrl = bed?.url ?? (batch.music && /^https:/.test(batch.music) ? batch.music : undefined)
-        const m = await mix(memo.blob, bedUrl, mixSettings({ musicStart: bed?.startAt ?? 0 }))
+        const m = await mix(take.blob, bedUrl, settingsFor(take.tightened))
         entry = { ...entry, ...(await uploadTake(base, 'mixed', m.wav, 'audio/wav', { voiceDelay: m.voiceDelay, ...(seconds === undefined ? { seconds: Math.round(m.seconds * 100) / 100 } : {}) })) }
       } catch {
         // The raw take is kept; the operator's computer can mix it from the raw file.
@@ -138,7 +158,7 @@ export function Recorder({ batch, start, accent = '#e7cb75', mix = mixTake, bed 
               <button type="button" className="rc-save" onClick={() => void save()} disabled={stage === 'saving'} data-recorder-save>
                 {stage === 'saving' ? 'Saving…' : 'Save and next'}
               </button>
-              <button type="button" className="rc-redo" onClick={() => { setMemo(null); setStage('ready') }} disabled={stage === 'saving'} data-recorder-redo>Redo</button>
+              <button type="button" className="rc-redo" onClick={() => { setMemo(null); setTake(null); setStage('ready') }} disabled={stage === 'saving'} data-recorder-redo>Redo</button>
             </div>
           ) : stage === 'saved' ? (
             <p className="rc-saved" role="status" data-recorder-saved>{`Saved for ${person.name}`}</p>
@@ -152,7 +172,7 @@ export function Recorder({ batch, start, accent = '#e7cb75', mix = mixTake, bed 
             <div className="rc-mic" data-recorder-mic>
               <VoiceRecorder accent={accent} maxMs={5 * 60 * 1000}
                 onStart={() => { setStage('recording'); setError(null) }}
-                onStop={(m) => { setMemo(m); setStage('review') }}
+                onStop={(m) => { void review(m) }}
                 onError={(msg) => { setError(msg); setStage('ready') }} />
               <p className="rc-hint">{stage === 'recording' ? 'Recording. Tap to stop.' : 'Tap to record'}</p>
             </div>

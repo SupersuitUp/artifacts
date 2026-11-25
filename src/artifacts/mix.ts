@@ -30,16 +30,26 @@ export const MIX = {
   truePeakDb: -1.5,
   loudnessRange: 11,
   limit: 0.89,
+  /** Tighten the take before the mix (0.75.0): trim the silence before the first word and after the
+   *  last, keeping a breath of each, and shorten any inner pause over tightenPause to tightenKeep,
+   *  with a short fade at each cut. Both renderers cut the same segments (tightenSegments). */
+  tighten: true,
+  tightenLead: 0.25,
+  tightenTail: 0.4,
+  tightenPause: 0.9,
+  tightenKeep: 0.6,
+  tightenFadeMs: 10,
 }
 export type MixSettings = { -readonly [K in keyof typeof MIX]: (typeof MIX)[K] }
 
 /** The recipe with some settings changed, checked: every number finite and in range. */
 export function mixSettings(over: Partial<MixSettings> = {}): MixSettings {
   const s: MixSettings = { ...MIX, ...over }
-  const nonNeg = ['musicVolume', 'musicStart', 'voiceDelay', 'fadeOut', 'duckThreshold', 'attackMs', 'releaseMs', 'limit'] as const
+  const nonNeg = ['musicVolume', 'musicStart', 'voiceDelay', 'fadeOut', 'duckThreshold', 'attackMs', 'releaseMs', 'limit', 'tightenLead', 'tightenTail', 'tightenPause', 'tightenKeep', 'tightenFadeMs'] as const
   for (const k of nonNeg) if (!(Number.isFinite(s[k]) && s[k] >= 0)) throw new Error(`${k} must be a number 0 or more`)
   if (s.fadeIn !== null && !(Number.isFinite(s.fadeIn) && s.fadeIn >= 0)) throw new Error('fadeIn must be a number 0 or more, or null for the lead')
   if (!(Number.isFinite(s.duckRatio) && s.duckRatio >= 1)) throw new Error('duckRatio must be 1 or more')
+  if (s.tightenKeep > s.tightenPause) throw new Error('tightenKeep must be no longer than tightenPause')
   return s
 }
 /** How long the bed fades in: its own setting, else the lead. */
@@ -151,5 +161,89 @@ export function encodeWav(samples: Float32Array, sampleRate: number): Uint8Array
   v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, sampleRate, true)
   v.setUint32(28, sampleRate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); s(36, 'data'); v.setUint32(40, samples.length * 2, true)
   for (let i = 0; i < samples.length; i++) v.setInt16(44 + i * 2, Math.max(-1, Math.min(1, samples[i])) * 0x7fff, true)
+  return out
+}
+
+// ---- Tightening the take (0.75.0) ----------------------------------------------------------------
+
+/** A stretch of the raw take that is kept, in seconds on the raw take's clock. */
+export type TakeSegment = { start: number; end: number }
+export type Tightened = { segments: TakeSegment[]; seconds: number; rawSeconds: number } | { silent: true }
+
+/** A block is speech-loud when it passes this; fewer than SPEECH_MIN_S of them is a silent take. */
+const LOUD = 0.01
+const SPEECH_MIN_S = 0.1
+/** Silence is a tenth of the take's own speech level (-20 dB), never under this floor. */
+const SILENCE_FLOOR = 0.003
+const r3 = (x: number) => Math.round(x * 1000) / 1000
+
+/** The segments of a take to keep, from its per-block levels (blockLevels): the silence before the
+ *  first word and after the last trimmed to a breath, every inner pause over `tightenPause` cut to
+ *  `tightenKeep` (half kept on each side, so a cut is always inside the silence). Silence is
+ *  measured against the take's own speech level. No speech at all: the silent take. */
+export function tightenSegments(levels: Float32Array, s: MixSettings = MIX, blockS = BLOCK_S): Tightened {
+  const rawSeconds = levels.length * blockS
+  const loud = [...levels].filter((x) => x > LOUD).sort((a, b) => a - b)
+  if (loud.length * blockS < SPEECH_MIN_S) return { silent: true }
+  if (!s.tighten) return { segments: [{ start: 0, end: r3(rawSeconds) }], seconds: r3(rawSeconds), rawSeconds }
+  const ref = loud[Math.floor(loud.length / 2)]
+  const thr = Math.max(ref * 0.1, SILENCE_FLOOR)
+  const speech = Array.from(levels, (x) => x > thr)
+  const first = speech.indexOf(true)
+  const last = speech.lastIndexOf(true)
+  const segments: TakeSegment[] = []
+  let start = Math.max(0, first * blockS - s.tightenLead)
+  let i = first
+  while (i <= last) {
+    if (speech[i]) { i++; continue }
+    let j = i
+    while (j <= last && !speech[j]) j++
+    const gap = (j - i) * blockS
+    if (gap > s.tightenPause) {
+      segments.push({ start: r3(start), end: r3(i * blockS + s.tightenKeep / 2) })
+      start = j * blockS - s.tightenKeep / 2
+    }
+    i = j
+  }
+  segments.push({ start: r3(start), end: r3(Math.min(rawSeconds, (last + 1) * blockS + s.tightenTail)) })
+  return { segments, seconds: r3(segments.reduce((a, g) => a + g.end - g.start, 0)), rawSeconds }
+}
+
+/** A time on the raw take, on the tightened take's clock: inside a kept segment it moves back by
+ *  what was cut before it; inside a cut it lands on the join. */
+export function remapTime(t: number, segments: TakeSegment[]): number {
+  let at = 0
+  for (const g of segments) {
+    if (t < g.start) return r3(at)
+    if (t <= g.end) return r3(at + t - g.start)
+    at += g.end - g.start
+  }
+  return r3(at)
+}
+
+/** Word timings made on the raw take, moved onto the tightened one. Other keys are kept. */
+export function remapTimings<T extends { s: number; e: number }>(words: T[], segments: TakeSegment[]): T[] {
+  return words.map((w) => {
+    const s = Math.round(remapTime(w.s, segments) * 100) / 100
+    return { ...w, s, e: Math.max(s, Math.round(remapTime(w.e, segments) * 100) / 100) }
+  })
+}
+
+/** The kept segments of mono samples, joined, each faded in and out over `fadeMs` so a cut never
+ *  clicks (every cut sits in silence, so the fade only removes the step). */
+export function tightenSamples(samples: Float32Array, sampleRate: number, segments: TakeSegment[], fadeMs: number = MIX.tightenFadeMs): Float32Array {
+  const parts = segments.map((g) => samples.subarray(Math.max(0, Math.round(g.start * sampleRate)), Math.min(samples.length, Math.round(g.end * sampleRate))))
+  const out = new Float32Array(parts.reduce((a, p) => a + p.length, 0))
+  const k = Math.max(1, Math.round((fadeMs / 1000) * sampleRate))
+  let o = 0
+  for (const p of parts) {
+    out.set(p, o)
+    const f = Math.min(k, Math.floor(p.length / 2))
+    for (let j = 0; j < f; j++) {
+      out[o + j] *= j / f
+      out[o + p.length - 1 - j] *= j / f
+    }
+    o += p.length
+  }
   return out
 }

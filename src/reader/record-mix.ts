@@ -4,12 +4,14 @@
 // result is a mono WAV. With no bed the voice alone is normalized and starts at 0.
 //
 // The bed is fetched from its https address, so its host must allow this hub's origin (CORS).
-import { MIX, BLOCK_S, bedCurve, blockLevels, encodeWav, limit, mixLength, voiceGain, type MixSettings } from '../artifacts/mix.js'
+import { MIX, BLOCK_S, bedCurve, blockLevels, encodeWav, limit, mixLength, tightenSamples, tightenSegments, voiceGain, type MixSettings, type TakeSegment } from '../artifacts/mix.js'
 
 /** The mix's sample rate: mono at 32 kHz keeps a minute of WAV near 4 MB. */
 export const MIX_RATE = 32_000
 
-export type MixedTake = { wav: Blob; voiceDelay: number; seconds: number }
+export type MixedTake = { wav: Blob; voiceDelay: number; seconds: number; segments?: TakeSegment[] }
+/** A take, tightened (0.75.0): the kept voice as a WAV, the segments of the raw take it keeps. */
+export type TightTake = { wav: Blob; segments: TakeSegment[]; seconds: number; rawSeconds: number } | { silent: true }
 
 type Ctor = typeof OfflineAudioContext
 const offline = (): Ctor | null => (typeof window === 'undefined' ? null : (window.OfflineAudioContext ?? (window as unknown as { webkitOfflineAudioContext?: Ctor }).webkitOfflineAudioContext ?? null))
@@ -32,12 +34,30 @@ async function monoAt(buf: AudioBuffer): Promise<Float32Array> {
   return (await ctx.startRendering()).getChannelData(0)
 }
 
+/** The take with its long silences cut (mix.ts tightenSegments, the same segments ffmpeg cuts), as
+ *  a mono WAV at MIX_RATE, unnormalized: the recorder plays this for review and sends it, so what
+ *  the owner hears is what is sent. A take with no speech is `{ silent: true }`. */
+export async function tightenTake(voice: Blob, settings: MixSettings = MIX): Promise<TightTake> {
+  const v = await monoAt(await decode(await voice.arrayBuffer()))
+  const t = tightenSegments(blockLevels(v, MIX_RATE), settings)
+  if ('silent' in t) return t
+  const out = tightenSamples(v, MIX_RATE, t.segments, settings.tightenFadeMs)
+  return { wav: new Blob([encodeWav(out, MIX_RATE)], { type: 'audio/wav' }), segments: t.segments, seconds: t.seconds, rawSeconds: t.rawSeconds }
+}
+
 /** `settings` is the same recipe ffmpeg renders (mix-ffmpeg.ts): one recipe, two renderers. A
  *  catalog track's `startAt` arrives as `musicStart`. */
 export async function mixTake(voice: Blob, music?: string, settings: MixSettings = MIX): Promise<MixedTake> {
   const C = offline()
   if (!C) throw new Error('this browser cannot mix audio')
-  const v = await monoAt(await decode(await voice.arrayBuffer()))
+  let v = await monoAt(await decode(await voice.arrayBuffer()))
+  // Tightened here unless the caller already did (the recorder tightens before review).
+  let segments: TakeSegment[] | undefined
+  if (settings.tighten) {
+    const t = tightenSegments(blockLevels(v, MIX_RATE), settings)
+    if (!('silent' in t)) { segments = t.segments; v = tightenSamples(v, MIX_RATE, t.segments, settings.tightenFadeMs) }
+  }
+  const seg = segments ? { segments } : {}
   const seconds = v.length / MIX_RATE
   const gain = settings.normalize ? voiceGain(v, MIX_RATE, settings.limit) : 1
   if (!music) {

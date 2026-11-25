@@ -44,8 +44,8 @@ export {
   createRecordStore, memoryRecordStore, parseBatchInput, firstWaiting, entriesOf, RECORD_BATCH_ID, RECORD_SLUG, MAX_BATCH_PEOPLE,
   type RecordStore, type RecordBatch, type RecordEntry, type RecordPerson, type RecordBatchInput, type RecordTake, type RecordStatus,
 } from './record-store.js'
-export { MIX, mixSettings, fadeInOf, VOICE_RMS, mixLength, bedLevel, bedCurve, blockLevels, duckGains, voiceGain, limit as limitPeaks, encodeWav } from './mix.js'
-export type { MixSettings } from './mix.js'
+export { MIX, mixSettings, fadeInOf, tightenSegments, remapTime, remapTimings, tightenSamples, VOICE_RMS, mixLength, bedLevel, bedCurve, blockLevels, duckGains, voiceGain, limit as limitPeaks, encodeWav } from './mix.js'
+export type { MixSettings, TakeSegment, Tightened } from './mix.js'
 export { ffmpegMixGraph, ffmpegMixArgs, shiftTimings, mixSidecar } from './mix-ffmpeg.js'
 export { MUSIC_TRACKS, MESSAGE_TYPES, OCCASION_MESSAGE, musicTrack, musicCredit, parseMusicRef, resolveMusic, suggestTracks } from './music.js'
 export type { MusicTrack, MusicRef, MusicLibrary, MessageType } from './music.js'

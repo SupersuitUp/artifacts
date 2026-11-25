@@ -10,13 +10,27 @@
 // And its two later lessons: the voice branch is padded to the full length (apad), because
 // sidechaincompress stops when its sidechain ends and would cut the bed's fade-out; and a limiter
 // at about -1 dBTP, because the bed sums on top of a normalized voice.
-import { fadeInOf, mixLength, type MixSettings } from './mix.js'
+import { fadeInOf, mixLength, type MixSettings, type TakeSegment } from './mix.js'
 
 const sec = (n: number) => n.toFixed(3)
 
-/** The filter graph: [0:a] is the bed, [1:a] the voice; the output is [mix]. */
-export function ffmpegMixGraph(voiceSeconds: number, s: MixSettings): string {
+/** The take, tightened (0.75.0): each kept segment cut out, faded in and out over tightenFadeMs,
+ *  and joined, ending in [take]. The same segments the browser cuts (mix.ts tightenSegments). */
+function tightenChain(segments: TakeSegment[], s: MixSettings): string {
+  const d = (s.tightenFadeMs / 1000).toFixed(3)
+  const cut = (g: TakeSegment) => `atrim=start=${sec(g.start)}:end=${sec(g.end)},asetpts=PTS-STARTPTS,afade=t=in:st=0:d=${d},afade=t=out:st=${sec(g.end - g.start - s.tightenFadeMs / 1000)}:d=${d}`
+  if (segments.length === 1) return `[1:a]${cut(segments[0])}[take];`
+  return `[1:a]asplit=${segments.length}${segments.map((_, i) => `[r${i}]`).join('')};`
+    + segments.map((g, i) => `[r${i}]${cut(g)}[t${i}];`).join('')
+    + `${segments.map((_, i) => `[t${i}]`).join('')}concat=n=${segments.length}:v=0:a=1[take];`
+}
+
+/** The filter graph: [0:a] is the bed, [1:a] the voice; the output is [mix]. With `segments` (and
+ *  `tighten` on) the voice is tightened first, and `voiceSeconds` is the tightened length. */
+export function ffmpegMixGraph(voiceSeconds: number, s: MixSettings, segments?: TakeSegment[]): string {
   const total = mixLength(voiceSeconds, s)
+  const tight = s.tighten && segments?.length ? tightenChain(segments, s) : ''
+  const vin = tight ? '[take]' : '[1:a]'
   const voice = [
     'highpass=f=80',
     s.normalize ? `loudnorm=I=${s.loudnessLufs}:TP=${s.truePeakDb}:LRA=${s.loudnessRange}` : null,
@@ -32,21 +46,21 @@ export function ffmpegMixGraph(voiceSeconds: number, s: MixSettings): string {
   const limiter = `alimiter=limit=${s.limit}:level=false`
   return (s.duck
     ? [
-      `[1:a]${voice},asplit=2[voice][sc]`,
+      `${tight}${vin}${voice},asplit=2[voice][sc]`,
       `[0:a]${bed}[bg]`,
       `[bg][sc]sidechaincompress=threshold=${s.duckThreshold}:ratio=${s.duckRatio}:attack=${s.attackMs}:release=${s.releaseMs}[bgduck]`,
       `[bgduck][voice]amix=inputs=2:duration=longest:normalize=0[premix]`,
       `[premix]${limiter}[mix]`,
     ]
     : [
-      `[1:a]${voice}[voice]`,
+      `${tight}${vin}${voice}[voice]`,
       `[0:a]${bed}[bg]`,
       `[bg][voice]amix=inputs=2:duration=longest:normalize=0[premix]`,
       `[premix]${limiter}[mix]`,
     ]).join(';')
 }
 
-export type FfmpegMixInput = { voice: string; music: string; out: string; voiceSeconds: number; settings: MixSettings; mp3?: boolean }
+export type FfmpegMixInput = { voice: string; music: string; out: string; voiceSeconds: number; settings: MixSettings; mp3?: boolean; segments?: TakeSegment[] }
 
 /** ffmpeg's arguments for one mix. */
 export function ffmpegMixArgs(i: FfmpegMixInput): string[] {
@@ -55,7 +69,7 @@ export function ffmpegMixArgs(i: FfmpegMixInput): string[] {
     ...(i.settings.musicStart ? ['-ss', String(i.settings.musicStart)] : []),
     '-i', i.music,
     '-i', i.voice,
-    '-filter_complex', ffmpegMixGraph(i.voiceSeconds, i.settings),
+    '-filter_complex', ffmpegMixGraph(i.voiceSeconds, i.settings, i.segments),
     '-map', '[mix]',
     '-t', sec(mixLength(i.voiceSeconds, i.settings)),
     ...(i.mp3 ? ['-c:a', 'libmp3lame', '-b:a', '192k'] : ['-c:a', 'aac', '-b:a', '192k', '-f', 'mp4']),
@@ -75,15 +89,17 @@ export function shiftTimings(raw: unknown, voiceDelay: number): { ok: true; word
 }
 
 /** The `.mix.json` beside a mix: where the voice starts, and every setting it was made with. */
-export function mixSidecar(voiceSeconds: number, s: MixSettings, extra: { track?: string } = {}) {
+export function mixSidecar(voiceSeconds: number, s: MixSettings, extra: { track?: string; segments?: TakeSegment[]; rawSeconds?: number } = {}) {
   return {
     voiceDelaySeconds: s.voiceDelay,
     voiceDurationSeconds: Number(voiceSeconds.toFixed(3)),
+    ...(extra.rawSeconds !== undefined ? { rawVoiceSeconds: Number(extra.rawSeconds.toFixed(3)) } : {}),
+    ...(extra.segments ? { segments: extra.segments } : {}),
     fadeOutSeconds: s.fadeOut,
     totalSeconds: Number(mixLength(voiceSeconds, s).toFixed(3)),
     musicStartSeconds: s.musicStart,
     ...(extra.track ? { track: extra.track } : {}),
     settings: s,
-    note: 'Word timings measured on the voice file must be shifted by +voiceDelaySeconds to line up with this mix.',
+    note: extra.segments ? 'The voice was tightened to these segments of the raw take: word timings on the raw take are moved through them (remapTimings), then shifted by +voiceDelaySeconds.' : 'Word timings measured on the voice file must be shifted by +voiceDelaySeconds to line up with this mix.',
   }
 }
