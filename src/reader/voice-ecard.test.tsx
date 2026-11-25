@@ -42,6 +42,13 @@ const advance = async (ms: number) => { await act(async () => { await vi.advance
 /** The three timed phases, one at a time (each timer is set by the phase before it). */
 const openAll = async () => { await advance(800); await advance(950); await advance(700) }
 const click = (el: Element | null) => act(() => { el!.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+/** A finger: the pointer says touch, then the click lands. */
+const tap = (el: Element | null) => act(() => {
+  const down = new MouseEvent('pointerdown', { bubbles: true }) as MouseEvent & { pointerType: string }
+  Object.defineProperty(down, 'pointerType', { value: 'touch' })
+  el!.dispatchEvent(down)
+  el!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+})
 
 beforeEach(() => {
   ;(globalThis as any).IS_REACT_ACT_ENVIRONMENT = true
@@ -125,7 +132,7 @@ describe('the opening, on BlessOut\'s clock', () => {
 })
 
 describe('desktop hover and phone tap', () => {
-  it('a desktop says "Hover over me"; a phone says "Tap me", and its first tap opens the flap, its second the card', async () => {
+  it('a desktop says "Hover over me" and a click opens the card; a phone says "Tap me", and its first tap opens the flap, its second the card', async () => {
     render()
     expect(q('.ve-hover-text')!.textContent).toBe('Hover over me')
     for (const r of roots.splice(0)) act(() => r.unmount())
@@ -133,10 +140,10 @@ describe('desktop hover and phone tap', () => {
     size(390, 844)
     render()
     expect(q('.ve-hover-text')!.textContent).toBe('Tap me')
-    click(q('.ve-letter'))
+    tap(q('.ve-letter'))
     expect(phase()).toBe('idle')
     expect(q('.ve-li')!.className).toContain('is-open')
-    click(q('.ve-letter'))
+    tap(q('.ve-letter'))
     expect(phase()).toBe('rising')
   })
 })
@@ -146,7 +153,7 @@ describe('geometry', () => {
   it('390x844: one page edge to edge, with the tilt hint', async () => {
     size(390, 844)
     render()
-    click(q('.ve-letter')); click(q('.ve-letter'))
+    tap(q('.ve-letter')); tap(q('.ve-letter'))
     await openAll()
     expect(host().style.left).toBe('8px')
     expect(host().style.width).toBe('374px')
@@ -155,7 +162,7 @@ describe('geometry', () => {
   it('a rotation to 844x390 re-lays out to the whole spread and the hint goes', async () => {
     size(390, 844)
     render()
-    click(q('.ve-letter')); click(q('.ve-letter'))
+    tap(q('.ve-letter')); tap(q('.ve-letter'))
     await openAll()
     size(844, 390)
     act(() => { window.dispatchEvent(new Event('orientationchange')) })
@@ -216,8 +223,18 @@ describe('the letter on the open card', () => {
     await opened()
     const asked: unknown[] = []
     window.addEventListener(NOTE_AT, (e) => asked.push((e as CustomEvent).detail))
+    const a = q<HTMLAudioElement>('audio')!
+    let t = 0
+    Object.defineProperty(a, 'currentTime', { configurable: true, get: () => t, set: (v) => { t = v } })
+    const paused = vi.fn()
+    Object.defineProperty(a, 'pause', { configurable: true, value: paused })
+    click(q('.ve-listen'))
+    t = 7.4; await advance(20)
     click(q('[data-voice-reply]'))
-    expect(asked).toEqual([{ block: 'b-card-0123abcd', at: 0 }])
+    expect(asked).toEqual([{ block: 'b-card-0123abcd', at: 7 }])
+    // The voice stops, so the reader's microphone never records it.
+    expect(paused).toHaveBeenCalled()
+    expect(q('.ve-listen')!.textContent).toContain('Listen to the letter')
   })
   it('no reply control when the page takes no comments; no Supersuit line with mark: false', async () => {
     await opened({ reply: false, mark: false })

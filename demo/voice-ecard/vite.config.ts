@@ -11,6 +11,7 @@ const blessout = process.env.BLESSOUT ?? resolve(__dirname, '../../../../../../o
 export default defineConfig({
   root: __dirname,
   plugins: [react()],
+  resolve: { alias: [{ find: /^.*\/default-share\.js$/, replacement: resolve(__dirname, 'default-share-stub.ts') }] },
   define: { __BLESSOUT__: JSON.stringify(`/@fs${blessout}/public`) },
   server: { fs: { allow: [resolve(__dirname, '../..'), blessout] } },
 })

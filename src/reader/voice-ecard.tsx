@@ -64,7 +64,7 @@ export type VoiceEcardProps = {
   dateLine?: string
 }
 
-const isTouch = () => typeof window !== 'undefined' && (window.matchMedia?.('(hover: none)').matches || window.innerWidth < 768)
+const isTouch = () => typeof window !== 'undefined' && (window.matchMedia?.('(pointer: coarse)').matches || window.innerWidth < 768)
 const reduced = () => typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
 
 /** The smallest the letter is drawn before it scrolls instead: below this a phone reader squints. */
@@ -167,9 +167,13 @@ export function VoiceEcard(p: VoiceEcardProps) {
 
   // The letter, or the flap over it: on a phone the first tap opens the flap and the second takes
   // the card out; with a mouse the hover already opened it.
+  // Decided by the press itself, never by guessing the device: a finger's first tap opens the flap,
+  // a mouse (whose hover already opened it) or a second tap takes the card out.
+  const pointer = useRef<string>('mouse')
+  const onPress = (e: React.PointerEvent) => { pointer.current = e.pointerType || 'mouse' }
   const onLetter = (e: React.MouseEvent | React.KeyboardEvent) => {
     e.stopPropagation()
-    if (touch && !flap) { setFlap(true); return }
+    if (pointer.current === 'touch' && !flap) { setFlap(true); return }
     open()
   }
 
@@ -247,7 +251,7 @@ export function VoiceEcard(p: VoiceEcardProps) {
       {phase !== 'open' ? (
         <div className="ve-stage">
           <div className={`ve-hover${flap ? ' is-open' : ''}${phase === 'rising' || phase === 'opening' || phase === 'zooming' ? ' ve-receding' : ''}${phase === 'closing' ? ' ve-returning' : ''}${resizing ? ' ve-resizing' : ''}`}
-            onClick={touch ? () => setFlap((f) => !f) : undefined}>
+            onPointerDownCapture={onPress} onClick={() => { if (pointer.current === 'touch') setFlap((f) => !f) }}>
             <div className="ve-container">
               <div className={`ve-li${flap ? ' is-open' : ''}`} ref={envRef} role="button" tabIndex={0}
                 aria-label={`A card for ${p.to} from ${p.from}. Open it.`}
@@ -359,6 +363,8 @@ function Letter(p: VoiceEcardProps) {
     setPlaying(true)
   }
   const reply = () => {
+    // The voice stops first, so the reader's microphone never records the sender's recording.
+    if (playing) { audio.current?.pause(); setPlaying(false) }
     // The page's own comment card opens at this second of the recording, recorder and all.
     window.dispatchEvent(new CustomEvent(NOTE_AT, { detail: { block: p.blockId, at: Math.floor(audio.current?.currentTime ?? 0) } }))
   }

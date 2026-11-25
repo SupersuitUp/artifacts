@@ -158,7 +158,7 @@ export const VOICE_ECARD_CSS = String.raw`
 .ve-word { transition: color 140ms ease-out, opacity 140ms ease-out; border-radius: 2px; }
 .ve-following .ve-coming { opacity: 0.38; }
 .ve-following .ve-said { opacity: 1; }
-.ve-following .ve-saying { opacity: 1; color: var(--ve-navy); background: linear-gradient(transparent 62%, color-mix(in srgb, var(--ve-foil) 55%, transparent) 62%); }
+.ve-following .ve-saying { opacity: 1; color: var(--ve-navy); background: linear-gradient(transparent 58%, color-mix(in srgb, var(--ve-foil) 72%, transparent) 58%); }
 .ve-foot { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-top: 1.2rem; font: italic 400 0.8rem/1.3 system-ui, -apple-system, sans-serif; color: var(--ve-navy); }
 .ve-foot a { color: inherit; opacity: 0.7; text-decoration: none; font-style: normal; letter-spacing: 0.18em; text-transform: uppercase; font-size: 0.62rem; }
 @media (min-width: 768px) { .ve-script { font-size: var(--ve-size-desk, 1.75rem); line-height: 1.36; } }
