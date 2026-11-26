@@ -93,6 +93,21 @@ describe('front matter: template: voice-ecard', () => {
       if (!r.ok) expect(r.error).toContain('template: voice-ecard')
     }
   })
+  it('names: off hides the To and From labels; on (or absent) keeps them; to: stays required', () => {
+    const off = parseArtifactSource(src(BASE + 'names: off\n'))
+    if (!off.ok) throw new Error(off.error)
+    expect(off.meta.voiceEcard?.names).toBe(false)
+    expect(off.meta.to).toBe('Robin')
+    const on = parseArtifactSource(src(BASE + 'names: on\n'))
+    expect(on.ok && on.meta.voiceEcard?.names).toBeUndefined()
+    const none = parseArtifactSource(src(BASE))
+    expect(none.ok && none.meta.voiceEcard?.names).toBeUndefined()
+    const bad = parseArtifactSource(src(BASE + 'names: maybe\n'))
+    expect(!bad.ok && bad.error).toContain('names must be on or off')
+    expect(parseArtifactSource(src('from: Sam\nnames: off\n')).ok).toBe(false)
+    const doc = parseArtifactSource('---\ntitle: T\nsummary: S\nnames: off\n---\nx\n')
+    expect(!doc.ok && doc.error).toContain('template: voice-ecard')
+  })
   it('mark: none still means what it always meant on a document; true and false are a card\'s', () => {
     const doc = parseArtifactSource('---\ntitle: T\nsummary: S\nmark: none\n---\nx\n')
     expect(doc.ok && doc.meta.mark).toBe('none')

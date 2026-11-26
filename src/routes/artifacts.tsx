@@ -1002,7 +1002,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
           cover={a.cover} inner={spec.inner} background={spec.background} cinemagraph={spec.cinemagraph}
           audio={spec.audio} media={spec.audio ? recordingName(spec.audio) : undefined}
           seal={Mark ? <Mark className="ve-seal-mark" /> : undefined}
-          mark={spec.mark && a.mark !== 'none'} reply={canShare} blockId={letterBlockId(a.to ?? '', spec.from)} dateLine={dateLine(a.createdAt)}
+          mark={spec.mark && a.mark !== 'none'} names={spec.names !== false} reply={canShare} blockId={letterBlockId(a.to ?? '', spec.from)} dateLine={dateLine(a.createdAt)}
           artifactId={a.id} version={a.version ?? (a.versions?.length ?? 0) + 1} ownerName={owner} requireName={a.commentName === 'required' && perReader?.group === true}
         />
         {perReader && !perReader.owner ? <QuietView id={a.id} rid={perReader.rid} sig={perReader.sig} token={perReader.token} /> : null}

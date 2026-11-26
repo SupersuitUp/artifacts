@@ -74,6 +74,12 @@ describe('the page a voice eCard is', () => {
     expect(await page(card({ mark: 'none' }))).not.toContain('Made with Supersuit')
     expect(await page(card({ voiceEcard: { ...card().voiceEcard!, mark: false } }))).not.toContain('Made with Supersuit')
   })
+  it('names: off on the card draws the page with no To or From label', async () => {
+    const html = await page(card({ voiceEcard: { ...card().voiceEcard!, names: false } }))
+    expect(html).toContain('data-voice-ecard')
+    expect(html).not.toMatch(/To: |From: /)
+    expect(html).toContain('Dear Robin,\nThank you.')
+  })
   it('names the recording the way play tracking does, and reads the body as paragraphs', () => {
     expect(recordingName('https://cdn.example.com/a/card%20mix.m4a?v=2')).toBe('card-mix.m4a')
     expect(letterText('Dear Robin,\n\nThank *you*.\n')).toBe('Dear Robin,\n\nThank you.')

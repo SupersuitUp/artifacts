@@ -48,6 +48,9 @@ export type VoiceEcardSpec = {
   words?: VoiceEcardTiming[]
   /** The small "Made with Supersuit" line under the closed envelope. Default on. */
   mark: boolean
+  /** `names: off`: no "To:" and "From:" labels anywhere on the card (the letter already says who).
+   *  Present only when off; `to:` still names the reader for links and the summary. */
+  names?: false
 }
 
 /** The colour a card's envelope takes when the file does not name one: BlessOut's holiday
@@ -61,7 +64,7 @@ export const LINER_FOR: Record<VoiceEcardOccasion, string> = {
 }
 
 /** The front matter keys only a card takes. */
-export const VOICE_ECARD_KEYS = ['from', 'occasion', 'envelope', 'inner', 'background', 'cinemagraph', 'font', 'audio'] as const
+export const VOICE_ECARD_KEYS = ['from', 'occasion', 'envelope', 'inner', 'background', 'cinemagraph', 'font', 'audio', 'names'] as const
 
 /** Lines a card cannot carry, refused in words rather than dropped. */
 export const NOT_ON_A_VOICE_ECARD = ['voice', 'narration', 'narrationHash', 'file'] as const
@@ -140,6 +143,12 @@ export function parseVoiceEcard(d: Record<string, unknown>, body: string): { ok:
   if (d.mark !== undefined && d.mark !== null) {
     if (d.mark !== true && d.mark !== false && d.mark !== 'none') return { ok: false, error: 'mark must be true or false on a voice eCard' }
     spec.mark = d.mark === true
+  }
+  if (d.names !== undefined && d.names !== null) {
+    // YAML 1.1 readers turn a bare off/on into false/true, so both spellings mean the same.
+    const v = typeof d.names === 'string' ? d.names.trim().toLowerCase() : d.names
+    if (v === 'off' || v === false) spec.names = false
+    else if (v !== 'on' && v !== true) return { ok: false, error: 'names must be on or off on a voice eCard' }
   }
   let timingsUrl: string | undefined
   if (d.timings !== undefined && d.timings !== null) {

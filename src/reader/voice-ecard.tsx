@@ -57,6 +57,8 @@ export type VoiceEcardProps = {
   seal?: ReactNode
   /** Whether to draw "Made with Supersuit". */
   mark: boolean
+  /** False hides every "To:" and "From:" label (`names: off`). Default true. */
+  names?: boolean
   /** Whether the open card offers "Reply with your voice" (the page takes replies from this reader). */
   reply: boolean
   /** Where a reply goes, and what it says to the reader. */
@@ -270,7 +272,7 @@ export function VoiceEcard(p: VoiceEcardProps) {
           <div className="ve-base" />
           <div className={`ve-fold${foldOpen ? ' is-open' : ''}`}>
             <div className="ve-front" style={p.cover ? { backgroundImage: `url(${JSON.stringify(p.cover)})`, ...WRAP_FRONT } : { backgroundImage: p.envelope, backgroundSize: 'cover' }}>
-              {p.cover ? null : (
+              {p.cover || p.names === false ? null : (
                 <div className="ve-cover-fallback"><p><strong>To: {p.to}</strong></p><p><strong>From: {p.from}</strong></p></div>
               )}
             </div>
@@ -290,8 +292,10 @@ export function VoiceEcard(p: VoiceEcardProps) {
                 <div className="ve-mail">
                   <div className="ve-env-back"><div className="ve-env-inner" /></div>
                   <div ref={letterRef} className="ve-letter" onClick={onLetter} style={{ visibility: phase !== 'idle' ? 'hidden' : undefined }}>
-                    <p className="ve-to"><strong>To: {p.to}</strong></p>
-                    <p className="ve-from"><strong>From: {p.from}</strong></p>
+                    {p.names === false ? null : <>
+                      <p className="ve-to"><strong>To: {p.to}</strong></p>
+                      <p className="ve-from"><strong>From: {p.from}</strong></p>
+                    </>}
                     <p className="ve-preview">{peek.length > 500 ? `${peek.slice(0, 500)}...` : peek}</p>
                   </div>
                   <div className="ve-top-fold" onClick={onLetter}><span className="ve-hover-text">{helper}</span></div>
@@ -417,10 +421,12 @@ function Letter(p: VoiceEcardProps & { onReply?: (at: number) => void }) {
   return (
     <div ref={pageRef} className="ve-page" data-block={p.blockId}>
       <div className="ve-frame" aria-hidden data-nospeak><i /><i /><i /><i /></div>
-      <div className="ve-names" data-nospeak>
-        <p><span>To:</span> <b>{p.to}</b></p>
-        <p><span>From:</span> <b>{p.from}</b></p>
-      </div>
+      {p.names === false ? null : (
+        <div className="ve-names" data-nospeak>
+          <p><span>To:</span> <b>{p.to}</b></p>
+          <p><span>From:</span> <b>{p.from}</b></p>
+        </div>
+      )}
       {p.audio || p.reply ? (
         <div className="ve-controls" data-nospeak>
           {p.audio ? (

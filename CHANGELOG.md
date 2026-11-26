@@ -3,6 +3,14 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.75.0 (2026-11-26)
+
+**A voice eCard can hide its "To:" and "From:" labels: `names: off`.** A card whose letter already greets the reader and signs off read its names twice. With `names: off` the card draws no label on the letter peeking out of the envelope, none on the open card's right page, and none on a front with no `cover:`. `to:` stays required, since it names the reader for per-reader links and the page summary; the open card's accessible label still says who it is for and from. `names: on` (or no line) keeps today's labels. Anything else is refused in words ("names must be on or off"), and `names:` on any other kind of page is refused like every voice eCard key. `VoiceEcardSpec` gains `names?: false`; `VoiceEcard` takes `names`.
+
+- DETECTOR: a voice eCard whose letter already names its reader and sender.
+- REMEDY: bump, then add `names: off` to the card's front matter. A publisher that forwards only known keys must forward `names`.
+- TESTS: `src/artifacts/voice-ecard.test.ts`, `src/reader/voice-ecard.test.tsx`, `src/routes/voice-ecard-page.test.tsx`.
+
 ## 0.74.1 (2026-11-25)
 
 **A voice eCard's letter keeps its face on a brand pack** (issue #18). On a pack that sets its reading face on every paragraph (CW Maison: `[data-cw-maison] p { font-family: "DM Sans" }`), the letter drew in the pack's sans whatever `font:` said, because its paragraphs only inherited the card's face; `font: display` moved only the To/From names. The card now declares its face (and italic) on the letter's paragraphs, the envelope's peek, the cover fallback and the names, with selectors a pack's `[data-pack] p` cannot beat. `font: serif` (the default) draws BlessOut's serif stack, `display` the pack's display face, `sans` its body face, `script` the script.

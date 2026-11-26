@@ -263,6 +263,17 @@ describe('the letter on the open card', () => {
     expect(q('[data-voice-reply]')).toBeNull()
     expect(document.body.textContent).not.toContain('Made with Supersuit')
   })
+  it('names: false draws no To or From label: not on the envelope\'s letter, the open card, or a cover-less front', async () => {
+    render({ names: false, cover: undefined })
+    expect(q('.ve-letter')!.textContent).not.toMatch(/To:|From:/)
+    click(q('.ve-letter'))
+    await advance(800)
+    expect(document.body.textContent).not.toMatch(/To:|From:/)
+    await advance(950); await advance(700)
+    expect(q('.ve-names')).toBeNull()
+    expect(document.body.textContent).not.toMatch(/To:|From:/)
+    expect(q('[aria-label="A card for Robin from Sam"]')).not.toBeNull()
+  })
   it('the closed envelope says "Made with Supersuit", linking to supersuit.co', () => {
     render()
     expect(q<HTMLAnchorElement>('.ve-made')!.href).toBe('https://supersuit.co/')
