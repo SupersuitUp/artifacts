@@ -3,6 +3,14 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.76.0 (2026-11-26)
+
+**A hub can keep Supersuit's name off every page its readers see: `supersuitCredit: false`.** A new `createArtifactRoutes` setting, default `true` (nothing changes for a hub that does not set it). With `false`, no voice eCard on that hub draws "Made with Supersuit", under the closed envelope or on the open letter, whatever the card's own `mark:` says. A page's `mark:` can still turn the credit off on a hub that keeps it. The voice eCard's "Made with Supersuit" lines were the only Supersuit credit the package draws for a reader.
+
+- DETECTOR: an operator who does not want readers to see what made their pages.
+- REMEDY: bump, and pass `supersuitCredit: false` in that hub's routes config.
+- TESTS: `src/routes/voice-ecard-page.test.tsx`.
+
 ## 0.75.0 (2026-11-26)
 
 **A voice eCard can hide its "To:" and "From:" labels: `names: off`.** A card whose letter already greets the reader and signs off read its names twice. With `names: off` the card draws no label on the letter peeking out of the envelope, none on the open card's right page, and none on a front with no `cover:`. `to:` stays required, since it names the reader for per-reader links and the page summary; the open card's accessible label still says who it is for and from. `names: on` (or no line) keeps today's labels. Anything else is refused in words ("names must be on or off"), and `names:` on any other kind of page is refused like every voice eCard key. `VoiceEcardSpec` gains `names?: false`; `VoiceEcard` takes `names`.

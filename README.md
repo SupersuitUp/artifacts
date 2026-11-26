@@ -1585,7 +1585,7 @@ Thank you for this year.
 | `font:` | The letter's face: `serif` (the default), `script`, `display` (the pack's display face; the default on `envelope: brand`) or `sans` (the pack's body face). |
 | `audio:` | The mixed voice-over-music file. Draws "Listen to the letter". |
 | `timings:` | The words, timed in the mixed file: a list of `{w, s, e, br?}` (`br: 1` ends a paragraph), as BlessOut's mixer writes it, or the https address of a JSON file holding one (a bare list or `{ words: [...] }`). Needs `audio:`. When the list is inline and the body has words, the two must say the same words, or the publish is refused naming the first word where they part. |
-| `mark:` | `false` drops the small "Made with Supersuit" line under the closed envelope and on the letter. Default `true`. `mark: none` on the page does the same. |
+| `mark:` | `false` drops the small "Made with Supersuit" line under the closed envelope and on the letter. Default `true`. `mark: none` on the page does the same, and so does a hub whose routes config says `supersuitCredit: false` (then no card on that hub shows it, whatever the page says). |
 | `names:` | `off` hides every "To:" and "From:" label: on the letter peeking out of the envelope, on the open card, and on a front with no `cover:`. Use it when the letter already greets the reader and signs off. `to:` is still required (it names the reader for links). Default `on`. |
 
 Every address is https or a path on the host; a local file is uploaded by the publisher first. A
