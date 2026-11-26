@@ -136,6 +136,23 @@ describe('no comments on a voice eCard, one way to answer', () => {
     if (!m.ok) throw new Error(m.error)
     return { ...rec, comments: 'anyone' as const, state: m.state }
   }
+  it('greeting: reader opens the letter with "Dear <first name>," for a named reader\'s link, and nothing for the owner, a group, or a card without the line', async () => {
+    const recipients = memoryRecipientsStore()
+    const greeted = card({ id: 'card2345', links: 'per-reader', to: 'Friend', markdown: 'Thank you.\n', voiceEcard: { from: 'Sam', occasion: 'thanksgiving', envelope: 'gold', mark: true, names: false, greeting: 'reader' } })
+    const [testy, owner, group, sneaky] = await recipients.add('card2345', [{ label: 'Testy McTest' }, { label: 'Sam', owner: true }, { label: 'Early users', group: true }, { label: '<b>Bold</b> Hacker' }])
+    const open = async (rec: Partial<ArtifactRecord>, rid: string) => renderToStaticMarkup(await createArtifactRoutes(testConfig({ store: memoryArtifactStore([rec]), state: createMemoryStateStore(), recipients, recipientSecret: () => RS }))
+      .Page({ params: Promise.resolve({ id: 'card2345' }), searchParams: Promise.resolve({ r: `${rid}.${ridSig(RS, 'card2345', rid)}` }) } as never))
+    const html = await open(greeted, testy.rid)
+    expect(html).toContain('Dear Testy,')
+    expect(html).not.toContain('McTest')
+    for (const rid of [owner.rid, group.rid, sneaky.rid]) {
+      const other = await open(greeted, rid)
+      expect(other).toContain('data-voice-ecard')
+      expect(other).not.toContain('Dear ')
+      expect(other).not.toContain('<b>Bold')
+    }
+    expect(await open({ ...greeted, voiceEcard: { ...greeted.voiceEcard!, greeting: undefined } }, testy.rid)).not.toContain('Dear ')
+  })
   it('the page draws no comment layer, no selection-to-comment, no pins, no comment list', async () => {
     const html = await page(withComments(card()))
     expect(html).not.toContain('data-comment-layer')

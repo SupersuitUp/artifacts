@@ -3,6 +3,14 @@
 `@supersuit/artifacts`. One entry per version, newest first. Each entry says what changed, how a
 host can tell whether it is affected (DETECTOR), what a host does about it (REMEDY), and the tests.
 
+## 0.77.0 (2026-11-26)
+
+**A voice eCard can greet each reader by name: `greeting: reader`.** One card sent to many people through per-reader links read the same to all of them. With `greeting: reader`, a page opened through one named reader's link opens its letter with "Dear <first name>,", the first word of that link's label (send-message mints labels with the person's full name), drawn as the letter's first line in the letter's own face and on the letter peeking out of the envelope. The owner's link, a group link, a forward, no link, or a label whose first word is not a name (anything but letters, apostrophes, dots and hyphens, or longer than 40 characters) draws nothing extra. Only that one word of the label reaches the page, and React escapes it. The greeting is untimed, so the read-along's word indexes do not move. `greeting: off` (or no line) is today's card; anything else is refused in words ("greeting must be reader or off"), and `greeting:` on any other kind of page is refused like every voice eCard key. `VoiceEcardSpec` gains `greeting?: 'reader'`; `VoiceEcard` takes `greeting`; `readerGreeting` and `GREETING_NAME` are exported.
+
+- DETECTOR: a voice eCard with `links: per-reader` sent to several people whose letter does not name them.
+- REMEDY: bump, then add `greeting: reader` to the card's front matter. A publisher that forwards only known keys must forward `greeting`.
+- TESTS: `src/artifacts/voice-ecard.test.ts`, `src/reader/voice-ecard.test.tsx`, `src/routes/voice-ecard-page.test.tsx`.
+
 ## 0.76.0 (2026-11-26)
 
 **A hub can keep Supersuit's name off every page its readers see: `supersuitCredit: false`.** A new `createArtifactRoutes` setting, default `true` (nothing changes for a hub that does not set it). With `false`, no voice eCard on that hub draws "Made with Supersuit", under the closed envelope or on the open letter, whatever the card's own `mark:` says. A page's `mark:` can still turn the credit off on a hub that keeps it. The voice eCard's "Made with Supersuit" lines were the only Supersuit credit the package draws for a reader.

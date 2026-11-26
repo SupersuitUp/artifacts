@@ -274,6 +274,20 @@ describe('the letter on the open card', () => {
     expect(document.body.textContent).not.toMatch(/To:|From:/)
     expect(q('[aria-label="A card for Robin from Sam"]')).not.toBeNull()
   })
+  it('a greeting is the letter\'s first line, in the letter itself, and the timed words keep their indexes', async () => {
+    render({ greeting: 'Dear Testy,' })
+    expect(q('.ve-letter .ve-preview')!.textContent!.startsWith('Dear Testy,\n')).toBe(true)
+    click(q('.ve-letter'))
+    await advance(800); await advance(950); await advance(700)
+    const first = q('[data-voice-ecard-letter] .ve-para')!
+    expect(first.textContent).toBe('Dear Testy,')
+    expect(first.hasAttribute('data-letter-greeting')).toBe(true)
+    expect(document.querySelectorAll('[data-voice-ecard-letter] [data-word]').length).toBe(WORDS.length)
+  })
+  it('no greeting prop draws no extra line', async () => {
+    await opened()
+    expect(q('[data-letter-greeting]')).toBeNull()
+  })
   it('the closed envelope says "Made with Supersuit", linking to supersuit.co', () => {
     render()
     expect(q<HTMLAnchorElement>('.ve-made')!.href).toBe('https://supersuit.co/')

@@ -35,7 +35,7 @@ export { parseTranscriptFence, scanVoiceNotes, transcriptFenceFromWords, wordsFr
 export { fileLinks, fileNoun, sizeWords, parseFileBody, type FileBody, type PrivateUrl } from './file-page.js'
 export { SIGN_IN_PROVIDERS, SIGN_IN_WORDS, providersFor, signInOutcome, providerOf, shouldLink, shouldSendVerification, isFreshSignIn, FRESH_SIGN_IN_SECONDS, isPopupProvider, shouldTryMicrosoftTrust, emailLinkContinueUrl, looksLikeEmail, EMAIL_LINK_STORAGE_KEY, type SignInProviderId, type SignInProvider, type SignInShow } from './sign-in.js'
 export {
-  parseVoiceEcard, parseVoiceEcardTimings, timingsFromJson, letterParagraphs, letterMismatch, readAlong, wordState, reachedLastWord,
+  parseVoiceEcard, parseVoiceEcardTimings, timingsFromJson, readerGreeting, GREETING_NAME, letterParagraphs, letterMismatch, readAlong, wordState, reachedLastWord,
   spreadGeom, viewportSize, cardBox, closeSpot, tiltHint, wrapFrontCrop, nextPhase, WRAP_FRONT,
   VOICE_ECARD_OCCASIONS, VOICE_ECARD_FONTS, VOICE_ECARD_KEYS, ENVELOPE_COLORS, DEFAULT_ENVELOPE, LINER_FOR, RISE_MS, OPEN_MS, ZOOM_MS, CLOSE_MS, OPENING_MS,
   type VoiceEcardSpec, type VoiceEcardTiming, type VoiceEcardOccasion, type VoiceEcardFont, type VoiceEcardPhase, type EnvelopeChoice, type EnvelopeColor, type SpreadGeometry,

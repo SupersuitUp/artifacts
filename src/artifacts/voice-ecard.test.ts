@@ -9,7 +9,7 @@ import {
   letterParagraphs, letterLines, letterPreview, readAlong, wordState, reachedLastWord, timingsFromJson, letterMismatch, type VoiceEcardPhase, type VoiceEcardTiming,
 } from './voice-ecard.js'
 import { ENVELOPE_PAPER, LINER_PAPER, LETTER_PAPER } from './voice-ecard-assets.js'
-import { LINER_FOR } from './voice-ecard.js'
+import { LINER_FOR, readerGreeting } from './voice-ecard.js'
 
 const WORDS: VoiceEcardTiming[] = [
   { w: 'Dear', s: 4.0, e: 4.3 }, { w: 'Robin,', s: 4.35, e: 4.9, br: 1 },
@@ -107,6 +107,35 @@ describe('front matter: template: voice-ecard', () => {
     expect(parseArtifactSource(src('from: Sam\nnames: off\n')).ok).toBe(false)
     const doc = parseArtifactSource('---\ntitle: T\nsummary: S\nnames: off\n---\nx\n')
     expect(!doc.ok && doc.error).toContain('template: voice-ecard')
+  })
+  it('greeting: reader greets each per-reader link by name; off (or absent) adds nothing; anything else is refused', () => {
+    const on = parseArtifactSource(src(BASE + 'greeting: reader\n'))
+    if (!on.ok) throw new Error(on.error)
+    expect(on.meta.voiceEcard?.greeting).toBe('reader')
+    const off = parseArtifactSource(src(BASE + 'greeting: off\n'))
+    expect(off.ok && off.meta.voiceEcard?.greeting).toBeUndefined()
+    const none = parseArtifactSource(src(BASE))
+    expect(none.ok && none.meta.voiceEcard?.greeting).toBeUndefined()
+    const bad = parseArtifactSource(src(BASE + 'greeting: Hi Robin\n'))
+    expect(!bad.ok && bad.error).toContain('greeting must be reader or off')
+    const doc = parseArtifactSource('---\ntitle: T\nsummary: S\ngreeting: reader\n---\nx\n')
+    expect(!doc.ok && doc.error).toContain('template: voice-ecard')
+  })
+  it('readerGreeting: "Dear <first word of the label>," for one named reader, nothing for the owner, a group, a forward, or a label that is not a name', () => {
+    const spec = { from: 'Sam', occasion: 'other' as const, envelope: 'navy' as const, mark: true, greeting: 'reader' as const }
+    const one = { label: 'Testy McTest', owner: false, group: false }
+    expect(readerGreeting(spec, one)).toBe('Dear Testy,')
+    expect(readerGreeting(spec, { ...one, label: '  YJ Lin ' })).toBe('Dear YJ,')
+    expect(readerGreeting(spec, { ...one, label: "Mary-Jo O'Neil" })).toBe("Dear Mary-Jo,")
+    expect(readerGreeting(spec, { ...one, label: 'José, the neighbor' })).toBe('Dear José,')
+    expect(readerGreeting({ ...spec, greeting: undefined }, one)).toBeNull()
+    expect(readerGreeting(spec, undefined)).toBeNull()
+    expect(readerGreeting(spec, { ...one, owner: true })).toBeNull()
+    expect(readerGreeting(spec, { ...one, group: true })).toBeNull()
+    expect(readerGreeting(spec, { ...one, forwarded: true })).toBeNull()
+    for (const label of ['', '   ', '<script>alert(1)</script>', 'ana@example.com', '42 Wallaby Way', 'https://x.co', 'A'.repeat(41)]) {
+      expect(readerGreeting(spec, { ...one, label }), label).toBeNull()
+    }
   })
   it('mark: none still means what it always meant on a document; true and false are a card\'s', () => {
     const doc = parseArtifactSource('---\ntitle: T\nsummary: S\nmark: none\n---\nx\n')

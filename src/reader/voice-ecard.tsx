@@ -59,6 +59,9 @@ export type VoiceEcardProps = {
   mark: boolean
   /** False hides every "To:" and "From:" label (`names: off`). Default true. */
   names?: boolean
+  /** The line the letter opens with for this reader ("Dear Ana,", from `greeting: reader`), drawn
+   *  in the letter's own face as its first line. Untimed, so the read-along is untouched. */
+  greeting?: string
   /** Whether the open card offers "Reply with your voice" (the page takes replies from this reader). */
   reply: boolean
   /** Where a reply goes, and what it says to the reader. */
@@ -249,7 +252,8 @@ export function VoiceEcard(p: VoiceEcardProps) {
     '--ve-face': p.face, '--ve-face-style': p.italic ? 'italic' : 'normal', '--ve-title': p.title,
   } as CSSProperties
   // The peek shows the letter's own lines: the greeting and the sign-off on lines of their own.
-  const peek = p.words?.length ? letterPreview(p.words) : withLines(letterFromText(p.letter)).map((q) => q.map((l) => l.map((x) => x.word).join(' ')).join('\n')).join('\n')
+  const body = p.words?.length ? letterPreview(p.words) : withLines(letterFromText(p.letter)).map((q) => q.map((l) => l.map((x) => x.word).join(' ')).join('\n')).join('\n')
+  const peek = p.greeting ? `${p.greeting}\n${body}` : body
   const helper = touch ? 'Tap me' : 'Hover over me'
 
   return (
@@ -438,6 +442,7 @@ function Letter(p: VoiceEcardProps & { onReply?: (at: number) => void }) {
         </div>
       ) : null}
       <blockquote className={`ve-script${playing && words.length ? ' ve-following' : ''}`} data-voice-ecard-letter style={{ fontSize: REF_LETTER_FONT }}>
+        {p.greeting ? <p className="ve-para" data-letter-greeting>{p.greeting}</p> : null}
         {paras.map((para, i) => (
           <p key={i} className="ve-para">
             {para.map((line, l) => [l > 0 ? <br key={`br-${l}`} data-letter-break /> : null, ...line.map(({ word, index }) => {

@@ -51,6 +51,10 @@ export type VoiceEcardSpec = {
   /** `names: off`: no "To:" and "From:" labels anywhere on the card (the letter already says who).
    *  Present only when off; `to:` still names the reader for links and the summary. */
   names?: false
+  /** `greeting: reader` (0.77.0): opened through one named reader's link, the letter's first line is
+   *  "Dear <their first name>," taken from that link's label, so one shared card greets each reader.
+   *  Present only when on. Nothing for the owner's link, a group link, a forward, or no link. */
+  greeting?: 'reader'
 }
 
 /** The colour a card's envelope takes when the file does not name one: BlessOut's holiday
@@ -64,7 +68,7 @@ export const LINER_FOR: Record<VoiceEcardOccasion, string> = {
 }
 
 /** The front matter keys only a card takes. */
-export const VOICE_ECARD_KEYS = ['from', 'occasion', 'envelope', 'inner', 'background', 'cinemagraph', 'font', 'audio', 'names'] as const
+export const VOICE_ECARD_KEYS = ['from', 'occasion', 'envelope', 'inner', 'background', 'cinemagraph', 'font', 'audio', 'names', 'greeting'] as const
 
 /** Lines a card cannot carry, refused in words rather than dropped. */
 export const NOT_ON_A_VOICE_ECARD = ['voice', 'narration', 'narrationHash', 'file'] as const
@@ -150,6 +154,11 @@ export function parseVoiceEcard(d: Record<string, unknown>, body: string): { ok:
     if (v === 'off' || v === false) spec.names = false
     else if (v !== 'on' && v !== true) return { ok: false, error: 'names must be on or off on a voice eCard' }
   }
+  if (d.greeting !== undefined && d.greeting !== null) {
+    const v = typeof d.greeting === 'string' ? d.greeting.trim().toLowerCase() : d.greeting
+    if (v === 'reader') spec.greeting = 'reader'
+    else if (v !== 'off' && v !== false) return { ok: false, error: 'greeting must be reader or off on a voice eCard' }
+  }
   let timingsUrl: string | undefined
   if (d.timings !== undefined && d.timings !== null) {
     if (typeof d.timings === 'string') {
@@ -167,6 +176,19 @@ export function parseVoiceEcard(d: Record<string, unknown>, body: string): { ok:
     if (!spec.audio) return { ok: false, error: 'timings follow a recording: add audio:' }
   }
   return { ok: true, voiceEcard: spec, ...(timingsUrl ? { timingsUrl } : {}) }
+}
+
+/** A first name a greeting may print: letters, then letters, marks, apostrophes, dots or hyphens,
+ *  at most 40 characters. Anything else (markup, an address, a number) prints no greeting at all. */
+export const GREETING_NAME = /^\p{L}[\p{L}\p{M}'\u2019.-]{0,39}$/u
+
+/** The line a `greeting: reader` card opens with for this link: "Dear <first word of its label>,",
+ *  or null for the owner's link, a group link, a forward, no link, or a label whose first word is
+ *  not a name. Only that one word of the label ever reaches the page. */
+export function readerGreeting(spec: Pick<VoiceEcardSpec, 'greeting'>, link: { label: string; owner: boolean; group: boolean; forwarded?: boolean } | undefined | null): string | null {
+  if (spec.greeting !== 'reader' || !link || link.owner || link.group || link.forwarded) return null
+  const first = (link.label ?? '').trim().split(/\s+/)[0]?.replace(/[,;:]+$/, '') ?? ''
+  return GREETING_NAME.test(first) ? `Dear ${first},` : null
 }
 
 /** A timings file as fetched: BlessOut's bare array, or `{ words: [...] }` as narration writes it. */

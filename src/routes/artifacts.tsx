@@ -58,6 +58,7 @@ import { createRecipientsRoutes } from './recipients-routes.js'
 import type { OutcomeThresholds } from '../artifacts/goal.js'
 import { QuietView } from '../reader/quiet-view.js'
 import { VoiceEcard } from '../reader/voice-ecard.js'
+import { readerGreeting } from '../artifacts/voice-ecard.js'
 import { Recorder } from '../reader/recorder.js'
 import { createRecordRoutes } from './record-routes.js'
 import { RECORD_BATCH_ID, firstWaiting, type RecordStore } from '../artifacts/record-store.js'
@@ -1006,7 +1007,7 @@ export function createArtifactRoutes(config: ArtifactRoutesConfig) {
           cover={a.cover} inner={spec.inner} background={spec.background} cinemagraph={spec.cinemagraph}
           audio={spec.audio} media={spec.audio ? recordingName(spec.audio) : undefined}
           seal={Mark ? <Mark className="ve-seal-mark" /> : undefined}
-          mark={spec.mark && a.mark !== 'none' && config.supersuitCredit !== false} names={spec.names !== false} reply={canShare} blockId={letterBlockId(a.to ?? '', spec.from)} dateLine={dateLine(a.createdAt)}
+          mark={spec.mark && a.mark !== 'none' && config.supersuitCredit !== false} names={spec.names !== false} greeting={readerGreeting(spec, perReader) ?? undefined} reply={canShare} blockId={letterBlockId(a.to ?? '', spec.from)} dateLine={dateLine(a.createdAt)}
           artifactId={a.id} version={a.version ?? (a.versions?.length ?? 0) + 1} ownerName={owner} requireName={a.commentName === 'required' && perReader?.group === true}
         />
         {perReader && !perReader.owner ? <QuietView id={a.id} rid={perReader.rid} sig={perReader.sig} token={perReader.token} /> : null}
